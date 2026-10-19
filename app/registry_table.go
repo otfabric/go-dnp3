@@ -1,0 +1,393 @@
+// SPDX-License-Identifier: MIT
+
+// Code generated from the object library of IEEE 1815-2012 Annex A; the
+// table is maintained by hand from here on.
+
+package app
+
+// Group and variation constants for every object this package encodes and
+// decodes. Variation 0 of a group is "any variation" in a request.
+//
+// Group 0 (device attributes) and groups 110..113 (octet strings, whose
+// variation is the length) are open-ended: build those with [GV].
+const (
+	G1V0    GroupVariation = 1 << 8      // Binary Input - Any Variation
+	G1V1    GroupVariation = 1<<8 | 1    // Binary Input - Packed Format
+	G1V2    GroupVariation = 1<<8 | 2    // Binary Input - With Flags
+	G2V0    GroupVariation = 2 << 8      // Binary Input Event - Any Variation
+	G2V1    GroupVariation = 2<<8 | 1    // Binary Input Event - Without Time
+	G2V2    GroupVariation = 2<<8 | 2    // Binary Input Event - With Absolute Time
+	G2V3    GroupVariation = 2<<8 | 3    // Binary Input Event - With Relative Time
+	G3V0    GroupVariation = 3 << 8      // Double-bit Binary Input - Any Variation
+	G3V1    GroupVariation = 3<<8 | 1    // Double-bit Binary Input - Packed Format
+	G3V2    GroupVariation = 3<<8 | 2    // Double-bit Binary Input - With Flags
+	G4V0    GroupVariation = 4 << 8      // Double-bit Binary Input Event - Any Variation
+	G4V1    GroupVariation = 4<<8 | 1    // Double-bit Binary Input Event - Without Time
+	G4V2    GroupVariation = 4<<8 | 2    // Double-bit Binary Input Event - With Absolute Time
+	G4V3    GroupVariation = 4<<8 | 3    // Double-bit Binary Input Event - With Relative Time
+	G10V0   GroupVariation = 10 << 8     // Binary Output - Any Variation
+	G10V1   GroupVariation = 10<<8 | 1   // Binary Output - Packed Format
+	G10V2   GroupVariation = 10<<8 | 2   // Binary Output - Output Status With Flags
+	G11V0   GroupVariation = 11 << 8     // Binary Output Event - Any Variation
+	G11V1   GroupVariation = 11<<8 | 1   // Binary Output Event - Status Without Time
+	G11V2   GroupVariation = 11<<8 | 2   // Binary Output Event - Status With Time
+	G12V0   GroupVariation = 12 << 8     // Binary Output Command - Any Variation
+	G12V1   GroupVariation = 12<<8 | 1   // Binary Output Command - Control Relay Output Block
+	G12V2   GroupVariation = 12<<8 | 2   // Binary Output Command - Pattern Control Block
+	G12V3   GroupVariation = 12<<8 | 3   // Binary Output Command - Pattern Mask
+	G13V0   GroupVariation = 13 << 8     // Binary Output Command Event - Any Variation
+	G13V1   GroupVariation = 13<<8 | 1   // Binary Output Command Event - Without Time
+	G13V2   GroupVariation = 13<<8 | 2   // Binary Output Command Event - With Time
+	G20V0   GroupVariation = 20 << 8     // Counter - Any Variation
+	G20V1   GroupVariation = 20<<8 | 1   // Counter - 32-bit With Flag
+	G20V2   GroupVariation = 20<<8 | 2   // Counter - 16-bit With Flag
+	G20V3   GroupVariation = 20<<8 | 3   // Counter - 32-bit Delta With Flag
+	G20V4   GroupVariation = 20<<8 | 4   // Counter - 16-bit Delta With Flag
+	G20V5   GroupVariation = 20<<8 | 5   // Counter - 32-bit Without Flag
+	G20V6   GroupVariation = 20<<8 | 6   // Counter - 16-bit Without Flag
+	G20V7   GroupVariation = 20<<8 | 7   // Counter - 32-bit Delta Without Flag
+	G20V8   GroupVariation = 20<<8 | 8   // Counter - 16-bit Delta Without Flag
+	G21V0   GroupVariation = 21 << 8     // Frozen Counter - Any Variation
+	G21V1   GroupVariation = 21<<8 | 1   // Frozen Counter - 32-bit With Flag
+	G21V2   GroupVariation = 21<<8 | 2   // Frozen Counter - 16-bit With Flag
+	G21V3   GroupVariation = 21<<8 | 3   // Frozen Counter - 32-bit Delta With Flag
+	G21V4   GroupVariation = 21<<8 | 4   // Frozen Counter - 16-bit Delta With Flag
+	G21V5   GroupVariation = 21<<8 | 5   // Frozen Counter - 32-bit With Flag and Time
+	G21V6   GroupVariation = 21<<8 | 6   // Frozen Counter - 16-bit With Flag and Time
+	G21V7   GroupVariation = 21<<8 | 7   // Frozen Counter - 32-bit Delta With Flag and Time
+	G21V8   GroupVariation = 21<<8 | 8   // Frozen Counter - 16-bit Delta With Flag and Time
+	G21V9   GroupVariation = 21<<8 | 9   // Frozen Counter - 32-bit Without Flag
+	G21V10  GroupVariation = 21<<8 | 10  // Frozen Counter - 16-bit Without Flag
+	G21V11  GroupVariation = 21<<8 | 11  // Frozen Counter - 32-bit Delta Without Flag
+	G21V12  GroupVariation = 21<<8 | 12  // Frozen Counter - 16-bit Delta Without Flag
+	G22V0   GroupVariation = 22 << 8     // Counter Event - Any Variation
+	G22V1   GroupVariation = 22<<8 | 1   // Counter Event - 32-bit With Flag
+	G22V2   GroupVariation = 22<<8 | 2   // Counter Event - 16-bit With Flag
+	G22V3   GroupVariation = 22<<8 | 3   // Counter Event - 32-bit Delta With Flag
+	G22V4   GroupVariation = 22<<8 | 4   // Counter Event - 16-bit Delta With Flag
+	G22V5   GroupVariation = 22<<8 | 5   // Counter Event - 32-bit With Flag and Time
+	G22V6   GroupVariation = 22<<8 | 6   // Counter Event - 16-bit With Flag and Time
+	G22V7   GroupVariation = 22<<8 | 7   // Counter Event - 32-bit Delta With Flag and Time
+	G22V8   GroupVariation = 22<<8 | 8   // Counter Event - 16-bit Delta With Flag and Time
+	G23V0   GroupVariation = 23 << 8     // Frozen Counter Event - Any Variation
+	G23V1   GroupVariation = 23<<8 | 1   // Frozen Counter Event - 32-bit With Flag
+	G23V2   GroupVariation = 23<<8 | 2   // Frozen Counter Event - 16-bit With Flag
+	G23V3   GroupVariation = 23<<8 | 3   // Frozen Counter Event - 32-bit Delta With Flag
+	G23V4   GroupVariation = 23<<8 | 4   // Frozen Counter Event - 16-bit Delta With Flag
+	G23V5   GroupVariation = 23<<8 | 5   // Frozen Counter Event - 32-bit With Flag and Time
+	G23V6   GroupVariation = 23<<8 | 6   // Frozen Counter Event - 16-bit With Flag and Time
+	G23V7   GroupVariation = 23<<8 | 7   // Frozen Counter Event - 32-bit Delta With Flag and Time
+	G23V8   GroupVariation = 23<<8 | 8   // Frozen Counter Event - 16-bit Delta With Flag and Time
+	G30V0   GroupVariation = 30 << 8     // Analog Input - Any Variation
+	G30V1   GroupVariation = 30<<8 | 1   // Analog Input - 32-bit With Flag
+	G30V2   GroupVariation = 30<<8 | 2   // Analog Input - 16-bit With Flag
+	G30V3   GroupVariation = 30<<8 | 3   // Analog Input - 32-bit Without Flag
+	G30V4   GroupVariation = 30<<8 | 4   // Analog Input - 16-bit Without Flag
+	G30V5   GroupVariation = 30<<8 | 5   // Analog Input - Single-precision With Flag
+	G30V6   GroupVariation = 30<<8 | 6   // Analog Input - Double-precision With Flag
+	G31V0   GroupVariation = 31 << 8     // Frozen Analog Input - Any Variation
+	G31V1   GroupVariation = 31<<8 | 1   // Frozen Analog Input - 32-bit With Flag
+	G31V2   GroupVariation = 31<<8 | 2   // Frozen Analog Input - 16-bit With Flag
+	G31V3   GroupVariation = 31<<8 | 3   // Frozen Analog Input - 32-bit With Flag With Time
+	G31V4   GroupVariation = 31<<8 | 4   // Frozen Analog Input - 16-bit With Flag With Time
+	G31V5   GroupVariation = 31<<8 | 5   // Frozen Analog Input - 32-bit Without Flag
+	G31V6   GroupVariation = 31<<8 | 6   // Frozen Analog Input - 16-bit Without Flag
+	G31V7   GroupVariation = 31<<8 | 7   // Frozen Analog Input - Single-precision With Flag
+	G31V8   GroupVariation = 31<<8 | 8   // Frozen Analog Input - Double-precision With Flag
+	G32V0   GroupVariation = 32 << 8     // Analog Input Event - Any Variation
+	G32V1   GroupVariation = 32<<8 | 1   // Analog Input Event - 32-bit With Flag
+	G32V2   GroupVariation = 32<<8 | 2   // Analog Input Event - 16-bit With Flag
+	G32V3   GroupVariation = 32<<8 | 3   // Analog Input Event - 32-bit With Flag With Time
+	G32V4   GroupVariation = 32<<8 | 4   // Analog Input Event - 16-bit With Flag With Time
+	G32V5   GroupVariation = 32<<8 | 5   // Analog Input Event - Single-precision With Flag
+	G32V6   GroupVariation = 32<<8 | 6   // Analog Input Event - Double-precision With Flag
+	G32V7   GroupVariation = 32<<8 | 7   // Analog Input Event - Single-precision With Flag With Time
+	G32V8   GroupVariation = 32<<8 | 8   // Analog Input Event - Double-precision With Flag With Time
+	G33V0   GroupVariation = 33 << 8     // Frozen Analog Input Event - Any Variation
+	G33V1   GroupVariation = 33<<8 | 1   // Frozen Analog Input Event - 32-bit With Flag
+	G33V2   GroupVariation = 33<<8 | 2   // Frozen Analog Input Event - 16-bit With Flag
+	G33V3   GroupVariation = 33<<8 | 3   // Frozen Analog Input Event - 32-bit With Flag With Time
+	G33V4   GroupVariation = 33<<8 | 4   // Frozen Analog Input Event - 16-bit With Flag With Time
+	G33V5   GroupVariation = 33<<8 | 5   // Frozen Analog Input Event - Single-precision With Flag
+	G33V6   GroupVariation = 33<<8 | 6   // Frozen Analog Input Event - Double-precision With Flag
+	G33V7   GroupVariation = 33<<8 | 7   // Frozen Analog Input Event - Single-precision With Flag With Time
+	G33V8   GroupVariation = 33<<8 | 8   // Frozen Analog Input Event - Double-precision With Flag With Time
+	G34V0   GroupVariation = 34 << 8     // Analog Input Deadband - Any Variation
+	G34V1   GroupVariation = 34<<8 | 1   // Analog Input Deadband - 16-bit
+	G34V2   GroupVariation = 34<<8 | 2   // Analog Input Deadband - 32-bit
+	G34V3   GroupVariation = 34<<8 | 3   // Analog Input Deadband - Single-precision
+	G40V0   GroupVariation = 40 << 8     // Analog Output Status - Any Variation
+	G40V1   GroupVariation = 40<<8 | 1   // Analog Output Status - 32-bit With Flag
+	G40V2   GroupVariation = 40<<8 | 2   // Analog Output Status - 16-bit With Flag
+	G40V3   GroupVariation = 40<<8 | 3   // Analog Output Status - Single-precision With Flag
+	G40V4   GroupVariation = 40<<8 | 4   // Analog Output Status - Double-precision With Flag
+	G41V0   GroupVariation = 41 << 8     // Analog Output Block - Any Variation
+	G41V1   GroupVariation = 41<<8 | 1   // Analog Output Block - 32-bit
+	G41V2   GroupVariation = 41<<8 | 2   // Analog Output Block - 16-bit
+	G41V3   GroupVariation = 41<<8 | 3   // Analog Output Block - Single-precision
+	G41V4   GroupVariation = 41<<8 | 4   // Analog Output Block - Double-precision
+	G42V0   GroupVariation = 42 << 8     // Analog Output Event - Any Variation
+	G42V1   GroupVariation = 42<<8 | 1   // Analog Output Event - 32-bit With Flag
+	G42V2   GroupVariation = 42<<8 | 2   // Analog Output Event - 16-bit With Flag
+	G42V3   GroupVariation = 42<<8 | 3   // Analog Output Event - 32-bit With Flag With Time
+	G42V4   GroupVariation = 42<<8 | 4   // Analog Output Event - 16-bit With Flag With Time
+	G42V5   GroupVariation = 42<<8 | 5   // Analog Output Event - Single-precision With Flag
+	G42V6   GroupVariation = 42<<8 | 6   // Analog Output Event - Double-precision With Flag
+	G42V7   GroupVariation = 42<<8 | 7   // Analog Output Event - Single-precision With Flag With Time
+	G42V8   GroupVariation = 42<<8 | 8   // Analog Output Event - Double-precision With Flag With Time
+	G43V0   GroupVariation = 43 << 8     // Analog Output Command Event - Any Variation
+	G43V1   GroupVariation = 43<<8 | 1   // Analog Output Command Event - 32-bit
+	G43V2   GroupVariation = 43<<8 | 2   // Analog Output Command Event - 16-bit
+	G43V3   GroupVariation = 43<<8 | 3   // Analog Output Command Event - 32-bit With Time
+	G43V4   GroupVariation = 43<<8 | 4   // Analog Output Command Event - 16-bit With Time
+	G43V5   GroupVariation = 43<<8 | 5   // Analog Output Command Event - Single-precision
+	G43V6   GroupVariation = 43<<8 | 6   // Analog Output Command Event - Double-precision
+	G43V7   GroupVariation = 43<<8 | 7   // Analog Output Command Event - Single-precision With Time
+	G43V8   GroupVariation = 43<<8 | 8   // Analog Output Command Event - Double-precision With Time
+	G50V1   GroupVariation = 50<<8 | 1   // Time and Date - Absolute Time
+	G50V2   GroupVariation = 50<<8 | 2   // Time and Date - Absolute Time and Interval
+	G50V3   GroupVariation = 50<<8 | 3   // Time and Date - Absolute Time at Last Recorded Time
+	G50V4   GroupVariation = 50<<8 | 4   // Time and Date - Indexed Absolute Time and Long Interval
+	G51V1   GroupVariation = 51<<8 | 1   // Time and Date CTO - Absolute Time, Synchronized
+	G51V2   GroupVariation = 51<<8 | 2   // Time and Date CTO - Absolute Time, Unsynchronized
+	G52V1   GroupVariation = 52<<8 | 1   // Time Delay - Coarse
+	G52V2   GroupVariation = 52<<8 | 2   // Time Delay - Fine
+	G60V1   GroupVariation = 60<<8 | 1   // Class Objects - Class 0 Data
+	G60V2   GroupVariation = 60<<8 | 2   // Class Objects - Class 1 Data
+	G60V3   GroupVariation = 60<<8 | 3   // Class Objects - Class 2 Data
+	G60V4   GroupVariation = 60<<8 | 4   // Class Objects - Class 3 Data
+	G70V1   GroupVariation = 70<<8 | 1   // File-control - File Identifier
+	G70V2   GroupVariation = 70<<8 | 2   // File-control - Authentication
+	G70V3   GroupVariation = 70<<8 | 3   // File-control - File Command
+	G70V4   GroupVariation = 70<<8 | 4   // File-control - File Command Status
+	G70V5   GroupVariation = 70<<8 | 5   // File-control - File Transport
+	G70V6   GroupVariation = 70<<8 | 6   // File-control - File Transport Status
+	G70V7   GroupVariation = 70<<8 | 7   // File-control - File Descriptor
+	G70V8   GroupVariation = 70<<8 | 8   // File-control - File Specification String
+	G80V1   GroupVariation = 80<<8 | 1   // Internal Indications - Packed Format
+	G83V1   GroupVariation = 83<<8 | 1   // Data Set - Private Registration Object
+	G83V2   GroupVariation = 83<<8 | 2   // Data Set - Private Registration Object Descriptor
+	G85V1   GroupVariation = 85<<8 | 1   // Data Set Prototype - With UUID
+	G86V1   GroupVariation = 86<<8 | 1   // Data Set Descriptor - Data Set Contents
+	G86V2   GroupVariation = 86<<8 | 2   // Data Set Descriptor - Characteristics
+	G86V3   GroupVariation = 86<<8 | 3   // Data Set Descriptor - Point Index Attributes
+	G87V1   GroupVariation = 87<<8 | 1   // Data Set - Present Value
+	G88V1   GroupVariation = 88<<8 | 1   // Data Set Event - Snapshot
+	G90V1   GroupVariation = 90<<8 | 1   // Application - Identifier
+	G91V1   GroupVariation = 91<<8 | 1   // Status of Requested Operation - Active Configuration
+	G101V1  GroupVariation = 101<<8 | 1  // Binary-Coded Decimal Integer - Small
+	G101V2  GroupVariation = 101<<8 | 2  // Binary-Coded Decimal Integer - Medium
+	G101V3  GroupVariation = 101<<8 | 3  // Binary-Coded Decimal Integer - Large
+	G102V1  GroupVariation = 102<<8 | 1  // Unsigned Integer - 8-bit
+	G120V1  GroupVariation = 120<<8 | 1  // Authentication - Challenge
+	G120V2  GroupVariation = 120<<8 | 2  // Authentication - Reply
+	G120V3  GroupVariation = 120<<8 | 3  // Authentication - Aggressive Mode Request
+	G120V4  GroupVariation = 120<<8 | 4  // Authentication - Session Key Status Request
+	G120V5  GroupVariation = 120<<8 | 5  // Authentication - Session Key Status
+	G120V6  GroupVariation = 120<<8 | 6  // Authentication - Session Key Change
+	G120V7  GroupVariation = 120<<8 | 7  // Authentication - Error
+	G120V8  GroupVariation = 120<<8 | 8  // Authentication - User Certificate
+	G120V9  GroupVariation = 120<<8 | 9  // Authentication - MAC
+	G120V10 GroupVariation = 120<<8 | 10 // Authentication - User Status Change
+	G120V11 GroupVariation = 120<<8 | 11 // Authentication - Update Key Change Request
+	G120V12 GroupVariation = 120<<8 | 12 // Authentication - Update Key Change Reply
+	G120V13 GroupVariation = 120<<8 | 13 // Authentication - Update Key Change
+	G120V14 GroupVariation = 120<<8 | 14 // Authentication - Update Key Change Signature
+	G120V15 GroupVariation = 120<<8 | 15 // Authentication - Update Key Change Confirmation
+	G121V0  GroupVariation = 121 << 8    // Security Statistic - Any Variation
+	G121V1  GroupVariation = 121<<8 | 1  // Security Statistic - 32-bit With Flag
+	G122V0  GroupVariation = 122 << 8    // Security Statistic Event - Any Variation
+	G122V1  GroupVariation = 122<<8 | 1  // Security Statistic Event - 32-bit With Flag
+	G122V2  GroupVariation = 122<<8 | 2  // Security Statistic Event - 32-bit With Flag and Time
+)
+
+var table = map[GroupVariation]*desc{
+	G1V0:    {name: "Binary Input - Any Variation", fam: fAny},
+	G1V1:    {name: "Binary Input - Packed Format", fam: fBinaryPacked},
+	G1V2:    {name: "Binary Input - With Flags", fam: fBinary, flags: true},
+	G2V0:    {name: "Binary Input Event - Any Variation", fam: fAny, event: true},
+	G2V1:    {name: "Binary Input Event - Without Time", fam: fBinary, flags: true, event: true},
+	G2V2:    {name: "Binary Input Event - With Absolute Time", fam: fBinary, flags: true, time: tAbs, event: true},
+	G2V3:    {name: "Binary Input Event - With Relative Time", fam: fBinary, flags: true, time: tRel, event: true},
+	G3V0:    {name: "Double-bit Binary Input - Any Variation", fam: fAny},
+	G3V1:    {name: "Double-bit Binary Input - Packed Format", fam: fDoubleBitPacked},
+	G3V2:    {name: "Double-bit Binary Input - With Flags", fam: fDoubleBit, flags: true},
+	G4V0:    {name: "Double-bit Binary Input Event - Any Variation", fam: fAny, event: true},
+	G4V1:    {name: "Double-bit Binary Input Event - Without Time", fam: fDoubleBit, flags: true, event: true},
+	G4V2:    {name: "Double-bit Binary Input Event - With Absolute Time", fam: fDoubleBit, flags: true, time: tAbs, event: true},
+	G4V3:    {name: "Double-bit Binary Input Event - With Relative Time", fam: fDoubleBit, flags: true, time: tRel, event: true},
+	G10V0:   {name: "Binary Output - Any Variation", fam: fAny},
+	G10V1:   {name: "Binary Output - Packed Format", fam: fBinaryPacked},
+	G10V2:   {name: "Binary Output - Output Status With Flags", fam: fBinary, flags: true},
+	G11V0:   {name: "Binary Output Event - Any Variation", fam: fAny, event: true},
+	G11V1:   {name: "Binary Output Event - Status Without Time", fam: fBinary, flags: true, event: true},
+	G11V2:   {name: "Binary Output Event - Status With Time", fam: fBinary, flags: true, time: tAbs, event: true},
+	G12V0:   {name: "Binary Output Command - Any Variation", fam: fAny},
+	G12V1:   {name: "Binary Output Command - Control Relay Output Block", fam: fCROB},
+	G12V2:   {name: "Binary Output Command - Pattern Control Block", fam: fCROB},
+	G12V3:   {name: "Binary Output Command - Pattern Mask", fam: fBinaryPacked},
+	G13V0:   {name: "Binary Output Command Event - Any Variation", fam: fAny, event: true},
+	G13V1:   {name: "Binary Output Command Event - Without Time", fam: fBinaryCommandEvent, event: true},
+	G13V2:   {name: "Binary Output Command Event - With Time", fam: fBinaryCommandEvent, time: tAbs, event: true},
+	G20V0:   {name: "Counter - Any Variation", fam: fAny},
+	G20V1:   {name: "Counter - 32-bit With Flag", fam: fCounter, num: nU32, flags: true},
+	G20V2:   {name: "Counter - 16-bit With Flag", fam: fCounter, num: nU16, flags: true},
+	G20V3:   {name: "Counter - 32-bit Delta With Flag", fam: fCounter, num: nU32, flags: true},
+	G20V4:   {name: "Counter - 16-bit Delta With Flag", fam: fCounter, num: nU16, flags: true},
+	G20V5:   {name: "Counter - 32-bit Without Flag", fam: fCounter, num: nU32},
+	G20V6:   {name: "Counter - 16-bit Without Flag", fam: fCounter, num: nU16},
+	G20V7:   {name: "Counter - 32-bit Delta Without Flag", fam: fCounter, num: nU32},
+	G20V8:   {name: "Counter - 16-bit Delta Without Flag", fam: fCounter, num: nU16},
+	G21V0:   {name: "Frozen Counter - Any Variation", fam: fAny},
+	G21V1:   {name: "Frozen Counter - 32-bit With Flag", fam: fCounter, num: nU32, flags: true},
+	G21V2:   {name: "Frozen Counter - 16-bit With Flag", fam: fCounter, num: nU16, flags: true},
+	G21V3:   {name: "Frozen Counter - 32-bit Delta With Flag", fam: fCounter, num: nU32, flags: true},
+	G21V4:   {name: "Frozen Counter - 16-bit Delta With Flag", fam: fCounter, num: nU16, flags: true},
+	G21V5:   {name: "Frozen Counter - 32-bit With Flag and Time", fam: fCounter, num: nU32, flags: true, time: tAbs},
+	G21V6:   {name: "Frozen Counter - 16-bit With Flag and Time", fam: fCounter, num: nU16, flags: true, time: tAbs},
+	G21V7:   {name: "Frozen Counter - 32-bit Delta With Flag and Time", fam: fCounter, num: nU32, flags: true, time: tAbs},
+	G21V8:   {name: "Frozen Counter - 16-bit Delta With Flag and Time", fam: fCounter, num: nU16, flags: true, time: tAbs},
+	G21V9:   {name: "Frozen Counter - 32-bit Without Flag", fam: fCounter, num: nU32},
+	G21V10:  {name: "Frozen Counter - 16-bit Without Flag", fam: fCounter, num: nU16},
+	G21V11:  {name: "Frozen Counter - 32-bit Delta Without Flag", fam: fCounter, num: nU32},
+	G21V12:  {name: "Frozen Counter - 16-bit Delta Without Flag", fam: fCounter, num: nU16},
+	G22V0:   {name: "Counter Event - Any Variation", fam: fAny, event: true},
+	G22V1:   {name: "Counter Event - 32-bit With Flag", fam: fCounter, num: nU32, flags: true, event: true},
+	G22V2:   {name: "Counter Event - 16-bit With Flag", fam: fCounter, num: nU16, flags: true, event: true},
+	G22V3:   {name: "Counter Event - 32-bit Delta With Flag", fam: fCounter, num: nU32, flags: true, event: true},
+	G22V4:   {name: "Counter Event - 16-bit Delta With Flag", fam: fCounter, num: nU16, flags: true, event: true},
+	G22V5:   {name: "Counter Event - 32-bit With Flag and Time", fam: fCounter, num: nU32, flags: true, time: tAbs, event: true},
+	G22V6:   {name: "Counter Event - 16-bit With Flag and Time", fam: fCounter, num: nU16, flags: true, time: tAbs, event: true},
+	G22V7:   {name: "Counter Event - 32-bit Delta With Flag and Time", fam: fCounter, num: nU32, flags: true, time: tAbs, event: true},
+	G22V8:   {name: "Counter Event - 16-bit Delta With Flag and Time", fam: fCounter, num: nU16, flags: true, time: tAbs, event: true},
+	G23V0:   {name: "Frozen Counter Event - Any Variation", fam: fAny, event: true},
+	G23V1:   {name: "Frozen Counter Event - 32-bit With Flag", fam: fCounter, num: nU32, flags: true, event: true},
+	G23V2:   {name: "Frozen Counter Event - 16-bit With Flag", fam: fCounter, num: nU16, flags: true, event: true},
+	G23V3:   {name: "Frozen Counter Event - 32-bit Delta With Flag", fam: fCounter, num: nU32, flags: true, event: true},
+	G23V4:   {name: "Frozen Counter Event - 16-bit Delta With Flag", fam: fCounter, num: nU16, flags: true, event: true},
+	G23V5:   {name: "Frozen Counter Event - 32-bit With Flag and Time", fam: fCounter, num: nU32, flags: true, time: tAbs, event: true},
+	G23V6:   {name: "Frozen Counter Event - 16-bit With Flag and Time", fam: fCounter, num: nU16, flags: true, time: tAbs, event: true},
+	G23V7:   {name: "Frozen Counter Event - 32-bit Delta With Flag and Time", fam: fCounter, num: nU32, flags: true, time: tAbs, event: true},
+	G23V8:   {name: "Frozen Counter Event - 16-bit Delta With Flag and Time", fam: fCounter, num: nU16, flags: true, time: tAbs, event: true},
+	G30V0:   {name: "Analog Input - Any Variation", fam: fAny},
+	G30V1:   {name: "Analog Input - 32-bit With Flag", fam: fAnalog, num: nI32, flags: true},
+	G30V2:   {name: "Analog Input - 16-bit With Flag", fam: fAnalog, num: nI16, flags: true},
+	G30V3:   {name: "Analog Input - 32-bit Without Flag", fam: fAnalog, num: nI32},
+	G30V4:   {name: "Analog Input - 16-bit Without Flag", fam: fAnalog, num: nI16},
+	G30V5:   {name: "Analog Input - Single-precision With Flag", fam: fAnalog, num: nF32, flags: true},
+	G30V6:   {name: "Analog Input - Double-precision With Flag", fam: fAnalog, num: nF64, flags: true},
+	G31V0:   {name: "Frozen Analog Input - Any Variation", fam: fAny},
+	G31V1:   {name: "Frozen Analog Input - 32-bit With Flag", fam: fAnalog, num: nI32, flags: true},
+	G31V2:   {name: "Frozen Analog Input - 16-bit With Flag", fam: fAnalog, num: nI16, flags: true},
+	G31V3:   {name: "Frozen Analog Input - 32-bit With Flag With Time", fam: fAnalog, num: nI32, flags: true, time: tAbs},
+	G31V4:   {name: "Frozen Analog Input - 16-bit With Flag With Time", fam: fAnalog, num: nI16, flags: true, time: tAbs},
+	G31V5:   {name: "Frozen Analog Input - 32-bit Without Flag", fam: fAnalog, num: nI32},
+	G31V6:   {name: "Frozen Analog Input - 16-bit Without Flag", fam: fAnalog, num: nI16},
+	G31V7:   {name: "Frozen Analog Input - Single-precision With Flag", fam: fAnalog, num: nF32, flags: true},
+	G31V8:   {name: "Frozen Analog Input - Double-precision With Flag", fam: fAnalog, num: nF64, flags: true},
+	G32V0:   {name: "Analog Input Event - Any Variation", fam: fAny, event: true},
+	G32V1:   {name: "Analog Input Event - 32-bit With Flag", fam: fAnalog, num: nI32, flags: true, event: true},
+	G32V2:   {name: "Analog Input Event - 16-bit With Flag", fam: fAnalog, num: nI16, flags: true, event: true},
+	G32V3:   {name: "Analog Input Event - 32-bit With Flag With Time", fam: fAnalog, num: nI32, flags: true, time: tAbs, event: true},
+	G32V4:   {name: "Analog Input Event - 16-bit With Flag With Time", fam: fAnalog, num: nI16, flags: true, time: tAbs, event: true},
+	G32V5:   {name: "Analog Input Event - Single-precision With Flag", fam: fAnalog, num: nF32, flags: true, event: true},
+	G32V6:   {name: "Analog Input Event - Double-precision With Flag", fam: fAnalog, num: nF64, flags: true, event: true},
+	G32V7:   {name: "Analog Input Event - Single-precision With Flag With Time", fam: fAnalog, num: nF32, flags: true, time: tAbs, event: true},
+	G32V8:   {name: "Analog Input Event - Double-precision With Flag With Time", fam: fAnalog, num: nF64, flags: true, time: tAbs, event: true},
+	G33V0:   {name: "Frozen Analog Input Event - Any Variation", fam: fAny, event: true},
+	G33V1:   {name: "Frozen Analog Input Event - 32-bit With Flag", fam: fAnalog, num: nI32, flags: true, event: true},
+	G33V2:   {name: "Frozen Analog Input Event - 16-bit With Flag", fam: fAnalog, num: nI16, flags: true, event: true},
+	G33V3:   {name: "Frozen Analog Input Event - 32-bit With Flag With Time", fam: fAnalog, num: nI32, flags: true, time: tAbs, event: true},
+	G33V4:   {name: "Frozen Analog Input Event - 16-bit With Flag With Time", fam: fAnalog, num: nI16, flags: true, time: tAbs, event: true},
+	G33V5:   {name: "Frozen Analog Input Event - Single-precision With Flag", fam: fAnalog, num: nF32, flags: true, event: true},
+	G33V6:   {name: "Frozen Analog Input Event - Double-precision With Flag", fam: fAnalog, num: nF64, flags: true, event: true},
+	G33V7:   {name: "Frozen Analog Input Event - Single-precision With Flag With Time", fam: fAnalog, num: nF32, flags: true, time: tAbs, event: true},
+	G33V8:   {name: "Frozen Analog Input Event - Double-precision With Flag With Time", fam: fAnalog, num: nF64, flags: true, time: tAbs, event: true},
+	G34V0:   {name: "Analog Input Deadband - Any Variation", fam: fAny},
+	G34V1:   {name: "Analog Input Deadband - 16-bit", fam: fDeadband, num: nU16},
+	G34V2:   {name: "Analog Input Deadband - 32-bit", fam: fDeadband, num: nU32},
+	G34V3:   {name: "Analog Input Deadband - Single-precision", fam: fDeadband, num: nF32},
+	G40V0:   {name: "Analog Output Status - Any Variation", fam: fAny},
+	G40V1:   {name: "Analog Output Status - 32-bit With Flag", fam: fAnalog, num: nI32, flags: true},
+	G40V2:   {name: "Analog Output Status - 16-bit With Flag", fam: fAnalog, num: nI16, flags: true},
+	G40V3:   {name: "Analog Output Status - Single-precision With Flag", fam: fAnalog, num: nF32, flags: true},
+	G40V4:   {name: "Analog Output Status - Double-precision With Flag", fam: fAnalog, num: nF64, flags: true},
+	G41V0:   {name: "Analog Output Block - Any Variation", fam: fAny},
+	G41V1:   {name: "Analog Output Block - 32-bit", fam: fAnalogOutput, num: nI32},
+	G41V2:   {name: "Analog Output Block - 16-bit", fam: fAnalogOutput, num: nI16},
+	G41V3:   {name: "Analog Output Block - Single-precision", fam: fAnalogOutput, num: nF32},
+	G41V4:   {name: "Analog Output Block - Double-precision", fam: fAnalogOutput, num: nF64},
+	G42V0:   {name: "Analog Output Event - Any Variation", fam: fAny, event: true},
+	G42V1:   {name: "Analog Output Event - 32-bit With Flag", fam: fAnalog, num: nI32, flags: true, event: true},
+	G42V2:   {name: "Analog Output Event - 16-bit With Flag", fam: fAnalog, num: nI16, flags: true, event: true},
+	G42V3:   {name: "Analog Output Event - 32-bit With Flag With Time", fam: fAnalog, num: nI32, flags: true, time: tAbs, event: true},
+	G42V4:   {name: "Analog Output Event - 16-bit With Flag With Time", fam: fAnalog, num: nI16, flags: true, time: tAbs, event: true},
+	G42V5:   {name: "Analog Output Event - Single-precision With Flag", fam: fAnalog, num: nF32, flags: true, event: true},
+	G42V6:   {name: "Analog Output Event - Double-precision With Flag", fam: fAnalog, num: nF64, flags: true, event: true},
+	G42V7:   {name: "Analog Output Event - Single-precision With Flag With Time", fam: fAnalog, num: nF32, flags: true, time: tAbs, event: true},
+	G42V8:   {name: "Analog Output Event - Double-precision With Flag With Time", fam: fAnalog, num: nF64, flags: true, time: tAbs, event: true},
+	G43V0:   {name: "Analog Output Command Event - Any Variation", fam: fAny, event: true},
+	G43V1:   {name: "Analog Output Command Event - 32-bit", fam: fAnalogCommandEvent, num: nI32, event: true},
+	G43V2:   {name: "Analog Output Command Event - 16-bit", fam: fAnalogCommandEvent, num: nI16, event: true},
+	G43V3:   {name: "Analog Output Command Event - 32-bit With Time", fam: fAnalogCommandEvent, num: nI32, time: tAbs, event: true},
+	G43V4:   {name: "Analog Output Command Event - 16-bit With Time", fam: fAnalogCommandEvent, num: nI16, time: tAbs, event: true},
+	G43V5:   {name: "Analog Output Command Event - Single-precision", fam: fAnalogCommandEvent, num: nF32, event: true},
+	G43V6:   {name: "Analog Output Command Event - Double-precision", fam: fAnalogCommandEvent, num: nF64, event: true},
+	G43V7:   {name: "Analog Output Command Event - Single-precision With Time", fam: fAnalogCommandEvent, num: nF32, time: tAbs, event: true},
+	G43V8:   {name: "Analog Output Command Event - Double-precision With Time", fam: fAnalogCommandEvent, num: nF64, time: tAbs, event: true},
+	G50V1:   {name: "Time and Date - Absolute Time", fam: fTime},
+	G50V2:   {name: "Time and Date - Absolute Time and Interval", fam: fTimeInterval},
+	G50V3:   {name: "Time and Date - Absolute Time at Last Recorded Time", fam: fTime},
+	G50V4:   {name: "Time and Date - Indexed Absolute Time and Long Interval", fam: fTimeIntervalUnits},
+	G51V1:   {name: "Time and Date CTO - Absolute Time, Synchronized", fam: fCTO},
+	G51V2:   {name: "Time and Date CTO - Absolute Time, Unsynchronized", fam: fCTO},
+	G52V1:   {name: "Time Delay - Coarse", fam: fDelayCoarse},
+	G52V2:   {name: "Time Delay - Fine", fam: fDelayFine},
+	G60V1:   {name: "Class Objects - Class 0 Data", fam: fNone},
+	G60V2:   {name: "Class Objects - Class 1 Data", fam: fNone},
+	G60V3:   {name: "Class Objects - Class 2 Data", fam: fNone},
+	G60V4:   {name: "Class Objects - Class 3 Data", fam: fNone},
+	G70V1:   {name: "File-control - File Identifier", fam: fRaw},
+	G70V2:   {name: "File-control - Authentication", fam: fFileAuth},
+	G70V3:   {name: "File-control - File Command", fam: fFileCommand},
+	G70V4:   {name: "File-control - File Command Status", fam: fFileCommandStatus},
+	G70V5:   {name: "File-control - File Transport", fam: fFileTransport},
+	G70V6:   {name: "File-control - File Transport Status", fam: fFileTransportStatus},
+	G70V7:   {name: "File-control - File Descriptor", fam: fFileDescriptor},
+	G70V8:   {name: "File-control - File Specification String", fam: fFileSpec},
+	G80V1:   {name: "Internal Indications - Packed Format", fam: fBinaryPacked},
+	G83V1:   {name: "Data Set - Private Registration Object", fam: fRaw},
+	G83V2:   {name: "Data Set - Private Registration Object Descriptor", fam: fRaw},
+	G85V1:   {name: "Data Set Prototype - With UUID", fam: fRaw},
+	G86V1:   {name: "Data Set Descriptor - Data Set Contents", fam: fRaw},
+	G86V2:   {name: "Data Set Descriptor - Characteristics", fam: fRaw},
+	G86V3:   {name: "Data Set Descriptor - Point Index Attributes", fam: fRaw},
+	G87V1:   {name: "Data Set - Present Value", fam: fRaw},
+	G88V1:   {name: "Data Set Event - Snapshot", fam: fRaw, event: true},
+	G90V1:   {name: "Application - Identifier", fam: fRaw},
+	G91V1:   {name: "Status of Requested Operation - Active Configuration", fam: fRaw},
+	G101V1:  {name: "Binary-Coded Decimal Integer - Small", fam: fBCD},
+	G101V2:  {name: "Binary-Coded Decimal Integer - Medium", fam: fBCD},
+	G101V3:  {name: "Binary-Coded Decimal Integer - Large", fam: fBCD},
+	G102V1:  {name: "Unsigned Integer - 8-bit", fam: fUint8},
+	G120V1:  {name: "Authentication - Challenge", fam: fAuth},
+	G120V2:  {name: "Authentication - Reply", fam: fAuth},
+	G120V3:  {name: "Authentication - Aggressive Mode Request", fam: fAuth},
+	G120V4:  {name: "Authentication - Session Key Status Request", fam: fAuth},
+	G120V5:  {name: "Authentication - Session Key Status", fam: fAuth},
+	G120V6:  {name: "Authentication - Session Key Change", fam: fAuth},
+	G120V7:  {name: "Authentication - Error", fam: fAuth},
+	G120V8:  {name: "Authentication - User Certificate", fam: fAuth},
+	G120V9:  {name: "Authentication - MAC", fam: fAuth},
+	G120V10: {name: "Authentication - User Status Change", fam: fAuth},
+	G120V11: {name: "Authentication - Update Key Change Request", fam: fAuth},
+	G120V12: {name: "Authentication - Update Key Change Reply", fam: fAuth},
+	G120V13: {name: "Authentication - Update Key Change", fam: fAuth},
+	G120V14: {name: "Authentication - Update Key Change Signature", fam: fAuth},
+	G120V15: {name: "Authentication - Update Key Change Confirmation", fam: fAuth},
+	G121V0:  {name: "Security Statistic - Any Variation", fam: fAny},
+	G121V1:  {name: "Security Statistic - 32-bit With Flag", fam: fSecStat},
+	G122V0:  {name: "Security Statistic Event - Any Variation", fam: fAny, event: true},
+	G122V1:  {name: "Security Statistic Event - 32-bit With Flag", fam: fSecStat, event: true},
+	G122V2:  {name: "Security Statistic Event - 32-bit With Flag and Time", fam: fSecStat, time: tAbs, event: true},
+}
