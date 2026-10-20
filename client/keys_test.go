@@ -215,3 +215,65 @@ func TestSessionKeyChangeNoConfirmation(t *testing.T) {
 		t.Fatalf("key change without confirmation: %v", err)
 	}
 }
+
+// TestChallengeReplySequence: the reply to a challenge keeps the sequence
+// number of the challenge, which is that of the critical request, and the
+// response to the request carries it too.
+func TestChallengeReplySequence(t *testing.T) {
+	key := []byte("pre-shared session key 32 octets")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+	replySeq := make(chan uint8, 1)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		ch := channel.New(conn, channel.Config{})
+		var sess *channel.Session
+		var critical *app.Fragment
+		send := func(f *app.Fragment) {
+			b, _ := f.Encode()
+			_ = sess.Send(context.Background(), b)
+		}
+		sess = ch.AddSession(channel.SessionConfig{Local: 10, Remote: 1, OnFragment: func(b []byte, _ link.Address) {
+			req, err := app.Decode(b)
+			if err != nil {
+				return
+			}
+			switch req.Function {
+			case app.FuncDirectOperate:
+				critical = req
+				send(&app.Fragment{Control: app.SingleControl(req.Control.Seq), Function: app.FuncAuthResponse,
+					Headers: []app.Header{app.FreeFormat(app.G120V1, app.AuthChallenge{CSQ: 1, User: 1,
+						MAC: app.MACHMACSHA256Trunc16, Reason: app.ReasonCritical, Data: bytes.Repeat([]byte{7}, 32)})}})
+			case app.FuncAuthRequest:
+				replySeq <- req.Control.Seq
+				send(&app.Fragment{Control: app.SingleControl(req.Control.Seq), Function: app.FuncResponse, Headers: critical.Headers})
+			case app.FuncConfirm:
+			default:
+				send(&app.Fragment{Control: app.SingleControl(req.Control.Seq), Function: app.FuncResponse})
+			}
+		}})
+		ch.Start()
+		t.Cleanup(func() { ch.Close(nil); <-ch.Done() })
+	}()
+	c, err := Dial(testCtx(t), l.Addr().String(), WithAutoIntegrity(false), WithResponseTimeout(time.Second),
+		WithSecureAuthentication(secauth.User{Number: 1, Key: key}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	c.mu.Lock()
+	seq := c.seq
+	c.mu.Unlock()
+	if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
+		t.Fatalf("challenged control: %v", err)
+	}
+	if got := <-replySeq; got != seq {
+		t.Fatalf("reply sent with sequence %d, the critical request had %d", got, seq)
+	}
+}
