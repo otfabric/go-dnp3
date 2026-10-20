@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop generate generate-check upstream-watch
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -135,7 +135,10 @@ generate-check: ## Fail when the generated files differ from what app/catalog.js
 upstream-watch: ## Compare app/catalog.json with the upstream object definitions (stepfunc dnp3, DSC go-dnp3)
 	@go run ./internal/cmd/upstreamwatch
 
-check: generate-check fmt fmt-check lint lint-ci vet vuln test coverage examples ## Run generate-check + format + lint + vet + vuln + test
+coverpkg-check: ## Fail when CI's coverpkg (.github/workflows/ci.yml) is not COVER_PKGS
+	@grep -qF -- "$(COVER_PKGS)" .github/workflows/ci.yml || { echo "coverpkg in .github/workflows/ci.yml must be: $(COVER_PKGS)"; exit 1; }
+
+check: generate-check coverpkg-check fmt fmt-check lint lint-ci vet vuln test coverage examples ## Run generate-check + coverpkg-check + format + lint + vet + vuln + test
 
 clean: ## Remove generated binaries and coverage artifacts
 	@echo "Cleaning up"
