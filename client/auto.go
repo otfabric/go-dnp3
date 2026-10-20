@@ -180,16 +180,42 @@ func (c *Client) runStartup(ctx context.Context) error {
 	return nil
 }
 
-// keyChangeLoop changes the session keys at the key change interval.
+// keyRetryDelay is how soon the session keys are changed again while a
+// connected client has none, the first time; it doubles up to the key
+// change interval.
+const keyRetryDelay = time.Second
+
+// keyChangeLoop changes the session keys at the key change interval, and
+// sooner while connected without session keys: after a key change that
+// failed, with a backoff.
 func (c *Client) keyChangeLoop(stop <-chan struct{}) {
-	t := time.NewTicker(c.opts.keyChange)
+	retry := keyRetryDelay
+	t := time.NewTimer(c.opts.keyChange)
 	defer t.Stop()
 	for {
 		select {
 		case <-stop:
 			return
+		case <-c.rekey:
 		case <-t.C:
-			c.enqueue(task{name: "key-change", run: c.changeSessionKeys})
 		}
+		c.enqueue(task{name: "key-change", run: c.changeSessionKeys})
+		wait := c.opts.keyChange
+		if c.State() == dnp3.StateConnected && c.controlKey() == nil {
+			wait = min(retry, wait)
+			retry = min(2*retry, c.opts.keyChange)
+		} else {
+			retry = keyRetryDelay
+		}
+		// Since Go 1.23 Reset discards a value the timer may have sent.
+		t.Reset(wait)
+	}
+}
+
+// rekeySoon asks the key change loop for a session key change now.
+func (c *Client) rekeySoon() {
+	select {
+	case c.rekey <- struct{}{}:
+	default:
 	}
 }

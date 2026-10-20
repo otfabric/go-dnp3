@@ -276,7 +276,7 @@ func (a *association) assignClass(req *app.Fragment) *response {
 			continue
 		}
 		t, isEvent, ok := pointTypeOfGroup(h.GV.Group())
-		if !ok || isEvent || !have {
+		if !ok || isEvent || !have || t == TimeAndInterval || t == SecurityStatistic {
 			r.iin |= app.IINParameterError
 			continue
 		}

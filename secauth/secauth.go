@@ -6,10 +6,13 @@
 //
 // The procedures that use it are wired into the client and the server
 // through their WithSecureAuthentication option: the challenge of critical
-// requests and the session key change, with HMAC-SHA-256 (which every SAv5
-// device must implement) or HMAC-SHA-1, and AES-128 or AES-256 key wrap
-// (RFC 3394). Update keys are configured on both ends out of band: the
-// update key change and user management procedures are not implemented.
+// requests ([DefaultCritical] by default), aggressive mode
+// ([AggressiveOverhead] is what it adds to a request), the session key
+// change and the security statistics ([Statistic]), with HMAC-SHA-256
+// (which every SAv5 device must implement) or HMAC-SHA-1, and AES-128 or
+// AES-256 key wrap (RFC 3394). Update keys are configured on both ends out
+// of band: the update key change and user management procedures, and
+// AES-GMAC, are not implemented.
 package secauth
 
 import (

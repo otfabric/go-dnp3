@@ -33,7 +33,7 @@ make check
 # Run the tests with the race detector
 make test
 
-# Run the codec fuzz targets (FUZZTIME=30s by default)
+# Run the codec and outstation fuzz targets (FUZZTIME=30s by default)
 make fuzz
 
 # Run the codec benchmarks
@@ -51,7 +51,7 @@ make build
 ### Code
 
 - **No dependencies** outside the standard library. The module's value for users in regulated environments depends on it
-- **Codecs stay pure**: `link`, `transport` and `app` do no I/O and keep no state across fragments
+- **Codecs stay pure**: `link`, `transport` and `app` do no I/O beyond `link.Reader` over an `io.Reader` and keep no state across fragments
 - **Every exported symbol is documented**, with the standard's terms; comments end with a period (golangci-lint's `godot`)
 - **Errors** are sentinels wrapped with detail, or typed errors for answers of the peer; see [ERRORS.md](ERRORS.md). Never return a bare `errors.New` from a public function
 - **Concurrency**: say in the comment which goroutine owns a field. Prefer one goroutine owning state over locks around it, as the channel, the association and the client do

@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
@@ -41,6 +42,9 @@ func (c *Client) onAuthResponse(ctx context.Context, sess *channel.Session, f *a
 				if err != nil {
 					return 0, fmt.Errorf("%w: %w", dnp3.ErrAuthentication, err)
 				}
+				c.mu.Lock()
+				c.lastChallenge, c.csq = append([]byte(nil), raw...), v.CSQ
+				c.mu.Unlock()
 				seq := f.Control.Seq
 				reply := &app.Fragment{Control: app.SingleControl(seq), Function: app.FuncAuthRequest,
 					Headers: []app.Header{app.FreeFormat(app.G120V2, app.AuthReply{CSQ: v.CSQ, User: u.Number, MAC: mac})}}
@@ -60,4 +64,34 @@ func (c *Client) onAuthResponse(ctx context.Context, sess *channel.Session, f *a
 		}
 	}
 	return -1, nil
+}
+
+// aggressive turns req into an aggressive mode request when its function
+// is configured for it and a challenge was received on this channel: a
+// g120v3 object first and a g120v9 MAC over the last challenge and the
+// request last.
+func (c *Client) aggressive(req *app.Fragment) error {
+	u := c.opts.auth
+	if u == nil || !slices.Contains(c.opts.aggressive, req.Function) {
+		return nil
+	}
+	c.mu.Lock()
+	last, csq := c.lastChallenge, c.csq
+	c.mu.Unlock()
+	key := c.controlKey()
+	if last == nil || key == nil {
+		return nil
+	}
+	req.Headers = append([]app.Header{app.Counted(app.G120V3, app.AuthAggressiveMode{CSQ: csq + 1, User: u.Number})}, req.Headers...)
+	b, err := req.Encode()
+	if err != nil {
+		return err
+	}
+	// WithSecureAuthentication validated the algorithm: MAC cannot fail.
+	mac, _ := secauth.MAC(u.Algorithm(), key, secauth.AuthData(last, b))
+	req.Headers = append(req.Headers, app.FreeFormat(app.G120V9, app.AuthMAC{MAC: mac}))
+	c.mu.Lock()
+	c.csq = csq + 1
+	c.mu.Unlock()
+	return nil
 }

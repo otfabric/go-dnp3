@@ -1,5 +1,60 @@
 # go-dnp3 Releases
 
+## v1.0.0
+
+**Date:** 2026-10-20
+**Previous release:** v0.2.1
+
+## Summary
+
+The first production release. It completes Secure Authentication with
+aggressive mode and security statistics, adds the dual end point (an
+outstation that connects to its master), and fixes what a new full-stack
+chaos test, parallel tests and an outstation fuzz target found. The
+interop suite covers every feature the dnp3-interop v0.2.0 images offer,
+in both directions. From this release on the API follows semantic
+versioning: no breaking change without a new major version.
+
+**Upgrade notes**
+
+- `client.Connect` now closes the channel when the startup sequence fails (for example a refused session key change), so the client is disconnected afterwards. It used to report the error but keep the channel open. `client.Dial` is unchanged: it already closed the client.
+- `client.New` refuses `WithAggressiveMode` without `WithSecureAuthentication` (`ErrInvalidOption`).
+- `server.PointType` has new values after `OctetString`: `SecurityStatistic`, `BinaryOutputCommand`, `AnalogOutputCommand` and `TimeAndInterval`. A `switch` over point types may need cases for them. `Database.Add` refuses the first three, which the outstation keeps itself; `TimeAndInterval` points are added like the others, without a class.
+
+## Changes
+
+### Added
+
+- **Aggressive mode** (IEEE 1815-2012 clause 7.5.2.2.4), both roles. `client.WithAggressiveMode` sends critical requests with a g120v3 object first and a g120v9 MAC over the last challenge and the request last, so the outstation executes them without a challenge. The outstation verifies the MAC and the challenge sequence number. Verified between go-dnp3's own ends: no reference in dnp3-interop implements it.
+- **Security statistics** (clause 7.6): the outstation keeps the 18 statistics per association (`secauth.Statistic`), serves them as g121v1 and reports g122v2 events every `SecureAuth.StatisticsThreshold` increments in `SecureAuth.StatisticsClass`. Verified against DSC Systems go-dnp3 in both directions.
+- **Dual end point** (annex A.3): `server.DialAndServe` connects to the master, serves the connection and reconnects with backoff (`server.Redial`), with TLS as the TLS client; `client.Accept` makes the master wait for the outstation's connection.
+- **Time and interval** (g50v4): `server.TimeAndInterval` points (`app.AbsoluteTime` with `Units`), read by group and variation; like the reference outstations, not in class 0.
+- **Command events** (g13, g43): an output whose `PointConfig.CommandEventClass` is set reports every executed OPERATE, DIRECT OPERATE and DIRECT OPERATE NO ACK as an event with the commanded state or value and the handler's status (`CommandEventVariation`, default g13v2 and g43v3).
+- `server.SecureAuth.ReplyTimeout` (default `DefaultReplyTimeout`, 10 s): a challenge reply that arrives later is refused.
+- `secauth.DefaultCritical` (shared by both roles; `server.DefaultCritical` is the same slice) and `secauth.AggressiveOverhead`.
+
+### Fixed
+
+- **A master without session keys stayed without them until the next key change interval** (15 minutes by default) when a key change at connect failed while the connection stayed up, or when the outstation refused its keys. It now changes them again right after an authentication failure, and keeps retrying with a backoff from 1 second while it has none.
+- **`Client.Close` waited for a reconnection attempt to time out** (up to 10 seconds, or longer for a slow dial). It now ends the attempt at once.
+- **File writes failed with aggressive mode, or with a receive fragment smaller than the transmit one.** The outstation sized written blocks for its responses only; it now also fits them in a request of its receive size, with room for the aggressive mode objects when secure authentication is on. The master leaves that room too.
+
+### Tests
+
+- A full-stack chaos test: a proxy that corrupts octets, splits and delays writes, and kills connections, while polls, controls, file reads, database updates and, with secure authentication, session key changes run at once. It checks that no data that was not sent is accepted, that no control is executed more often than it was sent, that everything recovers when the faults stop, and that nothing keeps running after Close.
+- Parallel masters with their own session keys, aggressive mode, controls and file transfers against one outstation.
+- `FuzzOutstation`: arbitrary request fragments into an outstation with secure authentication, file transfer and every point type (`make fuzz`, in CI).
+- Interop against dnp3-interop v0.3.0 (contract 1.2): the dual end point in both roles over TCP and TLS; the extended fixture (frozen analog inputs, command events, time and interval) in both directions; security statistic events in both directions; the dnp3py fixture against all four outstations, dnp3py's included.
+- Interop: requests without a response in both directions (DIRECT OPERATE NO ACK, FREEZE AND CLEAR NO ACK), reads of all objects of a group by the reference masters, security statistics in both directions. INTEROPERABILITY.md has the coverage matrix and the comparison with the reference stacks.
+- In-package tests of file transfer on both ends, the dual end point and the new procedures.
+
+### Docs
+
+- Package documentation for `client` and `server`; doc comments on every exported field of the authentication, file and error types.
+- Every document reviewed against the code: the new APIs in API.md, Secure Authentication in ARCHITECTURE.md and SECURITY.md, the new log entries in OBSERVABILITY.md, the dual end point and `Connect`'s behaviour in ERRORS.md, the interop coverage matrix and the remaining gaps in INTEROPERABILITY.md, and a `dialout` example.
+
+---
+
 ## v0.2.1
 
 **Date:** 2026-10-20

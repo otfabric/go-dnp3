@@ -26,6 +26,21 @@ const (
 	FrozenAnalogInput
 	AnalogOutput
 	OctetString
+	// SecurityStatistic are the Secure Authentication statistics (group
+	// 121, events group 122). The outstation keeps them per association
+	// when secure authentication is on; they cannot be added to the
+	// database.
+	SecurityStatistic
+	// BinaryOutputCommand and AnalogOutputCommand are the command events
+	// (groups 13 and 43) of the outputs whose PointConfig has a
+	// CommandEventClass. They have no static objects and cannot be added
+	// to the database.
+	BinaryOutputCommand
+	AnalogOutputCommand
+	// TimeAndInterval are indexed absolute times with an interval (g50v4,
+	// app.AbsoluteTime with Units), for example a schedule. They have no
+	// events and no class.
+	TimeAndInterval
 	numPointTypes
 )
 
@@ -50,6 +65,14 @@ func (t PointType) String() string {
 		return "analog output"
 	case OctetString:
 		return "octet string"
+	case SecurityStatistic:
+		return "security statistic"
+	case BinaryOutputCommand:
+		return "binary output command"
+	case AnalogOutputCommand:
+		return "analog output command"
+	case TimeAndInterval:
+		return "time and interval"
 	default:
 		return fmt.Sprintf("point type %d", uint8(t))
 	}
@@ -64,21 +87,28 @@ type typeInfo struct {
 }
 
 var types = [numPointTypes]typeInfo{
-	BinaryInput:       {1, 2, 2, 2},
-	DoubleBitInput:    {3, 4, 2, 2},
-	BinaryOutput:      {10, 11, 2, 2},
-	Counter:           {20, 22, 1, 5},
-	FrozenCounter:     {21, 23, 1, 5},
-	AnalogInput:       {30, 32, 1, 3},
-	FrozenAnalogInput: {31, 33, 1, 3},
-	AnalogOutput:      {40, 42, 1, 3},
-	OctetString:       {110, 111, 0, 0},
+	BinaryInput:         {1, 2, 2, 2},
+	DoubleBitInput:      {3, 4, 2, 2},
+	BinaryOutput:        {10, 11, 2, 2},
+	Counter:             {20, 22, 1, 5},
+	FrozenCounter:       {21, 23, 1, 5},
+	AnalogInput:         {30, 32, 1, 3},
+	FrozenAnalogInput:   {31, 33, 1, 3},
+	AnalogOutput:        {40, 42, 1, 3},
+	OctetString:         {110, 111, 0, 0},
+	SecurityStatistic:   {121, 122, 1, 2},
+	BinaryOutputCommand: {0, 13, 0, 2},
+	AnalogOutputCommand: {0, 43, 0, 3},
+	TimeAndInterval:     {50, 0, 4, 0},
 }
 
 // pointTypeOfGroup returns the point type whose static or event group is g.
 func pointTypeOfGroup(g uint8) (PointType, bool, bool) {
 	for t := range numPointTypes {
 		switch g {
+		case 0:
+			// Group 0 is device attributes; no type has static group 0
+			// objects.
 		case types[t].staticGroup:
 			return t, false, true
 		case types[t].eventGroup:
@@ -114,6 +144,17 @@ type PointConfig struct {
 	// ExcludeFromClass0 leaves the point out of class 0 responses; it can
 	// still be read by group and variation.
 	ExcludeFromClass0 bool
+
+	// CommandEventClass, for binary and analog outputs, reports every
+	// OPERATE, DIRECT_OPERATE and DIRECT_OPERATE_NR of the point as a
+	// command event in that class: g13 (the commanded state) or g43 (the
+	// commanded value) with the status the handler returned. 0 reports
+	// none.
+	CommandEventClass Class
+
+	// CommandEventVariation is the variation of the command events; 0
+	// selects g13v2 or g43v3 (with time).
+	CommandEventVariation uint8
 }
 
 type point struct {
@@ -156,6 +197,8 @@ func valueKind(t PointType, v app.Value) error {
 		_, ok = v.(app.Counter)
 	case AnalogInput, FrozenAnalogInput, AnalogOutput:
 		_, ok = v.(app.Analog)
+	case TimeAndInterval:
+		_, ok = v.(app.AbsoluteTime)
 	case OctetString:
 		var s app.OctetString
 		s, ok = v.(app.OctetString)
@@ -173,7 +216,7 @@ func valueKind(t PointType, v app.Value) error {
 // Add adds a point with its configuration and initial value. Adding an
 // index that exists replaces its configuration and value.
 func (db *Database) Add(t PointType, index uint32, cfg PointConfig, initial app.Value) error {
-	if t >= numPointTypes {
+	if t >= numPointTypes || t == SecurityStatistic || t == BinaryOutputCommand || t == AnalogOutputCommand {
 		return fmt.Errorf("%w: %s", dnp3.ErrInvalidOption, t)
 	}
 	if err := valueKind(t, initial); err != nil {
@@ -200,11 +243,33 @@ func checkVariation(t PointType, cfg PointConfig) error {
 	if t == OctetString {
 		return nil
 	}
+	if t == TimeAndInterval {
+		if cfg.Class != 0 || cfg.EventVariation != 0 || (cfg.StaticVariation != 0 && cfg.StaticVariation != 4) {
+			return fmt.Errorf("%w: a time and interval is g50v4 and has no events", dnp3.ErrInvalidOption)
+		}
+		return nil
+	}
 	if v := cfg.StaticVariation; v != 0 && !app.GV(ti.staticGroup, v).Known() {
 		return fmt.Errorf("%w: static variation g%dv%d", dnp3.ErrInvalidOption, ti.staticGroup, v)
 	}
 	if v := cfg.EventVariation; v != 0 && !app.GV(ti.eventGroup, v).Known() {
 		return fmt.Errorf("%w: event variation g%dv%d", dnp3.ErrInvalidOption, ti.eventGroup, v)
+	}
+	if cfg.CommandEventClass > 3 {
+		return fmt.Errorf("%w: command event class %d", dnp3.ErrInvalidOption, cfg.CommandEventClass)
+	}
+	if cfg.CommandEventClass != 0 || cfg.CommandEventVariation != 0 {
+		ct := BinaryOutputCommand
+		switch t {
+		case BinaryOutput:
+		case AnalogOutput:
+			ct = AnalogOutputCommand
+		default:
+			return fmt.Errorf("%w: command events for a %s", dnp3.ErrInvalidOption, t)
+		}
+		if v := cfg.CommandEventVariation; v != 0 && !app.GV(types[ct].eventGroup, v).Known() {
+			return fmt.Errorf("%w: command event variation g%dv%d", dnp3.ErrInvalidOption, types[ct].eventGroup, v)
+		}
 	}
 	return nil
 }
@@ -280,7 +345,7 @@ type Batch struct {
 
 // Update is [Database.Update] inside a batch.
 func (b *Batch) Update(t PointType, index uint32, v app.Value, mode EventMode) error {
-	if t >= numPointTypes {
+	if t >= numPointTypes || t == SecurityStatistic || t == BinaryOutputCommand || t == AnalogOutputCommand {
 		return fmt.Errorf("%w: %s", dnp3.ErrInvalidOption, t)
 	}
 	if err := valueKind(t, v); err != nil {

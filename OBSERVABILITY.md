@@ -55,14 +55,21 @@ identifiers.
 | info | `time synchronized` | `time` |
 | info | `master reconnected, closing its previous connection` | |
 | info | `unsolicited response given up` | `seq`, `events` |
+| info | `session keys changed` | `user` |
+| info | `connection to the master lost, reconnecting` (`DialAndServe`, also after a failed dial) | `address`, `error`, `delay` |
 | warn | `connection lost`, `reconnect failed` | `error`, `retry_in` |
 | warn | `request failed, retrying` | `function`, `attempt`, `retry_in`, `error` |
 | warn | `automatic task failed`, `startup sequence failed` | `task`, `error` |
 | warn | `event buffer overflow` | `master`, `class`, `discarded` |
 | warn | `keep-alive failed` | `remote_addr`, `error` |
-| warn | `authentication failed` | `user`, `csq` |
+| warn | `authentication failed`, `challenge reply too late`, `aggressive mode request refused` | `user`, `csq` |
+| warn | `session key change refused` | `user`, `ksq` |
+| warn | `session key change failed` | `user`, `error` |
+| warn | `authentication error received` | `user`, `code` |
+| warn | `objects too large for a fragment left out` | `count` |
 | warn | `connection refused: limit reached` | `remote`, `limit` |
 | warn | `fragment dropped`, `multi-fragment request ignored`, `frame with invalid FCV bit ignored` | |
+| debug | `challenge answered` | `csq`, `user` |
 | debug | `frame sent`, `frame received` | `frame` |
 | debug | `request sent`, `request received`, `response sent`, `fragment received` | `fragment` |
 | debug | framing, transport and decode errors; ignored frames and fragments | `error`, ... |
@@ -97,6 +104,11 @@ A value that also implements `dnp3.ServerMetrics` (server) receives
 `OnHandled(remote, function, duration)` after each request,
 `OnEventsDiscarded(class, n)` on buffer overflow and `OnUnsolicited(remote,
 events, err)` when an unsolicited response was confirmed or given up.
+
+Secure Authentication has no metrics callback: the outstation's security
+statistics are its counters. Any master reads them as g121v1 (indexes in
+`secauth.Statistic`), and `SecureAuth.StatisticsThreshold` turns them into
+g122 events; the warnings above name each failure.
 
 ```go
 type counters struct {

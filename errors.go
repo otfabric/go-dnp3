@@ -94,7 +94,8 @@ func (e *CommandError) Error() string {
 type FileError struct {
 	// Op is the operation: "open", "close", "delete", "read", "write",
 	// "abort", "info" or "authenticate".
-	Op     string
+	Op string
+	// Status is the file status the outstation answered.
 	Status app.FileStatus
 	// Text is the optional text the outstation sent with the status.
 	Text string
@@ -113,9 +114,11 @@ func (e *FileError) Error() string {
 // AuthError reports an authentication error object (g120v7) received from
 // the peer. It matches [ErrAuthentication] with errors.Is.
 type AuthError struct {
+	// Code is the error code of the g120v7 object.
 	Code app.AuthErrorCode
 	// User is the user number the error is about.
 	User uint16
+	// Text is the optional error text the peer sent.
 	Text string
 }
 

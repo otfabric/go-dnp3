@@ -28,7 +28,8 @@ How failures are reported, and how to tell them apart.
 | A control echoed with a status other than SUCCESS | `*dnp3.CommandError` | `errors.As` |
 | A file operation refused | `*dnp3.FileError` | `errors.As` |
 | An authentication error from the peer | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
-| A challenge without secure authentication configured | wraps `dnp3.ErrAuthentication` | `errors.Is` |
+| A challenge without secure authentication configured, or before the session keys were changed | wraps `dnp3.ErrAuthentication` (the client then changes the keys) | `errors.Is` |
+| An aggressive mode request, or a challenge reply that came too late, refused | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
 | A response that does not fit the request (echo, sequence) | wraps `dnp3.ErrProtocol` | `errors.Is` |
 | An option or argument that cannot be used | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
 | The caller's context ended | `context.Canceled`, `context.DeadlineExceeded` | `errors.Is` |
@@ -70,6 +71,11 @@ not matter.
 a failed write, a keep-alive that went unanswered (that one wraps
 `ErrTimeout` too). The request that was waiting fails with it; a client with
 `WithReconnect` reconnects, and the next request can succeed.
+
+A `Connect` whose startup sequence fails (a refused session key change, an
+integrity poll without an answer) returns that error and closes the
+channel: the client is `StateDisconnected`. A channel the client
+re-established itself is kept even when its startup sequence failed.
 
 ## Codec errors
 
@@ -114,8 +120,9 @@ through:
 | A request it could not decode | IIN2 bits in the response; `Metrics.OnDecodeError` |
 | Events discarded because the buffer was full | EVENT_BUFFER_OVERFLOW; `ServerMetrics.OnEventsDiscarded`; a warning |
 | An unsolicited response that was never confirmed | `ServerMetrics.OnUnsolicited` with an error wrapping `ErrTimeout`; the events are reported later |
-| A failed authentication | an authentication error object to the master; a warning |
-| `Serve`, `ServeConn` | return the listener's or stream's error, `nil` after `Close` |
+| A failed authentication, a late reply, a refused key change or aggressive mode request | an authentication error object to the master; a warning; the security statistics (g121, g122 events) |
+| `ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `ServeUDPTo` | return the listener's or stream's error, `nil` after `Close` |
+| `DialAndServe` | returns `ctx.Err()` when ctx ends and `nil` after `Close`; failed dials, TLS handshakes and lost connections are retried, not returned |
 
 ## Detection patterns
 

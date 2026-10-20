@@ -30,7 +30,7 @@ jobs:
           go-version: "1.23.x"
       - run: make build examples
 
-  # The codec fuzz targets, briefly, on every push.
+  # The codec and outstation fuzz targets, briefly, on every push.
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest

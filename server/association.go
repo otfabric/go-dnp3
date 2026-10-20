@@ -15,6 +15,7 @@ import (
 	"github.com/otfabric/go-dnp3/internal/channel"
 	"github.com/otfabric/go-dnp3/internal/logx"
 	"github.com/otfabric/go-dnp3/link"
+	"github.com/otfabric/go-dnp3/secauth"
 )
 
 // association is the outstation's side of one master: its event buffer,
@@ -49,10 +50,11 @@ type association struct {
 	unsolPause time.Time
 	timer      *time.Timer
 
-	pendingAuth  *challenge
-	keys         sessionKeys
-	csq          uint32
-	authFailures int
+	pendingAuth   *challenge
+	lastChallenge []byte // the last g120v1 fragment sent
+	keys          sessionKeys
+	csq           uint32
+	stats         [secauth.NumStatistics]uint32
 
 	files             map[uint32]*openFile
 	nextHandle        uint32
@@ -181,7 +183,7 @@ func (a *association) detach() {
 	a.closeFiles()
 	// Session keys do not survive the connection (clause 7.5.2.3).
 	a.keys.reset()
-	a.pendingAuth = nil
+	a.pendingAuth, a.lastChallenge = nil, nil
 }
 
 // receive queues a fragment from sess. It goes through the same queue
@@ -345,11 +347,16 @@ func (a *association) handle(in inbound) {
 		}
 	}
 	a.abandonSolicited()
+	a.count(secauth.StatTotalMessagesReceived)
 	if err == nil && (req.Function == app.FuncAuthRequest || req.Function == app.FuncAuthRequestNoAck) {
 		a.authRequest(req, in)
 		return
 	}
-	if err == nil && !broadcast && a.critical(req.Function) {
+	if err == nil && a.srv.opts.auth != nil && len(req.Headers) > 0 && req.Headers[0].GV == app.G120V3 {
+		if req = a.aggressive(req, in); req == nil {
+			return
+		}
+	} else if err == nil && !broadcast && a.critical(req.Function) {
 		a.sendChallenge(req, in)
 		return
 	}
@@ -569,6 +576,7 @@ func (a *association) send(f *app.Fragment) []byte {
 	if m := a.srv.opts.metrics; m != nil {
 		m.OnFragmentSent(a.remote(), f, len(data))
 	}
+	a.count(secauth.StatTotalMessagesSent)
 	a.sendRaw(data)
 	return data
 }

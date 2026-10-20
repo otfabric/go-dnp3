@@ -44,6 +44,43 @@ type fixture struct {
 	OctetStrings    []fixturePoint `json:"octetStrings"`
 	Files           []fixtureFile  `json:"files"`
 	Directories     []string       `json:"directories"`
+	// Contract 1.2, the extended fixture.
+	FrozenAnalogInputs []fixturePoint    `json:"frozenAnalogInputs"`
+	TimeAndIntervals   []fixtureInterval `json:"timeAndIntervals"`
+}
+
+// fixtureInterval is a time and interval (g50v4).
+type fixtureInterval struct {
+	Index    uint32 `json:"index"`
+	Time     string `json:"time"`
+	Interval uint32 `json:"interval"`
+	Units    uint8  `json:"units"`
+}
+
+func (f fixtureInterval) value() app.AbsoluteTime {
+	ts, _ := time.Parse(time.RFC3339Nano, f.Time)
+	return app.AbsoluteTime{Time: app.TimestampOf(ts), Interval: f.Interval, Units: app.IntervalUnit(f.Units)}
+}
+
+// pointTypes returns the point type sections the fixture uses, by their
+// capability names.
+func (f *fixture) pointTypes() []string {
+	var out []string
+	for _, s := range []struct {
+		name string
+		n    int
+	}{
+		{"binaryInputs", len(f.BinaryInputs)}, {"doubleBitInputs", len(f.DoubleBitInputs)},
+		{"binaryOutputs", len(f.BinaryOutputs)}, {"counters", len(f.Counters)},
+		{"frozenCounters", len(f.FrozenCounters)}, {"analogInputs", len(f.AnalogInputs)},
+		{"frozenAnalogInputs", len(f.FrozenAnalogInputs)}, {"analogOutputs", len(f.AnalogOutputs)},
+		{"octetStrings", len(f.OctetStrings)}, {"timeAndIntervals", len(f.TimeAndIntervals)},
+	} {
+		if s.n > 0 {
+			out = append(out, s.name)
+		}
+	}
+	return out
 }
 
 // fixtureFile is a file the outstation serves (fixture format 1.1).
@@ -68,6 +105,10 @@ type fixturePoint struct {
 	SelectRequired  bool            `json:"selectRequired"`
 	Min             *float64        `json:"min"`
 	Max             *float64        `json:"max"`
+	// CommandEventClass and CommandEventVariation (contract 1.2): the
+	// output reports its controls as command events.
+	CommandEventClass     uint8 `json:"commandEventClass"`
+	CommandEventVariation uint8 `json:"commandEventVariation"`
 }
 
 func parseFixture(b []byte) (*fixture, error) {
@@ -120,7 +161,8 @@ func (p fixturePoint) octets() []byte {
 const defaultVariation = 0
 
 func (p fixturePoint) config(staticDefault, eventDefault uint8) server.PointConfig {
-	c := server.PointConfig{Class: server.Class(p.Class), StaticVariation: p.StaticVariation, EventVariation: p.EventVariation}
+	c := server.PointConfig{Class: server.Class(p.Class), StaticVariation: p.StaticVariation, EventVariation: p.EventVariation,
+		CommandEventClass: server.Class(p.CommandEventClass), CommandEventVariation: p.CommandEventVariation}
 	if c.StaticVariation == defaultVariation {
 		c.StaticVariation = staticDefault
 	}
@@ -204,6 +246,16 @@ func newStation(f *fixture, opts ...server.Option) (*station, error) {
 	for _, p := range f.AnalogOutputs {
 		if err := add(server.AnalogOutput, p, 1, 1, app.Analog{Value: p.number(), Flags: p.flags()}); err != nil {
 			return nil, err
+		}
+	}
+	for _, p := range f.FrozenAnalogInputs {
+		if err := add(server.FrozenAnalogInput, p, 1, 1, app.Analog{Value: p.number(), Flags: p.flags()}); err != nil {
+			return nil, err
+		}
+	}
+	for _, p := range f.TimeAndIntervals {
+		if err := db.Add(server.TimeAndInterval, p.Index, server.PointConfig{}, p.value()); err != nil {
+			return nil, fmt.Errorf("time and interval %d: %w", p.Index, err)
 		}
 	}
 	for _, p := range f.OctetStrings {

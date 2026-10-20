@@ -396,11 +396,14 @@ type UnsignedInteger struct {
 // SecurityStatistic is a secure authentication statistic (group 121) or
 // a statistic event (group 122).
 type SecurityStatistic struct {
+	// Flags are the quality flags.
 	Flags Flags
 	// Association identifies the association the statistic is about.
 	Association uint16
-	Value       uint32
-	Time        Timestamp
+	// Value is the count.
+	Value uint32
+	// Time is when an event (group 122 with time) was raised.
+	Time Timestamp
 }
 
 // Raw is a free-format object that this package carries without

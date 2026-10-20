@@ -3,8 +3,10 @@
 // Command secure shows Secure Authentication version 5: both ends share an
 // update key; the master wraps fresh session keys with it when it
 // connects; the outstation then challenges every critical request and the
-// master answers with an HMAC-SHA-256 MAC. A master with the wrong update
-// key is refused.
+// master answers with an HMAC-SHA-256 MAC. In aggressive mode the master
+// puts the MAC into the request itself and is no longer challenged. The
+// outstation counts what happened in its security statistics. A master
+// with the wrong update key is refused.
 //
 //	go run ./examples/secure
 package main
@@ -47,7 +49,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	good, err := client.Dial(ctx, ln.Addr().String(), client.WithSecureAuthentication(user))
+	good, err := client.Dial(ctx, ln.Addr().String(), client.WithSecureAuthentication(user), client.WithAggressiveMode())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -56,6 +58,23 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("master with the right update key: session keys changed, SELECT and OPERATE challenged and answered")
+	// After a challenge, aggressive mode: the next controls carry their MAC.
+	for range 3 {
+		if _, err := good.Operate(ctx, client.DirectOperate, client.CROB(0, app.OpLatchOff, 0, 0)); err != nil {
+			log.Fatal(err)
+		}
+	}
+	res, err := good.Read(ctx, app.AllObjects(app.G121V1))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, h := range res.Headers() {
+		for _, o := range h.Objects {
+			if s := secauth.Statistic(o.Index); s == secauth.StatSuccessfulAuthentications || s == secauth.StatSessionKeyChanges {
+				fmt.Printf("outstation statistic %s: %d\n", s, o.Value.(app.SecurityStatistic).Value)
+			}
+		}
+	}
 
 	// The wrong update key: the session key change is refused, so the
 	// master cannot connect.

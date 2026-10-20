@@ -181,6 +181,15 @@ func TestChallengeBeforeKeyChange(t *testing.T) {
 	if _, err := New("127.0.0.1", WithKeyChangeInterval(0)); !errors.Is(err, dnp3.ErrInvalidOption) {
 		t.Fatal("key change interval 0 accepted")
 	}
+	if _, err := New("127.0.0.1", WithAggressiveMode()); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("aggressive mode without secure authentication accepted")
+	}
+	// Asking twice for a key change while one is pending asks once.
+	c.rekeySoon()
+	c.rekeySoon()
+	if len(c.rekey) != 1 {
+		t.Fatalf("%d key changes pending", len(c.rekey))
+	}
 }
 
 func TestPreSharedSessionKey(t *testing.T) {
@@ -275,5 +284,87 @@ func TestChallengeReplySequence(t *testing.T) {
 	}
 	if got := <-replySeq; got != seq {
 		t.Fatalf("reply sent with sequence %d, the critical request had %d", got, seq)
+	}
+}
+
+// authResponses counts the AUTHENTICATE_RESP fragments a master receives.
+type authResponses struct {
+	dnp3.NopMetrics
+	n atomic.Int64
+}
+
+func (m *authResponses) OnFragmentReceived(_ net.Addr, f *app.Fragment, _ int) {
+	if f.Function == app.FuncAuthResponse {
+		m.n.Add(1)
+	}
+}
+
+func TestAggressiveMode(t *testing.T) {
+	key := []byte("pre-shared session key 32 octets")
+	accept := server.HandlerFunc(func(context.Context, server.Command, server.OperateType) app.CommandStatus { return app.StatusSuccess })
+	_, addr := outstation(t, server.WithHandler(accept),
+		server.WithSecureAuthentication(server.SecureAuth{User: secauth.User{Number: 1, Key: key}}))
+	m := &authResponses{}
+	c, err := Dial(testCtx(t), addr, WithMetrics(m), WithAggressiveMode(), WithAutoClearRestart(false),
+		WithSecureAuthentication(secauth.User{Number: 1, Key: key}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	stats := func() map[uint32]uint32 {
+		t.Helper()
+		res, err := c.Read(testCtx(t), app.AllObjects(app.G121V0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[uint32]uint32{}
+		for _, h := range res.Headers() {
+			for _, o := range h.Objects {
+				got[o.Index] = o.Value.(app.SecurityStatistic).Value
+			}
+		}
+		return got
+	}
+	before := stats()
+	// The first control is challenged; the next ones carry their MAC.
+	for i := range 4 {
+		if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
+			t.Fatalf("control %d: %v", i, err)
+		}
+	}
+	if n := m.n.Load(); n != 1 {
+		t.Fatalf("%d challenges for 4 controls in aggressive mode, want 1", n)
+	}
+	// A request that does not encode fails before anything is sent.
+	if _, err := c.Write(testCtx(t), app.Header{GV: app.GV(12, 1), Qualifier: app.Qual1ByteStartStop,
+		Objects: []app.Object{{Index: 0, Value: app.Binary{}}}}); err == nil {
+		t.Fatal("WRITE of a header that does not encode succeeded")
+	}
+	after := stats()
+	for _, s := range []secauth.Statistic{secauth.StatSuccessfulAuthentications, secauth.StatCriticalMessagesReceived} {
+		if d := after[uint32(s)] - before[uint32(s)]; d != 4 {
+			t.Errorf("%s grew by %d over 4 authenticated controls", s, d)
+		}
+	}
+}
+
+// TestRekeyOnAuthError: an authentication error in answer to a request
+// asks for a key change; the request fails with it.
+func TestRekeyOnAuthError(t *testing.T) {
+	addr := fakeAuthOutstation(t, func(*app.Fragment) []app.Header {
+		return []app.Header{app.FreeFormat(app.G120V7, app.AuthError{User: 1, Code: app.AuthErrAuthenticationFailed})}
+	})
+	c, err := Dial(testCtx(t), addr, WithSecureAuthentication(secauth.User{Number: 1, Key: []byte("pre-shared session key 32 octets")}),
+		WithStartup(Startup{}), WithAutoIntegrity(false), WithAutoClearRestart(false), WithResponseTimeout(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	var ae *dnp3.AuthError
+	if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); !errors.As(err, &ae) {
+		t.Fatalf("control refused with an authentication error: %v", err)
+	}
+	if len(c.rekey) != 1 {
+		t.Fatal("no key change asked for after the authentication error")
 	}
 }

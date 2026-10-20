@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/hex"
 	"net"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -79,6 +80,24 @@ func TestClientSecureAuth(t *testing.T) {
 				t.Fatalf("key changes: %d requests answered, %d failed", m.ok.Load(), m.failed.Load())
 			}
 			operate(c, app.OpLatchOff)
+			// The outstation's security statistics (g121): what it counted
+			// of this session. DSC Systems' outstation answers variation 1
+			// only, not variation 0.
+			res, err := c.Read(tctx(t), app.AllObjects(app.G121V1))
+			if err != nil {
+				t.Fatalf("read of the security statistics: %v", err)
+			}
+			stats := map[secauth.Statistic]uint32{}
+			for _, h := range res.Headers() {
+				for _, o := range h.Objects {
+					if v, ok := o.Value.(app.SecurityStatistic); ok {
+						stats[secauth.Statistic(o.Index)] = v.Value
+					}
+				}
+			}
+			if len(stats) != int(secauth.NumStatistics) || stats[secauth.StatSessionKeyChanges] < 2 || stats[secauth.StatSuccessfulAuthentications] < 2 {
+				t.Errorf("security statistics: %v", stats)
+			}
 			_ = c.Close()
 
 			// A second connection: both ends drop the session keys when a
@@ -131,6 +150,14 @@ func TestServerSecureAuth(t *testing.T) {
 				if r := op(updateKey, code); !r.OK || r.CommandStatus == nil || *r.CommandStatus != "SUCCESS" {
 					t.Fatalf("challenged %s: %s", code, r.errorCode())
 				}
+			}
+			// The reference master reads go-dnp3's security statistics. The
+			// contract's object documents do not carry group 121, so what
+			// is checked is that the read is answered without a request
+			// error.
+			r := runClient(t, a, port, "read", "--group", "121", "--variation", "1", "--start", "0", "--stop", "17", "--sa-update-key", hex.EncodeToString(updateKey))
+			if !r.OK || slices.Contains(r.IIN, "OBJECT_UNKNOWN") || slices.Contains(r.IIN, "PARAMETER_ERROR") {
+				t.Errorf("read of the security statistics: ok=%v %s, IIN %v", r.OK, r.errorCode(), r.IIN)
 			}
 			if r := op(wrongUpdateKey, "LATCH_ON"); r.OK {
 				t.Fatal("go-dnp3 executed a control of a master with a wrong update key")

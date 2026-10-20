@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/secauth"
 )
 
 // FileOptions are the optional parameters of a file transfer.
@@ -148,6 +150,11 @@ func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size u
 	block := int(st.MaxBlockSize)
 	if block == 0 {
 		block = 1024
+	}
+	if c.opts.auth != nil && slices.Contains(c.opts.aggressive, app.FuncWrite) && block > 2*secauth.AggressiveOverhead {
+		// An outstation that sized the block for a plain request has no
+		// room for the aggressive mode objects.
+		block -= secauth.AggressiveOverhead
 	}
 	buf := make([]byte, block)
 	var n int64

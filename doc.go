@@ -12,7 +12,10 @@
 //     authentication, automatic reconnect and retries
 //   - [github.com/otfabric/go-dnp3/server]: the outstation: a point
 //     database with event buffers per class, request handling, unsolicited
-//     responses, controls, file transfer and secure authentication
+//     responses, controls and command events, file transfer, secure
+//     authentication with statistics, and the dual end point
+//   - [github.com/otfabric/go-dnp3/secauth]: Secure Authentication
+//     version 5: users and keys, MACs, the AES key wrap, statistics
 //   - [github.com/otfabric/go-dnp3/app]: the application layer codec and
 //     the object library
 //   - [github.com/otfabric/go-dnp3/transport]: the transport function
@@ -23,5 +26,6 @@
 //
 // Docs: README.md, API.md (public API), ARCHITECTURE.md, ERRORS.md (error
 // semantics), OBSERVABILITY.md (logging and metrics), INTEROPERABILITY.md
-// (conformance), RELEASE.md (changelog).
+// (conformance and interop coverage), SECURITY.md, CONTRIBUTING.md,
+// RELEASE.md (changelog).
 package dnp3

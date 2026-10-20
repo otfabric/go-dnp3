@@ -41,11 +41,11 @@ dnp3 (root)          errors, State, Logger, Metrics          imports: app, link
   ├── link           frames, CRC, Reader                       imports: nothing
   ├── transport      segmentation, reassembly                  imports: nothing
   ├── app            fragments, headers, objects               imports: nothing
-  ├── secauth        MACs, authenticated data                   imports: app
+  ├── secauth        MACs, key wrap, statistics                 imports: app
   ├── internal/logx  structured or formatted log entries        imports: root
   ├── internal/channel  link procedures, sessions               imports: root, link, transport, logx
-  ├── client         master                                     imports: root, app, link, secauth, channel, logx
-  └── server         outstation                                 imports: root, app, link, secauth, channel, logx
+  ├── client         master                                     imports: root, app, link, transport, secauth, channel, logx
+  └── server         outstation                                 imports: root, app, link, transport, secauth, channel, logx
 ```
 
 `client` and `server` never import each other; their tests do, to use the
@@ -91,9 +91,12 @@ on a multi-drop serial line; on TCP there is usually one.
 `client.Client` holds at most one channel and adds:
 
 - **Connection lifecycle**: `Connect` opens the stream (dial, TLS
-  handshake, or a `StreamOpener`), starts the channel and runs the startup
-  sequence. With `WithReconnect` a goroutine waits for the channel to end
-  and reconnects with exponential backoff.
+  handshake, or a `StreamOpener` such as `UDP` or `Accept` for an
+  outstation that connects), starts the channel and runs the startup
+  sequence; when the sequence fails, it closes the channel again. With
+  `WithReconnect` a goroutine waits for the channel to end and reconnects
+  with exponential backoff, keeping a new channel whose startup failed.
+  `Close` ends a reconnection attempt in progress.
 - **One transaction at a time.** DNP3 allows a single outstanding request
   per association. A one-slot semaphore admits requests in order; a
   waiting request honours its context; `WithQueueLimit` bounds how many
@@ -119,7 +122,8 @@ on a multi-drop serial line; on TCP there is usually one.
 
 ## Server
 
-`server.Server` accepts connections and wraps each in a channel. Sessions
+`server.Server` accepts connections, or establishes them itself with
+`DialAndServe` (the dual end point), and wraps each in a channel. Sessions
 are created when a frame from an allowed master arrives, or at once when
 exactly one master is configured, so that the null unsolicited response
 can be sent before the master speaks.
@@ -167,13 +171,24 @@ open files. One goroutine owns all of it:
 ## Secure Authentication
 
 On an outstation with `WithSecureAuthentication`, a critical request is
-held and answered with an authentication challenge (g120v1). The master
-computes the MAC over the challenge as it was sent and the critical request
-as it was sent, and replies (g120v2) with the next sequence number. The
-outstation verifies the MAC, then executes the held request and answers it
-with the reply's sequence number. A select stores that number, so that the
-OPERATE that follows, itself challenged, matches it. A wrong MAC is
-answered with an authentication error (g120v7) and nothing is executed.
+held and answered with an authentication challenge (g120v1) carrying the
+request's sequence number. The master computes the MAC over the challenge
+as it was sent and the critical request as it was sent, and replies
+(g120v2) with the same sequence number. The outstation verifies the MAC
+within `ReplyTimeout`, then executes the held request and answers it with
+the reply's sequence number (it accepts a reply with the next number too).
+A wrong or late MAC is answered with an authentication error (g120v7) and
+nothing is executed.
+
+With an update key the master first runs the session key change (g120v4,
+v5, v6, v5) on every connection, at the key change interval, and soon
+after an authentication failure, retrying with a backoff while it has no
+keys; the outstation drops the keys when the connection ends. In
+aggressive mode the master puts a g120v3 object first and a g120v9 MAC over
+the last challenge and the request last; the outstation checks that the
+challenge sequence number follows the last one and executes the request
+without a challenge. Every association counts the 18 security statistics
+and reports one as a g122 event every `StatisticsThreshold` increments.
 
 ## Testing strategy
 
@@ -183,5 +198,7 @@ answered with an authentication error (g120v7) and nothing is executed.
 | Link procedures | secondary state machine frame by frame, confirmed data with retries and NACK, keep-alive, noisy and duplicating lines | `internal/channel` |
 | Outstation conformance | a scripted master sending exact requests: malformed requests and their IIN, repeated requests, broadcast, confirm timeouts, unsolicited retries and hold, select timeout, pattern control | `server` |
 | Master | timeouts and retries against a silent peer, queue limit, TLS, polls, state and logging | `client` |
-| End to end | master against outstation for every function; concurrency, many masters, reconnects, rapid open and close, cancellation | `e2e` |
-| Interop | both roles against stepfunc dnp3, opendnp3 and DSC Systems go-dnp3 | `interop` (build tag) |
+| Outstation fuzzing | arbitrary request fragments into an outstation with secure authentication, file transfer and every point type (`FuzzOutstation`) | `server` |
+| End to end | master against outstation for every function; the dual end point; concurrency, many masters, parallel masters with secure authentication and files, reconnects, rapid open and close, cancellation | `e2e` |
+| Chaos | a proxy corrupting, splitting and delaying octets and killing connections while every kind of request runs, with and without secure authentication: no data that was not sent, no control executed more often than sent, recovery, no goroutine left | `e2e/chaos_test.go` |
+| Interop | both roles against stepfunc dnp3, opendnp3 and DSC Systems go-dnp3, and as outstation against dnp3py | `interop` (build tag) |

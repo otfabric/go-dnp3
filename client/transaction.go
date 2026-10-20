@@ -133,6 +133,9 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	}()
 
 	req := &app.Fragment{Control: app.SingleControl(seq), Function: fc, Headers: hs}
+	if err := c.aggressive(req); err != nil {
+		return nil, err
+	}
 	data, err := req.Encode()
 	if err != nil {
 		return nil, err
@@ -161,6 +164,12 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 			if f.Function == app.FuncAuthResponse {
 				next, err := c.onAuthResponse(ctx, sess, f, rf.raw, data)
 				if err != nil {
+					if fc != app.FuncAuthRequest && errors.Is(err, dnp3.ErrAuthentication) {
+						// The outstation refused the session keys, or there
+						// are none: change them now rather than at the next
+						// interval (IEEE 1815-2012 clause 7.5.2.3).
+						c.rekeySoon()
+					}
 					return res, err
 				}
 				if next >= 0 {

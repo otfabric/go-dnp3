@@ -49,6 +49,13 @@ type Client struct {
 	// sessionKey is the control direction session key negotiated on the
 	// current channel, nil before the first session key change.
 	sessionKey []byte
+	// lastChallenge is the last challenge (g120v1 fragment) received on
+	// the current channel and csq the challenge sequence number aggressive
+	// mode requests continue from.
+	lastChallenge []byte
+	csq           uint32
+	// rekey asks the key change loop for a key change now.
+	rekey chan struct{}
 
 	// turn admits one transaction at a time; waiting counts the requests
 	// queued for it.
@@ -73,6 +80,9 @@ func New(addr string, opts ...Option) (*Client, error) {
 			return nil, err
 		}
 	}
+	if o.aggressive != nil && o.auth == nil {
+		return nil, invalidOption("WithAggressiveMode needs WithSecureAuthentication")
+	}
 	if o.opener == nil {
 		if _, _, err := net.SplitHostPort(addr); err != nil {
 			addr = net.JoinHostPort(addr, strconv.Itoa(DefaultPort))
@@ -86,6 +96,7 @@ func New(addr string, opts ...Option) (*Client, error) {
 		tasks:   make(chan task, 8),
 		queued:  make(map[string]bool),
 		closeCh: make(chan struct{}),
+		rekey:   make(chan struct{}, 1),
 	}
 	c.rm, _ = o.metrics.(dnp3.RequestMetrics)
 	c.events = newDispatcher(c)
@@ -123,9 +134,12 @@ func (c *Client) State() dnp3.State {
 }
 
 // Connect establishes the channel and runs the startup sequence of
-// WithStartup. It fails with dnp3.ErrBusy when the client is connected or
-// connecting. With WithReconnect it needs to succeed only once: a lost
-// channel is re-established by the client.
+// WithStartup (with secure authentication and an update key, the session
+// key change first). When the sequence fails, the channel is closed and
+// the error returned. It fails with dnp3.ErrBusy when the client is
+// connected or connecting. With WithReconnect it needs to succeed only
+// once: a lost channel is re-established by the client, and kept when
+// only the startup sequence of the new one failed.
 func (c *Client) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	switch {
@@ -141,10 +155,17 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.setState(dnp3.StateConnecting, nil)
 	err := c.connect(ctx)
 	if err != nil {
+		// A channel whose startup sequence failed is closed: Connect
+		// either connects or leaves the client disconnected.
 		c.mu.Lock()
 		c.dialing = false
+		ch := c.ch
+		c.ch, c.sess = nil, nil
 		c.mu.Unlock()
 		c.setState(dnp3.StateDisconnected, err)
+		if ch != nil {
+			ch.Close(nil)
+		}
 	}
 	return err
 }
@@ -182,7 +203,7 @@ func (c *Client) connect(ctx context.Context) error {
 	}
 	c.ch, c.sess, c.remote, c.dialing = ch, sess, remote, false
 	clear(c.sessionKey)
-	c.sessionKey = nil
+	c.sessionKey, c.lastChallenge = nil, nil
 	started := make(chan struct{})
 	c.started = started
 	c.lastUns = nil
@@ -196,6 +217,8 @@ func (c *Client) connect(ctx context.Context) error {
 	err = c.changeSessionKeys(ctx)
 	if err == nil {
 		err = c.runStartup(ctx)
+	} else if c.opts.auth != nil {
+		c.rekeySoon()
 	}
 	close(started)
 	if err != nil {
@@ -273,7 +296,16 @@ func (c *Client) reconnectLoop() {
 			return
 		case <-timer.C:
 		}
+		// Close ends an attempt in progress, not only the wait between
+		// attempts.
 		ctx, cancel := context.WithTimeout(context.Background(), max(delay, 10*time.Second))
+		go func() {
+			select {
+			case <-c.closeCh:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
 		err := c.connect(ctx)
 		cancel()
 		if err == nil {

@@ -21,24 +21,24 @@ import (
 )
 
 // adapter is one reference implementation, as a container image that follows
-// the dnp3-interop container contract 1.1.
+// the dnp3-interop container contract 1.2.
 type adapter struct {
 	name  string
 	image string
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.2.0 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
+// otfabric/dnp3-interop v0.3.0 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
 // Systems go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
 // so that a run is reproducible. Moving to another release of
 // dnp3-interop means changing these constants; the Makefile and the
 // interop workflow follow.
 const (
-	interopRelease         = "v0.2.0"
-	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:ead1ea3c9a0f48ea363f745846ff2d5df8f077f50b6bb7f20914c3207ba5667e"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a69ebb5962b334ff9813a1efbb871ccd5d296fad71bd13feb94bec52ef7ff19a"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:d0576cceabf24cbd072b672069226c30486aa84046dc98d813a5427a32dbae3a"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:14598aebcd5698d8f342d6d9beaa98b8618d724c57fbbe34222737678ceff0ef"
+	interopRelease         = "v0.3.0"
+	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:36bf0a983ce9d1d16f1a290cc6afba191406afb2f51119e21f80121e581bb9f3"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:6c03763221722c7af1a38af475189e98e1d57cc10ae90220f31376fde6343944"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:12af7a377323926ff8f6de9c95d9a1c89fab479c5a84831a144abadd10e7e01a"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6584d9d00a4c91ef67c710025bda288e2b4611decc9908008721594b31ec7db8"
 )
 
 // adapters returns the reference implementations to test against. The image
@@ -91,6 +91,11 @@ type capabilities struct {
 		Client bool `json:"client"`
 	} `json:"roles"`
 	Features map[string]bool `json:"features"`
+	// PointTypes are the fixture sections the outstation serves.
+	PointTypes []string `json:"pointTypes"`
+	// ServerFeatures are the features of the server role where they differ
+	// from Features (contract 1.2).
+	ServerFeatures map[string]bool `json:"serverFeatures"`
 }
 
 var capabilitiesCache sync.Map // image -> *capabilities
@@ -119,6 +124,37 @@ func (a adapter) needRole(t testing.TB, role string) {
 	r := a.capabilities(t).Roles
 	if (role == "server" && !r.Server) || (role == "client" && !r.Client) {
 		t.Skipf("%s has no %s role", a.name, role)
+	}
+}
+
+// needFixture skips the test when the image's outstation cannot serve
+// every point type of the named fixture.
+func (a adapter) needFixture(t testing.TB, name string) {
+	t.Helper()
+	have := map[string]bool{}
+	for _, pt := range a.capabilities(t).PointTypes {
+		have[pt] = true
+	}
+	for _, pt := range a.fixtureNamed(t, name).pointTypes() {
+		if !have[pt] {
+			t.Skipf("%s's outstation does not serve %s (fixture %s)", a.name, pt, name)
+		}
+	}
+}
+
+// needServer skips the test when the image's outstation lacks a feature:
+// serverFeatures where it names it, features otherwise.
+func (a adapter) needServer(t testing.TB, features ...string) {
+	t.Helper()
+	c := a.capabilities(t)
+	for _, f := range features {
+		v, ok := c.ServerFeatures[f]
+		if !ok {
+			v = c.Features[f]
+		}
+		if !v {
+			t.Skipf("%s's outstation does not declare %s", a.name, f)
+		}
 	}
 }
 
@@ -197,11 +233,26 @@ type serverSpec struct {
 	script string
 }
 
+// fixtureName is the fixture the server serves: the one of --fixture
+// (/fixtures/NAME/fixture.json), the baseline otherwise.
+func (spec serverSpec) fixtureName() string {
+	for i, a := range spec.args {
+		if a == "--fixture" && i+1 < len(spec.args) {
+			parts := strings.Split(spec.args[i+1], "/")
+			if len(parts) >= 3 {
+				return parts[len(parts)-2]
+			}
+		}
+	}
+	return "baseline"
+}
+
 // startServerSpec runs a reference outstation as spec says and waits until
 // it is ready.
 func startServerSpec(t testing.TB, a adapter, spec serverSpec) *refServer {
 	t.Helper()
 	a.needRole(t, "server")
+	a.needFixture(t, spec.fixtureName())
 	name := fmt.Sprintf("go-dnp3-interop-%s-%d-%d", a.name, os.Getpid(), containerSeq.Add(1))
 	args := append([]string{"run", "-d", "--name", name}, spec.docker...)
 	s := &refServer{adapter: a, name: name}
@@ -321,6 +372,10 @@ type resultObj struct {
 	Flags       []string `json:"flags"`
 	Time        string   `json:"time"`
 	Unsolicited bool     `json:"unsolicited"`
+	// Contract 1.2.
+	Status      string   `json:"status"`
+	Units       *float64 `json:"units"`
+	Association *float64 `json:"association"`
 }
 
 // fileEntry is a file of a file operation's result.
