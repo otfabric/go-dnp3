@@ -278,12 +278,16 @@ counter without a frozen counter uncleared by FREEZE AND CLEAR. Two more
 known bugs touch the contract 1.3 tests, which avoid them: DSC go-dnp3
 refuses FREEZE AT TIME with time 0 (the tests use a time to come), and
 stepfunc's master decodes a one-octet signed attribute without its sign
-(go-dnp3 sends four octets). Three
+(go-dnp3 sends four octets). Four
 findings about the references that the suite works with: opendnp3's UDP
 outstation answers only the fixed peer it is given, so go-dnp3's master
 runs in a container on its network for that test; DSC go-dnp3's
 outstation answers g121 reads of variation 1 only, not variation 0; and
-it, like go-dnp3, leaves g50v4 out of class 0.
+it, like go-dnp3, leaves g50v4 out of class 0. A fourth: when a master's first requests
+cross opendnp3's startup unsolicited response, opendnp3 can send the next
+unsolicited response before the confirm of the first arrives and then leave
+a READ unanswered until its unsolicited confirm timeout (5 s) has passed;
+the tests allow for it.
 
 ## Feature completeness and the remaining gaps
 

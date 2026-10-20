@@ -17,12 +17,18 @@ import (
 // freezes), and reads of all objects of a group.
 
 // eventually waits for cond, the effect of a request that has no response.
+// effectWindow bounds eventually. A request sent at once after connecting
+// can cross the outstation's startup unsolicited response: opendnp3 then
+// defers a READ until its unsolicited confirm timeout (5 s) has passed, so
+// the window is longer than that plus one response timeout.
+const effectWindow = 15 * time.Second
+
 func eventually(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(effectWindow)
 	for !cond() {
 		if time.Now().After(deadline) {
-			t.Fatalf("%s: no effect within 5s", what)
+			t.Fatalf("%s: no effect within %v", what, effectWindow)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
