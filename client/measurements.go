@@ -18,7 +18,8 @@ type Measurement struct {
 	// Value is one of the point value types of package app: app.Binary,
 	// app.DoubleBitBinary, app.BinaryCommandEvent, app.Counter,
 	// app.Analog, app.AnalogDeadband, app.AnalogCommandEvent,
-	// app.OctetString or app.SecurityStatistic.
+	// app.AbsoluteTime (g50v4, a time and interval), app.BCD,
+	// app.UnsignedInteger, app.OctetString or app.SecurityStatistic.
 	Value app.Value
 	// Event is set for objects of an event group.
 	Event bool
@@ -52,10 +53,14 @@ func (f HandlerFunc) HandleMeasurements(info ResponseInfo, ms []Measurement) { f
 
 // isMeasurement reports whether objects of group g are point values: not
 // commands, time, file, authentication or attribute objects.
-func isMeasurement(g uint8) bool {
-	switch g {
-	case 1, 2, 3, 4, 10, 11, 13, 20, 21, 22, 23, 30, 31, 32, 33, 34, 40, 42, 43, 110, 111, 121, 122:
+func isMeasurement(gv app.GroupVariation) bool {
+	switch gv.Group() {
+	case 1, 2, 3, 4, 10, 11, 13, 20, 21, 22, 23, 30, 31, 32, 33, 34, 40, 42, 43, 101, 102, 110, 111, 121, 122:
 		return true
+	case 50:
+		// The indexed time and interval is a point; the other variations
+		// are the time of time synchronization and freezes.
+		return gv == app.G50V4
 	default:
 		return false
 	}
@@ -66,7 +71,7 @@ func isMeasurement(g uint8) bool {
 func Measurements(f *app.Fragment) []Measurement {
 	var out []Measurement
 	for _, h := range f.Headers {
-		if !isMeasurement(h.GV.Group()) {
+		if !isMeasurement(h.GV) {
 			continue
 		}
 		ev := h.GV.IsEvent()

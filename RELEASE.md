@@ -1,5 +1,22 @@
 # go-dnp3 Releases
 
+## v1.1.1
+
+**Date:** 2026-10-20
+**Previous release:** v1.1.0
+
+## Summary
+
+`client.Measurements` reports every kind of point data. No API change.
+
+## Changes
+
+### Fixed
+
+- **`Measurements` left out the time and interval (g50v4), BCD integers (g101) and unsigned integers (g102).** They are point data like any other: an application had to walk `Result.Headers` to see them, as dnp3ctl did. The other variations of group 50 (the time of time synchronization and freezes) are still not measurements.
+
+---
+
 ## v1.1.0
 
 **Date:** 2026-10-20
