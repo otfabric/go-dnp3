@@ -6,6 +6,10 @@
 
 - **The objects come from one catalog.** `app/catalog.json` lists every group and variation; the codec's table, the variations `client.Measurements` reports and the new [OBJECTS.md](OBJECTS.md) are generated from it (`make generate`), and CI fails when they drift. The table is the same as before: no change of behaviour.
 
+### Fixed
+
+- **g86v2 (Data Set Descriptor - Characteristics) is one octet, as IEEE 1815-2012 A.47.2 defines it.** It was carried as a free-format `app.Raw`; it now decodes to the new `app.DataSetCharacteristics`, whose `DataSetFlags` name the RD, WR, ST, EV and DF bits, and is sent with a range or index prefix like other fixed-size objects. Code that decoded g86v2 as `app.Raw` needs to switch to the new type. The upstream watch found it: DSC go-dnp3 defines it as one octet too.
+
 ### Added
 
 - **An upstream watch**: a weekly workflow that opens or updates an issue when the object definitions of stepfunc dnp3 or DSC go-dnp3 change, when the sizes they define differ from the catalog, or when dnp3-interop has a new release (`make upstream-watch` runs it locally).

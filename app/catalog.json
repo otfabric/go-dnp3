@@ -1497,8 +1497,8 @@
       "group": 86,
       "variation": 2,
       "name": "Data Set Descriptor - Characteristics",
-      "family": "raw",
-      "size": null
+      "family": "dataSetChars",
+      "size": 1
     },
     {
       "group": 86,

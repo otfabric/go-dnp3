@@ -236,7 +236,7 @@ directories.
 | `Qualifier`, `Qual*`, `RangeQualifier`, `CountQualifier`, `IndexQualifier` | Qualifier codes |
 | `AllObjects`, `ClassHeaders`, `IndexRange`, `IndexList`, `CountOf`, `Ranged`, `Indexed`, `Counted`, `FreeFormat` | Header constructors |
 | `Timestamp`, `TimestampOf`, `Now` | DNP3 time |
-| Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD`, `UnsignedInteger`, `SecurityStatistic`, `Raw` |
+| Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD`, `UnsignedInteger`, `DataSetCharacteristics`, `SecurityStatistic`, `Raw` |
 | Enumerations | `Flags`, `DoubleBit`, `CommandStatus`, `OpType`, `TripClose`, `IntervalUnit` |
 | Attributes | `Attribute`, `AttrType`, `Attr*` variations, `StringAttribute`, `UintAttribute`, `IntAttribute`, `FloatAttribute`, `TimeAttribute`, `ListAttribute`, `AttributeListEntry` |
 | Files | `FileAuthentication`, `FileCommand`, `FileCommandStatus`, `FileTransport`, `FileTransportStatus`, `FileDescriptor`, `FileSpecification`, `FileMode`, `FileStatus`, `FileType`, `Permissions`, `AppendFileDescriptor`, `DecodeFileDescriptors` |

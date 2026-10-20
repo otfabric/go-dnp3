@@ -360,7 +360,7 @@ var table = map[GroupVariation]*desc{
 	G83V2:   {name: "Data Set - Private Registration Object Descriptor", fam: fRaw},
 	G85V1:   {name: "Data Set Prototype - With UUID", fam: fRaw},
 	G86V1:   {name: "Data Set Descriptor - Data Set Contents", fam: fRaw},
-	G86V2:   {name: "Data Set Descriptor - Characteristics", fam: fRaw},
+	G86V2:   {name: "Data Set Descriptor - Characteristics", fam: fDataSetChars},
 	G86V3:   {name: "Data Set Descriptor - Point Index Attributes", fam: fRaw},
 	G87V1:   {name: "Data Set - Present Value", fam: fRaw},
 	G88V1:   {name: "Data Set Event - Snapshot", fam: fRaw, event: true},

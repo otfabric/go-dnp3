@@ -176,7 +176,7 @@ while g50v4, the time and interval point type, does.
 | g83v2 | Data Set - Private Registration Object Descriptor | static | — |  |
 | g85v1 | Data Set Prototype - With UUID | static | — |  |
 | g86v1 | Data Set Descriptor - Data Set Contents | static | — |  |
-| g86v2 | Data Set Descriptor - Characteristics | static | — |  |
+| g86v2 | Data Set Descriptor - Characteristics | static | 1 |  |
 | g86v3 | Data Set Descriptor - Point Index Attributes | static | — |  |
 | g87v1 | Data Set - Present Value | static | — |  |
 | g88v1 | Data Set Event - Snapshot | event | — |  |
