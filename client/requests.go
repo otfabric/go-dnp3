@@ -82,6 +82,7 @@ const (
 
 // Command is one control.
 type Command struct {
+	// Index is the index of the output.
 	Index uint32
 	// Value is an app.CROB (control relay output block) or an
 	// app.AnalogOutput (set-point).

@@ -125,6 +125,7 @@ type options struct {
 	queueLimit       int
 	auth             *secauth.User
 	keyChange        time.Duration
+	aggressive       []app.FunctionCode
 }
 
 func defaultOptions() options {
@@ -348,6 +349,25 @@ func WithSecureAuthentication(u secauth.User) Option {
 			return invalidOption("%v", err)
 		}
 		o.auth = &u
+		return nil
+	}
+}
+
+// WithAggressiveMode sends the requests with the function codes fcs
+// (secauth.DefaultCritical when none are given) in Secure Authentication
+// aggressive mode (IEEE 1815-2012 clause 7.5.2.2.4): with a MAC in the
+// request itself, so that the outstation executes it without a challenge.
+// The MAC covers the last challenge received, so the first critical
+// request of a connection is still challenged. Use it only with an
+// outstation that supports aggressive mode: one that does not refuses the
+// request with an authentication error. New refuses it without
+// WithSecureAuthentication.
+func WithAggressiveMode(fcs ...app.FunctionCode) Option {
+	return func(o *options) error {
+		if len(fcs) == 0 {
+			fcs = secauth.DefaultCritical
+		}
+		o.aggressive = fcs
 		return nil
 	}
 }

@@ -157,8 +157,10 @@ type AuthChallenge struct {
 	// CSQ is the challenge sequence number.
 	CSQ uint32
 	// User is the user number.
-	User   uint16
-	MAC    MACAlgorithm
+	User uint16
+	// MAC is the MAC algorithm the reply must use.
+	MAC MACAlgorithm
+	// Reason is why the request is challenged.
 	Reason ChallengeReason
 	// Data is the pseudo-random challenge data.
 	Data []byte
@@ -166,31 +168,42 @@ type AuthChallenge struct {
 
 // AuthReply is g120v2.
 type AuthReply struct {
-	CSQ  uint32
+	// CSQ is the sequence number of the challenge this replies to.
+	CSQ uint32
+	// User is the user number.
 	User uint16
-	MAC  []byte
+	// MAC is the MAC over the challenge and the critical request.
+	MAC []byte
 }
 
 // AuthAggressiveMode is g120v3, the aggressive mode request that precedes
 // the objects of a critical request authenticated without a challenge.
 type AuthAggressiveMode struct {
-	CSQ  uint32
+	// CSQ is the challenge sequence number: the last challenge's plus one
+	// for each aggressive mode request since.
+	CSQ uint32
+	// User is the user number.
 	User uint16
 }
 
 // AuthSessionKeyStatusRequest is g120v4.
 type AuthSessionKeyStatusRequest struct {
+	// User is the user number whose key status is asked for.
 	User uint16
 }
 
 // AuthSessionKeyStatus is g120v5.
 type AuthSessionKeyStatus struct {
 	// KSQ is the key change sequence number.
-	KSQ     uint32
-	User    uint16
+	KSQ uint32
+	// User is the user number.
+	User uint16
+	// KeyWrap is the key wrap algorithm of the update key.
 	KeyWrap KeyWrap
-	Status  KeyStatus
-	MAC     MACAlgorithm
+	// Status is the state of the session keys.
+	Status KeyStatus
+	// MAC is the MAC algorithm of MACValue.
+	MAC MACAlgorithm
 	// Challenge is the challenge data for the next key change.
 	Challenge []byte
 	// MACValue is the MAC of the previous key status message; empty when
@@ -200,7 +213,9 @@ type AuthSessionKeyStatus struct {
 
 // AuthSessionKeyChange is g120v6.
 type AuthSessionKeyChange struct {
-	KSQ  uint32
+	// KSQ is the key change sequence number of the key status answered.
+	KSQ uint32
+	// User is the user number.
 	User uint16
 	// WrappedKeys is the key wrap of the control and monitoring direction
 	// session keys and the key status message.
@@ -209,12 +224,19 @@ type AuthSessionKeyChange struct {
 
 // AuthError is g120v7.
 type AuthError struct {
-	CSQ         uint32
-	User        uint16
+	// CSQ is the sequence number of the challenge or key change the error
+	// is about.
+	CSQ uint32
+	// User is the user number.
+	User uint16
+	// Association identifies the association that sent the error.
 	Association uint16
-	Code        AuthErrorCode
-	Time        Timestamp
-	Text        []byte
+	// Code is the error.
+	Code AuthErrorCode
+	// Time is when the error occurred.
+	Time Timestamp
+	// Text is optional text about the error.
+	Text []byte
 }
 
 // AuthUserCertificate is g120v8.

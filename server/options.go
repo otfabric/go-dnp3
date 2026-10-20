@@ -153,8 +153,8 @@ func WithMetrics(m dnp3.Metrics) Option {
 }
 
 // WithTLS serves TLS (IEEE 1815-2012 Annex B / IEC 62351-3) on the
-// listeners of ListenAndServe. Serve and ServeConn take the connection as
-// it is.
+// listeners of ListenAndServe, and is the TLS client configuration of
+// DialAndServe. Serve and ServeConn take the connection as it is.
 func WithTLS(cfg *tls.Config) Option {
 	return func(o *options) error { o.tls = cfg; return nil }
 }

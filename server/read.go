@@ -119,6 +119,10 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				p.iin |= app.IINParameterError
 				continue
 			}
+			if t == SecurityStatistic {
+				statics = append(statics, a.statisticItems(sel, v, &p)...)
+				continue
+			}
 			items := db.statics(t, sel, v, false)
 			if !sel.all && !db.covers(t, sel) {
 				p.iin |= app.IINParameterError

@@ -96,15 +96,62 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 }
 
 func (a *association) execute(ctx context.Context, h Handler, fc app.FunctionCode, c Command) app.CommandStatus {
+	var status app.CommandStatus
 	switch fc {
 	case app.FuncSelect:
 		return h.Select(ctx, c)
 	case app.FuncOperate:
-		return h.Operate(ctx, c, SelectBeforeOperate)
+		status = h.Operate(ctx, c, SelectBeforeOperate)
 	case app.FuncDirectOperate:
-		return h.Operate(ctx, c, DirectOperate)
+		status = h.Operate(ctx, c, DirectOperate)
 	default:
-		return h.Operate(ctx, c, DirectOperateNoAck)
+		status = h.Operate(ctx, c, DirectOperateNoAck)
+	}
+	a.commandEvent(c, status)
+	return status
+}
+
+// commandEvent reports an executed control as a command event when the
+// output's configuration asks for it.
+func (a *association) commandEvent(c Command, status app.CommandStatus) {
+	db := a.srv.db
+	t, et := BinaryOutput, BinaryOutputCommand
+	if c.GV.Group() == 41 {
+		t, et = AnalogOutput, AnalogOutputCommand
+	}
+	db.mu.RLock()
+	p, ok := db.points[t][c.Index]
+	var cfg PointConfig
+	if ok {
+		cfg = p.cfg
+	}
+	db.mu.RUnlock()
+	if !ok || cfg.CommandEventClass == 0 {
+		return
+	}
+	ts := a.srv.clock.now()
+	var v app.Value
+	switch x := c.Value.(type) {
+	case app.CROB:
+		v = app.BinaryCommandEvent{Value: crobState(x), Status: status, Time: ts}
+	case app.AnalogOutput:
+		v = app.AnalogCommandEvent{Value: x.Value, Status: status, Time: ts}
+	default:
+		return
+	}
+	a.srv.publish([]event{{typ: et, index: c.Index, class: cfg.CommandEventClass, variation: cfg.CommandEventVariation, value: v}})
+}
+
+// crobState is the state a CROB commands: on for latch on, pulse on and
+// close, off for latch off, pulse off and trip.
+func crobState(c app.CROB) bool {
+	switch c.TripClose {
+	case app.TCCClose:
+		return true
+	case app.TCCTrip:
+		return false
+	default:
+		return c.Op == app.OpLatchOn || c.Op == app.OpPulseOn
 	}
 }
 

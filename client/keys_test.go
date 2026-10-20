@@ -181,6 +181,9 @@ func TestChallengeBeforeKeyChange(t *testing.T) {
 	if _, err := New("127.0.0.1", WithKeyChangeInterval(0)); !errors.Is(err, dnp3.ErrInvalidOption) {
 		t.Fatal("key change interval 0 accepted")
 	}
+	if _, err := New("127.0.0.1", WithAggressiveMode()); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("aggressive mode without secure authentication accepted")
+	}
 }
 
 func TestPreSharedSessionKey(t *testing.T) {
@@ -275,5 +278,61 @@ func TestChallengeReplySequence(t *testing.T) {
 	}
 	if got := <-replySeq; got != seq {
 		t.Fatalf("reply sent with sequence %d, the critical request had %d", got, seq)
+	}
+}
+
+// authResponses counts the AUTHENTICATE_RESP fragments a master receives.
+type authResponses struct {
+	dnp3.NopMetrics
+	n atomic.Int64
+}
+
+func (m *authResponses) OnFragmentReceived(_ net.Addr, f *app.Fragment, _ int) {
+	if f.Function == app.FuncAuthResponse {
+		m.n.Add(1)
+	}
+}
+
+func TestAggressiveMode(t *testing.T) {
+	key := []byte("pre-shared session key 32 octets")
+	accept := server.HandlerFunc(func(context.Context, server.Command, server.OperateType) app.CommandStatus { return app.StatusSuccess })
+	_, addr := outstation(t, server.WithHandler(accept),
+		server.WithSecureAuthentication(server.SecureAuth{User: secauth.User{Number: 1, Key: key}}))
+	m := &authResponses{}
+	c, err := Dial(testCtx(t), addr, WithMetrics(m), WithAggressiveMode(), WithAutoClearRestart(false),
+		WithSecureAuthentication(secauth.User{Number: 1, Key: key}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	stats := func() map[uint32]uint32 {
+		t.Helper()
+		res, err := c.Read(testCtx(t), app.AllObjects(app.G121V0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[uint32]uint32{}
+		for _, h := range res.Headers() {
+			for _, o := range h.Objects {
+				got[o.Index] = o.Value.(app.SecurityStatistic).Value
+			}
+		}
+		return got
+	}
+	before := stats()
+	// The first control is challenged; the next ones carry their MAC.
+	for i := range 4 {
+		if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
+			t.Fatalf("control %d: %v", i, err)
+		}
+	}
+	if n := m.n.Load(); n != 1 {
+		t.Fatalf("%d challenges for 4 controls in aggressive mode, want 1", n)
+	}
+	after := stats()
+	for _, s := range []secauth.Statistic{secauth.StatSuccessfulAuthentications, secauth.StatCriticalMessagesReceived} {
+		if d := after[uint32(s)] - before[uint32(s)]; d != 4 {
+			t.Errorf("%s grew by %d over 4 authenticated controls", s, d)
+		}
 	}
 }

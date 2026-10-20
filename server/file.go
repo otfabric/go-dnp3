@@ -13,20 +13,24 @@ import (
 
 	"github.com/otfabric/go-dnp3/app"
 	"github.com/otfabric/go-dnp3/link"
+	"github.com/otfabric/go-dnp3/secauth"
 )
 
 // FileRequest is an OPEN_FILE request.
 type FileRequest struct {
 	// Name is the file name as the master sent it.
 	Name string
+	// Mode is read, write or append.
 	Mode app.FileMode
 	// Size is the size of the file to write, or 0.
-	Size        uint32
+	Size uint32
+	// Permissions and Created are what the master asks a new file to get.
 	Permissions app.Permissions
 	Created     app.Timestamp
 	// AuthKey is the key from AUTHENTICATE_FILE, or 0.
 	AuthKey uint32
-	Master  link.Address
+	// Master is the link address of the master.
+	Master link.Address
 }
 
 // File is an open file. Read is called for files opened for reading,
@@ -100,9 +104,17 @@ func (a *association) file(req *app.Fragment) *response {
 			}
 			return ff(st)
 		}
-		// The block must fit a response: header 4, object header 6, size
-		// 2, handle and block number 8.
+		// The block must fit a response (header 4, object header 6, size
+		// 2, handle and block number 8) and, written, a request; with
+		// secure authentication a request in aggressive mode also
+		// carries g120v3 and g120v9.
 		limit := a.srv.opts.maxTxFragment - 20
+		if c.Mode != app.FileModeRead {
+			limit = min(limit, a.srv.opts.maxRxFragment-20)
+			if a.srv.opts.auth != nil {
+				limit -= secauth.AggressiveOverhead
+			}
+		}
 		maxBlock := int(c.MaxBlockSize)
 		if maxBlock == 0 || maxBlock > limit {
 			maxBlock = limit
@@ -273,6 +285,7 @@ func (a *association) closeFiles() {
 // os.DirFS. Directories are served as file descriptor lists, so that a
 // master can list them.
 type FSFileServer struct {
+	// FS is the file system served; "/" is its root.
 	FS fs.FS
 }
 
