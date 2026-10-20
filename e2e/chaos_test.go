@@ -336,15 +336,40 @@ func TestChaos(t *testing.T) {
 					t.Errorf("analog input after recovery %v, database %d", a.Value, written.Load())
 				}
 			}
-			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer rcancel()
-			if _, err := c.Operate(rctx, client.DirectOperate, client.CROB(0, app.OpLatchOff, 0, 0)); err != nil {
-				t.Errorf("control after recovery: %v", err)
+			// Critical requests too, once the session keys are back: a
+			// client that reconnected without them fails the first one at
+			// once and changes the keys (secure authentication).
+			eventually := func(what string, f func(context.Context) error) {
+				t.Helper()
+				var err error
+				deadline := time.Now().Add(10 * time.Second)
+				for {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					err = f(ctx)
+					cancel()
+					if err == nil || time.Now().After(deadline) {
+						break
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+				if err != nil {
+					t.Errorf("%s after recovery: %v", what, err)
+				}
 			}
-			var buf bytes.Buffer
-			if _, err := c.ReadFile(rctx, "/data.bin", &buf, client.FileOptions{}); err != nil || !bytes.Equal(buf.Bytes(), content) {
-				t.Errorf("file after recovery: %v", err)
-			}
+			eventually("control", func(ctx context.Context) error {
+				_, err := c.Operate(ctx, client.DirectOperate, client.CROB(0, app.OpLatchOff, 0, 0))
+				return err
+			})
+			eventually("file", func(ctx context.Context) error {
+				var buf bytes.Buffer
+				if _, err := c.ReadFile(ctx, "/data.bin", &buf, client.FileOptions{}); err != nil {
+					return err
+				}
+				if !bytes.Equal(buf.Bytes(), content) {
+					return fmt.Errorf("%d octets differ from the file", buf.Len())
+				}
+				return nil
+			})
 
 			// Nothing is left running.
 			_ = c.Close()
