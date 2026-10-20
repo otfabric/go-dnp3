@@ -241,6 +241,7 @@ log.Fatal(srv.ListenAndServe(":20000"))
 | UDP | `WithStream(client.UDP(addr))` | `ServeUDP`, or `ServeUDPTo` with the master's address |
 | Serial, or any byte stream | `WithStream` with an opener that returns the port | `ServeConn` |
 | Dual end point (the outstation connects) | `WithStream(client.Accept(l))` | `DialAndServe(ctx, masterAddr, server.Redial{})` |
+| Several outstations behind one port or line (multi-drop) | one client per outstation address | `server.NewGroup(servers...)` with `ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP` |
 
 Serial ports are not opened by this module, so that it has no
 dependencies: open the port with a serial library, for example
@@ -364,8 +365,6 @@ linked into go-dnp3.
 - **Data sets, private registration objects and the virtual terminal**
   (groups 83, 85..88, 90, 91 raw; 112, 113 decoded) have no procedures:
   exchange them with the generic request methods.
-- **Several outstations behind one port**: a `Server` is one outstation;
-  serve several on their own ports.
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation: a

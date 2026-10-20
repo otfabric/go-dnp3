@@ -151,6 +151,7 @@ The outstation.
 | `(*Server).ServeConn(io.ReadWriteCloser, net.Addr)` | Serve one stream: serial, a pipe |
 | `(*Server).ServeUDP(net.PacketConn)` | DNP3 over UDP; answers the address that sent last |
 | `(*Server).ServeUDPTo(net.PacketConn, net.Addr)` | The same, with the master's address known from the start |
+| `NewGroup(servers...)` | Several outstations, each a `Server` at its own address, on the same connections (multi-drop); `(*Group).ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `Servers`, `Close` |
 | `(*Server).DialAndServe(ctx, addr, Redial)` | The dual end point: connect to the master, serve, reconnect (`Redial{MinDelay, MaxDelay}`, 1 s and 1 min); `ctx.Err()` when ctx ends, `nil` after `Close` |
 | `(*Server).Address()` | The outstation's link address |
 | `(*Server).Database()` | The points |

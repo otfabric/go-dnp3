@@ -173,6 +173,13 @@ func (c *Channel) lookup(local, remote link.Address) *Session {
 	return s
 }
 
+// Session returns the session of the address pair, or nil.
+func (c *Channel) Session(local, remote link.Address) *Session {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sessions[key{local, remote}]
+}
+
 // broadcastTargets returns the sessions that take a frame from remote to
 // a broadcast or the self address.
 func (c *Channel) broadcastTargets(remote link.Address) []*Session {
@@ -219,13 +226,12 @@ func (c *Channel) readLoop() {
 		}
 		switch {
 		case f.Dest.Broadcast() || f.Dest == link.SelfAddress:
-			targets := c.broadcastTargets(f.Src)
-			if len(targets) == 0 && c.cfg.Accept != nil {
-				// The first frame of a master may be a broadcast.
-				if s := c.cfg.Accept(f.Dest, f.Src); s != nil {
-					targets = append(targets, s)
-				}
+			if c.cfg.Accept != nil {
+				// Every station that takes the broadcast gets a session,
+				// also when it is the master's first frame to it.
+				c.cfg.Accept(f.Dest, f.Src)
 			}
+			targets := c.broadcastTargets(f.Src)
 			for _, s := range targets {
 				s.handleFrame(f)
 			}

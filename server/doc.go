@@ -17,7 +17,8 @@
 // [WithTLS], [Server.ServeUDP] for UDP, [Server.ServeConn] for any byte
 // stream such as a serial port, and [Server.DialAndServe] for the dual end
 // point, where the outstation connects to its master. [Server.Close] ends
-// them all.
+// them all. A [Group] serves several outstations, each a Server at its own
+// link address, on the same port or line (multi-drop).
 //
 // Secure Authentication version 5 ([WithSecureAuthentication]) challenges
 // critical requests, takes part in the session key change, accepts

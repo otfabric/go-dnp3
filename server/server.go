@@ -243,45 +243,80 @@ func (s *Server) isClosed() bool {
 // the peer in logs and metrics and may be nil. It returns the reason the
 // stream ended: nil after Close.
 func (s *Server) ServeConn(rw io.ReadWriteCloser, remote net.Addr) error {
+	return serveConn(rw, remote, []*Server{s})
+}
+
+// takes reports whether a frame to local is for the server: its own
+// address, a broadcast address, or the self address when enabled.
+func (s *Server) takes(local link.Address) bool {
+	return local == s.opts.address || local.Broadcast() || (s.opts.selfAddress && local == link.SelfAddress)
+}
+
+// serveConn serves one stream for the outstations of servers, which have
+// distinct addresses: each takes the frames to its address, all of them
+// the broadcasts. The channel's metrics and log are the first server's.
+func serveConn(rw io.ReadWriteCloser, remote net.Addr, servers []*Server) error {
+	lead := servers[0]
 	var ch *channel.Channel
 	ch = channel.New(rw, channel.Config{
 		Remote:  remote,
-		Metrics: s.opts.metrics,
-		Log:     s.log.With("remote", addrString(remote)),
+		Metrics: lead.opts.metrics,
+		Log:     lead.log.With("remote", addrString(remote)),
 		Accept: func(local, master link.Address) *channel.Session {
-			if local != s.opts.address && !local.Broadcast() && (!s.opts.selfAddress || local != link.SelfAddress) {
-				return nil
+			var first *channel.Session
+			for _, s := range servers {
+				if !s.takes(local) {
+					continue
+				}
+				if !s.masterAllowed(master) {
+					s.log.Debug("frame from unknown master ignored", "master", master)
+					continue
+				}
+				sess := ch.Session(s.opts.address, master)
+				if sess == nil {
+					sess = s.bind(ch, master)
+				}
+				if sess != nil && first == nil {
+					first = sess
+				}
 			}
-			if !s.masterAllowed(master) {
-				s.log.Debug("frame from unknown master ignored", "master", master)
-				return nil
-			}
-			return s.bind(ch, master)
+			return first
 		},
 	})
-	s.mu.Lock()
-	if s.closed {
+	for i, s := range servers {
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			for _, o := range servers[:i] {
+				o.mu.Lock()
+				delete(o.channels, ch)
+				o.mu.Unlock()
+			}
+			_ = rw.Close()
+			return dnp3.ErrClosed
+		}
+		s.channels[ch] = struct{}{}
 		s.mu.Unlock()
-		_ = rw.Close()
-		return dnp3.ErrClosed
 	}
-	s.channels[ch] = struct{}{}
-	s.mu.Unlock()
-	s.log.Info("connection opened", "remote", addrString(remote))
-
-	// With a single configured master the association is known before
-	// the master speaks, so that the null unsolicited response can go out.
-	if len(s.opts.masters) == 1 {
-		s.bind(ch, s.opts.masters[0])
+	for _, s := range servers {
+		s.log.Info("connection opened", "remote", addrString(remote))
+		// With a single configured master the association is known before
+		// the master speaks, so that the null unsolicited response can go
+		// out.
+		if len(s.opts.masters) == 1 {
+			s.bind(ch, s.opts.masters[0])
+		}
 	}
 	ch.Start()
 	<-ch.Done()
 
-	s.mu.Lock()
-	delete(s.channels, ch)
-	s.mu.Unlock()
 	err := ch.Err()
-	s.log.Info("connection closed", "remote", addrString(remote), "error", err)
+	for _, s := range servers {
+		s.mu.Lock()
+		delete(s.channels, ch)
+		s.mu.Unlock()
+		s.log.Info("connection closed", "remote", addrString(remote), "error", err)
+	}
 	return err
 }
 

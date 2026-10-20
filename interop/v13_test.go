@@ -664,3 +664,48 @@ func TestClientSeveralOutstations(t *testing.T) {
 		})
 	}
 }
+
+// TestServerSeveralOutstations: go-dnp3's outstations at three addresses
+// behind one port (server.Group); each reference master reaches each by
+// its link address, and an address nobody has goes unanswered.
+func TestServerSeveralOutstations(t *testing.T) {
+	requireDocker(t)
+	for _, a := range adapters(t) {
+		t.Run(a.name, func(t *testing.T) {
+			f := a.fixture(t)
+			base := f.Outstation.Address
+			var servers []*server.Server
+			for i := range uint16(3) {
+				g := *f
+				g.Outstation.Address = base + i
+				st, err := newStation(&g)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Outstation i tells itself apart by binary input 0.
+				_ = st.srv.Database().Update(server.BinaryInput, 0, app.Binary{Value: i == 1, Flags: app.FlagOnline}, server.EventSuppress)
+				servers = append(servers, st.srv)
+			}
+			grp, err := server.NewGroup(servers...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			l, err := net.Listen("tcp", "0.0.0.0:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			go func() { _ = grp.Serve(l) }()
+			t.Cleanup(func() { _ = grp.Close() })
+			port := l.Addr().(*net.TCPAddr).Port
+			for i := range uint16(3) {
+				r := runClient(t, a, port, "read", "--group", "1", "--variation", "2", "--start", "0", "--stop", "0", "--remote-addr", fmt.Sprint(base+i))
+				if !r.OK || len(r.Objects) != 1 || r.Objects[0].Value != (i == 1) {
+					t.Errorf("outstation %d: ok=%v %s %+v", base+i, r.OK, r.errorCode(), r.Objects)
+				}
+			}
+			if r := runClient(t, a, port, "integrity-poll", "--remote-addr", fmt.Sprint(base+3), "--timeout-ms", "1500"); r.OK {
+				t.Errorf("outstation %d answered, beyond the three", base+3)
+			}
+		})
+	}
+}

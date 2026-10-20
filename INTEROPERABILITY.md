@@ -43,7 +43,7 @@ of a device profile, and how it has been verified.
 | Primary frame timeout and retries | ✅ `Link.Timeout`, `Link.Retries` |
 | DFC (data flow control) | sent as 0; ignored on receipt |
 | FCV checked against the function | ✅ frames with an invalid FCV are ignored |
-| Multi-drop: several associations on one channel | ✅ internally; the public client serves one outstation |
+| Multi-drop: several outstations on one channel | ✅ one `Client` per outstation (one connection each) | ✅ `server.Group`: several `Server`s, each at its own address, on the same connections, serial lines and UDP sockets; broadcasts reach all of them |
 
 ## Transport function
 
@@ -255,7 +255,7 @@ images offer.
 | Link confirms; keep-alive | O (keep-alive) | O (keep-alive) | M O | |
 | Broadcast | M | M | M O | |
 | Management functions (INITIALIZE, START, STOP, SAVE) | | O | M | |
-| Several outstations behind one port | | M | M | |
+| Several outstations behind one port | O | M O | M O | O |
 | Dual end point, TCP | M O | M O | M O | |
 | Dual end point, TLS | M | M O | M O | |
 | Frozen analog inputs (g31) | O | | M O | |
@@ -318,7 +318,4 @@ The gaps, and what closing them would be worth:
 - **Virtual terminal and data sets.** Rarely used; the codec carries them,
   so an application can still exchange them with the generic request
   methods.
-- **Several outstations behind one channel.** go-dnp3 serves one
-  outstation per `Server`; several need a port each (opendnp3 and DSC
-  go-dnp3 serve them on one). Its master reaches each of theirs.
 - **Multi-fragment requests** are not a gap: requests are one fragment.

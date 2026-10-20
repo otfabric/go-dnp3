@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -416,13 +417,24 @@ func runClient(t testing.TB, a adapter, port int, op string, args ...string) *re
 // addresses.
 var clientArgs = []string{"--local-addr", "1", "--remote-addr", "1024"}
 
+// withDefaults returns the clientArgs that argv does not set itself.
+func withDefaults(argv []string) []string {
+	var out []string
+	for i := 0; i < len(clientArgs); i += 2 {
+		if !slices.Contains(argv, clientArgs[i]) {
+			out = append(out, clientArgs[i], clientArgs[i+1])
+		}
+	}
+	return out
+}
+
 // runClientSpec runs the reference master with argv after the client
 // command (the operation first) and extra docker run options.
 func runClientSpec(t testing.TB, a adapter, dockerArgs []string, argv []string) *result {
 	t.Helper()
 	a.needRole(t, "client")
 	cmd := append(append([]string{"run", "--rm", "--add-host=host.docker.internal:host-gateway"}, dockerArgs...), a.image, "client")
-	return runClientCmd(t, a, argv[0], append(append(cmd, argv...), clientArgs...))
+	return runClientCmd(t, a, argv[0], append(append(cmd, argv...), withDefaults(argv)...))
 }
 
 // runClientScript runs the reference master from a /bin/sh script that
@@ -430,7 +442,7 @@ func runClientSpec(t testing.TB, a adapter, dockerArgs []string, argv []string) 
 func runClientScript(t testing.TB, a adapter, script string, argv []string) *result {
 	t.Helper()
 	a.needRole(t, "client")
-	script += "\nexec dnp3-interop client " + shellJoin(append(argv, clientArgs...))
+	script += "\nexec dnp3-interop client " + shellJoin(append(argv, withDefaults(argv)...))
 	return runClientCmd(t, a, argv[0], []string{"run", "--rm", "--add-host=host.docker.internal:host-gateway",
 		"--entrypoint", "/bin/sh", a.image, "-c", script})
 }
