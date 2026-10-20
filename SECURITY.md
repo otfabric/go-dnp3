@@ -40,12 +40,13 @@ Plain DNP3 carries no authentication and no encryption: anyone who can reach an 
 
 ### Secure Authentication v5
 
-`WithSecureAuthentication` on both ends makes the outstation execute critical requests (controls, writes, restarts, freezes, file operations, ...) only after the master proved knowledge of the session key with an HMAC over the challenge and the request.
+`WithSecureAuthentication` on both ends makes the outstation execute critical requests (controls, writes, restarts, freezes, file operations, ...) only after the master proved knowledge of the control direction session key with an HMAC over the challenge and the request.
 
-- **Pre-shared keys only.** The key change procedures are not implemented: the session key is configured on both ends out of band and does not change. Choose a random key of at least 16 octets, keep it out of source control, and rotate it by reconfiguring both ends
+- **Use an update key.** With `secauth.User.UpdateKey` (16 or 32 random octets) the master generates fresh session keys on every connection and at the key change interval, and sends them wrapped with the update key (AES key wrap, RFC 3394); the outstation drops them when the connection ends. The pre-shared session key mode (`secauth.User.Key` without an update key) never changes its key and is meant for testing
+- **Update keys are configured out of band.** The update key change procedures (symmetric and asymmetric) and user management are not implemented: keep update keys out of source control and rotate them by reconfiguring both ends
 - **Only the control direction is authenticated.** Responses and unsolicited data from the outstation are not authenticated; use TLS to protect them
 - **Non-critical requests (READ) are not challenged.** They disclose data without authentication; use TLS where that matters
-- Secure Authentication has been verified between go-dnp3's master and outstation only (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
+- Secure Authentication is verified between go-dnp3's master and outstation; cross-stack tests come with dnp3-interop's contract 1.1 (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
 
 ### Resource Limits
 

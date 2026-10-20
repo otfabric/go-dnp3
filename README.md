@@ -31,9 +31,10 @@ The library provides:
   IEEE 1815-2012 Annex A in use today: file control (g70), device
   attributes (g0) and the secure authentication objects (g120..g122)
   included
-- **Secure Authentication v5** (IEEE 1815-2012 clause 7) with a
-  pre-shared session key: the outstation challenges critical requests, the
-  master answers with an HMAC
+- **Secure Authentication v5** (IEEE 1815-2012 clause 7): the session key
+  change with AES key wrap under a pre-shared update key, on every
+  connection and at an interval; the outstation challenges critical
+  requests, the master answers with an HMAC
 - What production use needs: `context.Context` on every call, automatic
   reconnect with backoff, retries for the requests that are safe to repeat,
   automatic handling of the internal indications (restart, time, events,
@@ -81,7 +82,7 @@ where they differ so you can pick the right one for your project.
 | LAN and non-LAN time synchronization | ✅ | ✅ | ✅ | ✅ |
 | Assign class, as outstation | ✅ | — ¹ | ✅ | ✅ |
 | File transfer (g70) | ✅ both roles | master | — | ✅ |
-| Secure Authentication v5 | ✅ pre-shared key | — | — | symmetric subset |
+| Secure Authentication v5 | ✅ session key change, challenges | — | — | symmetric subset |
 | Device attributes (g0) | ✅ both roles | ✅ | not documented | not documented |
 | TLS | ✅ `crypto/tls` | ✅ | ✅ | not documented |
 | Serial | ✅ any byte stream | ✅ | ✅ | not documented |
@@ -228,7 +229,7 @@ log.Fatal(srv.ListenAndServe(":20000"))
 |-----------|--------|--------|
 | TCP | default | `ListenAndServe`, `Serve` |
 | TLS | `WithTLS` | `WithTLS` with `ListenAndServe`, or a TLS listener with `Serve` |
-| UDP | `WithStream(client.UDP(addr))` | `ServeUDP` |
+| UDP | `WithStream(client.UDP(addr))` | `ServeUDP`, or `ServeUDPTo` with the master's address |
 | Serial, or any byte stream | `WithStream` with an opener that returns the port | `ServeConn` |
 
 Serial ports are not opened by this module, so that it has no
@@ -328,16 +329,15 @@ linked into go-dnp3.
 
 ## Limitations
 
-- **Secure Authentication**: pre-shared session keys only. The key change
-  procedures (session key change, update key change, user management) and
-  aggressive mode are not implemented, and no reference stack in the interop
-  suite runs SAv5, so it is verified between go-dnp3's own master and
-  outstation. See [SECURITY.md](SECURITY.md).
+- **Secure Authentication**: update keys are configured out of band. The
+  update key change, user management (certificates, user status change) and
+  aggressive mode are not implemented. See [SECURITY.md](SECURITY.md).
 - **Data sets and private registration objects** (groups 83 to 91) are
   carried as raw payload, not decoded.
 - **FREEZE_AT_TIME** is executed only for a time that has passed with no
   interval; scheduled freezes are refused.
-- **UDP outstation**: one socket serves one master at a time.
+- **UDP outstation**: one socket serves one master at a time; a master
+  behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation (no
   master sends them in practice).
 

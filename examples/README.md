@@ -13,7 +13,7 @@ exchange and there is nothing to set up.
 | [commands](commands/main.go) | Select-before-operate and direct operate of a CROB, a trip, a set-point, a no-ack control, a refusal as `*dnp3.CommandError`, and the outputs read back | `go run ./examples/commands` |
 | [events](events/main.go) | Event classes, a batch reported in one unsolicited response, a deadband, the master's startup sequence | `go run ./examples/events` |
 | [files](files/main.go) | File transfer: `FSFileServer` over an `fs.FS`; `ListDirectory`, `ReadFile`, `FileInfo` | `go run ./examples/files` |
-| [secure](secure/main.go) | Secure Authentication v5 with a pre-shared key: challenged controls, and a master with the wrong key refused | `go run ./examples/secure` |
+| [secure](secure/main.go) | Secure Authentication v5: the session key change under an update key, challenged controls, and a master with the wrong update key refused | `go run ./examples/secure` |
 | [observability](observability/main.go) | `slog` logging and metrics on both sides, a state handler, retries, reconnect and a periodic poll | `go run ./examples/observability` |
 
 The last two are an outstation and a master as separate programs, for

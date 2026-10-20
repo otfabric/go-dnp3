@@ -31,7 +31,11 @@ func (c *Client) onAuthResponse(ctx context.Context, sess *channel.Session, f *a
 				if v.MAC != u.Algorithm() {
 					return 0, fmt.Errorf("%w: challenge asks for %s, configured %s", dnp3.ErrAuthentication, v.MAC, u.Algorithm())
 				}
-				mac, err := secauth.MAC(v.MAC, u.Key, secauth.AuthData(raw, critical))
+				key := c.controlKey()
+				if key == nil {
+					return 0, fmt.Errorf("%w: challenged before the session keys were changed", dnp3.ErrAuthentication)
+				}
+				mac, err := secauth.MAC(v.MAC, key, secauth.AuthData(raw, critical))
 				if err != nil {
 					return 0, fmt.Errorf("%w: %w", dnp3.ErrAuthentication, err)
 				}

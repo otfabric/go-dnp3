@@ -494,3 +494,20 @@ func indexOnly(objs []Object) bool {
 	}
 	return len(objs) > 0
 }
+
+// AppendObjectValue appends the encoding of one object of gv without any
+// header, prefix or size: the octets a free-format object carries. Secure
+// authentication uses it to reproduce an object exactly, for example the
+// key status message of a session key change. Relative-time variations
+// are not supported: they need the CTO of their fragment.
+func AppendObjectValue(b []byte, gv GroupVariation, v Value) ([]byte, error) {
+	d := lookup(gv)
+	if d == nil {
+		return b, fmt.Errorf("%w: %s", ErrUnknownObject, gv)
+	}
+	if d.time == tRel {
+		return b, invalid("%s carries a relative time", gv)
+	}
+	var c codecCtx
+	return d.encodeValue(b, gv, v, &c)
+}

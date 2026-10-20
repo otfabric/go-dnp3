@@ -50,6 +50,7 @@ type association struct {
 	timer      *time.Timer
 
 	pendingAuth  *challenge
+	keys         sessionKeys
 	csq          uint32
 	authFailures int
 
@@ -178,6 +179,9 @@ func (a *association) detach() {
 	a.selection = nil
 	a.lastReq = nil
 	a.closeFiles()
+	// Session keys do not survive the connection (clause 7.5.2.3).
+	a.keys.reset()
+	a.pendingAuth = nil
 }
 
 // receive queues a fragment from sess. It goes through the same queue
@@ -342,7 +346,7 @@ func (a *association) handle(in inbound) {
 	}
 	a.abandonSolicited()
 	if err == nil && (req.Function == app.FuncAuthRequest || req.Function == app.FuncAuthRequestNoAck) {
-		a.authRequest(req)
+		a.authRequest(req, in)
 		return
 	}
 	if err == nil && !broadcast && a.critical(req.Function) {

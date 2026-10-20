@@ -124,6 +124,7 @@ type options struct {
 	polls            []Poll
 	queueLimit       int
 	auth             *secauth.User
+	keyChange        time.Duration
 }
 
 func defaultOptions() options {
@@ -136,6 +137,7 @@ func defaultOptions() options {
 		autoClearRestart: true,
 		autoIntegrity:    true,
 		queueLimit:       64,
+		keyChange:        15 * time.Minute,
 	}
 }
 
@@ -334,16 +336,30 @@ func WithQueueLimit(n int) Option {
 	}
 }
 
-// WithSecureAuthentication enables Secure Authentication version 5 with a
-// pre-shared session key: the client answers the outstation's challenges
-// of critical requests. Without it a challenge fails the request with
-// dnp3.ErrAuthentication.
+// WithSecureAuthentication enables Secure Authentication version 5: the
+// client answers the outstation's challenges of critical requests. With an
+// update key in u it first runs the session key change on every
+// connection, and again at the key change interval; with only a session
+// key it uses that key directly. Without this option a challenge fails the
+// request with dnp3.ErrAuthentication.
 func WithSecureAuthentication(u secauth.User) Option {
 	return func(o *options) error {
 		if err := u.Validate(); err != nil {
 			return invalidOption("%v", err)
 		}
 		o.auth = &u
+		return nil
+	}
+}
+
+// WithKeyChangeInterval sets how often the session keys are changed while
+// connected, with an update key. The default is 15 minutes.
+func WithKeyChangeInterval(d time.Duration) Option {
+	return func(o *options) error {
+		if d <= 0 {
+			return invalidOption("key change interval %v", d)
+		}
+		o.keyChange = d
 		return nil
 	}
 }

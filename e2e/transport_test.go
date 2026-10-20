@@ -70,3 +70,60 @@ func TestStream(t *testing.T) {
 		t.Fatalf("stream integrity poll: %v", err)
 	}
 }
+
+// TestUDPWithConfiguredMaster: with one configured master the association
+// exists before any datagram, and its null unsolicited response is sent at
+// once. It used to fail the socket ("no UDP peer yet") and end ServeUDP, so
+// every later request was lost.
+func TestUDPWithConfiguredMaster(t *testing.T) {
+	for _, fixedPeer := range []bool{false, true} {
+		srv, err := server.New(server.WithMasters(1), server.WithUnsolicited(server.Unsolicited{Enabled: true, RetryDelay: 100 * time.Millisecond}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fullDatabase(srv.Database())
+		pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The master's socket, bound first so that its address is known.
+		mpc, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		errc := make(chan error, 1)
+		go func() {
+			if fixedPeer {
+				errc <- srv.ServeUDPTo(pc, mpc.LocalAddr())
+			} else {
+				errc <- srv.ServeUDP(pc)
+			}
+		}()
+		time.Sleep(200 * time.Millisecond)
+		select {
+		case err := <-errc:
+			t.Fatalf("fixedPeer=%v: ServeUDP ended before any master spoke: %v", fixedPeer, err)
+		default:
+		}
+		if fixedPeer {
+			// The null unsolicited response reached the master unasked.
+			_ = mpc.SetReadDeadline(time.Now().Add(3 * time.Second))
+			buf := make([]byte, 512)
+			if _, _, err := mpc.ReadFrom(buf); err != nil {
+				t.Fatalf("no datagram to the configured master: %v", err)
+			}
+		}
+		_ = mpc.Close()
+		addr := pc.LocalAddr().String()
+		c, err := client.Dial(ctx(t), addr, client.WithStream(client.UDP(addr)), client.WithResponseTimeout(2*time.Second))
+		if err != nil {
+			t.Fatalf("fixedPeer=%v: %v", fixedPeer, err)
+		}
+		res, err := c.IntegrityPoll(ctx(t))
+		if err != nil || len(res.Measurements()) != 15 {
+			t.Fatalf("fixedPeer=%v: integrity poll over UDP: %v", fixedPeer, err)
+		}
+		_ = c.Close()
+		_ = srv.Close()
+	}
+}

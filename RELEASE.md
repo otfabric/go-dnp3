@@ -1,5 +1,34 @@
 # go-dnp3 Releases
 
+## v0.2.0
+
+**Date:** 2026-10-20
+**Previous release:** v0.1.1
+
+## Summary
+
+The Secure Authentication session key change, and a fix for the UDP
+outstation. Both found by the interop work for dnp3-interop's contract 1.1.
+
+**Upgrade notes**
+
+- `secauth.User` has a new `UpdateKey`. With it the session keys are negotiated; without it the pre-shared `Key` is used as before, so existing configurations keep working.
+
+## Changes
+
+### Added
+
+- **Session key change** (IEEE 1815-2012 clause 7.5.2.3) in both roles. The master requests the key status (g120v4), wraps fresh control and monitoring direction session keys with the update key (AES-128 or AES-256 key wrap, RFC 3394) together with the key status message (g120v6), and checks the outstation's confirmation (g120v5 with a MAC over the key change, computed with the new monitoring key). It does so on every connection and at `client.WithKeyChangeInterval` (default 15 minutes). The outstation drops the session keys when the connection ends. The key status message is sent with its MAC value; the outstation accepts it with or without, as implementations differ.
+- `secauth.KeyWrap`, `KeyUnwrap`, `KeyChangeData`, `ParseKeyChangeData`, `User.UpdateKey`, `User.KeyWrapAlgorithm`, `User.SessionKeyLen`.
+- `app.AppendObjectValue`, the encoding of one object without its header.
+- `server.ServeUDPTo`: DNP3 over UDP with the master's address known from the start, so that unsolicited responses reach it before it sends.
+
+### Fixed
+
+- **The UDP outstation stopped before any master spoke.** With one configured master, the association exists at once and sends its null unsolicited response. With no peer known yet, that write failed and ended `ServeUDP`, so every later request was lost. A datagram with nowhere to go is now dropped, as UDP would, and the unsolicited retries repeat it.
+
+---
+
 ## v0.1.1
 
 **Date:** 2026-10-20
