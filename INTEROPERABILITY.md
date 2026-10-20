@@ -195,7 +195,7 @@ a pre-shared session key is used directly.
 | Level | Status |
 |-------|--------|
 | Codec unit tests, known vectors, round trip of every variation and qualifier | ✅ |
-| Fuzzing: link frame decoder, stream reader, transport reassembly, application fragment decoder with stable re-encoding, the outstation's request handling (`FuzzOutstation`) | ✅ in CI |
+| Fuzzing: link frame decoder, stream reader, transport reassembly, application fragment decoder with stable re-encoding, the outstation's request handling, also with the smallest fragments (`FuzzOutstation`), the splitting of responses into fragments (`FuzzPack`) | ✅ in CI |
 | Chaos: corrupted, split and delayed octets and killed connections under load, with and without secure authentication | ✅ `e2e/chaos_test.go` |
 | Link procedures frame by frame; noisy and duplicating lines | ✅ |
 | Outstation conformance with a scripted master | ✅ |

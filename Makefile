@@ -112,6 +112,7 @@ fuzz: ## Run the codec and outstation fuzz targets for FUZZTIME each (default 30
 	@go test -run='^$$' -fuzz='^FuzzReassembler$$' -fuzztime=$(FUZZTIME) ./transport
 	@go test -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZTIME) ./app
 	@go test -run='^$$' -fuzz='^FuzzOutstation$$' -fuzztime=$(FUZZTIME) ./server
+	@go test -run='^$$' -fuzz='^FuzzPack$$' -fuzztime=$(FUZZTIME) ./server
 
 test-interop: ## Run the interop suite against the stepfunc, opendnp3, dscsystems and dnp3py reference images (needs Docker)
 	@echo "Running interop tests against dnp3-interop v0.4.1: stepfunc, opendnp3, dscsystems, dnp3py"

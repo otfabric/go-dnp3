@@ -24,6 +24,7 @@ addresses them and opendnp3, stepfunc dnp3 and DSC go-dnp3 serve them; and
 
 ### Tests
 
+- `FuzzPack`: the splitting of responses into fragments, for any headers (ranges, index prefixes, octet strings, relative-time events behind a CTO) and any fragment size, with its invariants: no panic, no fragment over the size, every object kept in order, events aligned. `FuzzOutstation` also runs against an outstation with the smallest fragments and hundreds of points. Each finds the panic above within a second; neither existed when it was written.
 - Interop: the masters of stepfunc, opendnp3, DSC go-dnp3 and dnp3py reach each of three go-dnp3 outstations behind one port by its link address; an address nobody has is not answered.
 - One connection with sessions to several outstations, broadcasts to all of them, the limits and the lifecycle of a group.
 

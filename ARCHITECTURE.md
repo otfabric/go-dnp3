@@ -206,7 +206,7 @@ and reports one as a g122 event every `StatisticsThreshold` increments.
 | Link procedures | secondary state machine frame by frame, confirmed data with retries and NACK, keep-alive, noisy and duplicating lines | `internal/channel` |
 | Outstation conformance | a scripted master sending exact requests: malformed requests and their IIN, repeated requests, broadcast, confirm timeouts, unsolicited retries and hold, select timeout, pattern control | `server` |
 | Master | timeouts and retries against a silent peer, queue limit, TLS, polls, state and logging | `client` |
-| Outstation fuzzing | arbitrary request fragments into an outstation with secure authentication, file transfer and every point type (`FuzzOutstation`) | `server` |
+| Outstation fuzzing | arbitrary request fragments into an outstation with secure authentication, file transfer and every point type (`FuzzOutstation`, also with the smallest fragments); the splitting of responses into fragments for any headers and size (`FuzzPack`) | `server` |
 | End to end | master against outstation for every function; the dual end point; concurrency, many masters, parallel masters with secure authentication and files, reconnects, rapid open and close, cancellation | `e2e` |
 | Chaos | a proxy corrupting, splitting and delaying octets and killing connections while every kind of request runs, with and without secure authentication: no data that was not sent, no control executed more often than sent, recovery, no goroutine left | `e2e/chaos_test.go` |
 | Interop | both roles against stepfunc dnp3, opendnp3 and DSC go-dnp3, and as outstation against dnp3py | `interop` (build tag) |
