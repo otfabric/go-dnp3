@@ -19,10 +19,12 @@ addresses them and opendnp3, stepfunc dnp3 and DSC go-dnp3 serve them; and
 
 ### Fixed
 
+- **An outstation could panic while splitting a response into fragments.** When a fragment was so nearly full that not even the next header without objects fitted, the packer computed -1 objects and sliced out of range, ending the outstation's goroutine for that master. It happens only for a response whose sizes meet that edge; every release before has it. The packer now starts a new fragment.
 - **`Measurements` left out the time and interval (g50v4), BCD integers (g101) and unsigned integers (g102).** They are point data like any other: an application had to walk `Result.Headers` to see them, as dnp3ctl did. The other variations of group 50 (the time of time synchronization and freezes) are still not measurements.
 
 ### Tests
 
+- `FuzzPack`: the splitting of responses into fragments, for any headers (ranges, index prefixes, octet strings, relative-time events behind a CTO) and any fragment size, with its invariants: no panic, no fragment over the size, every object kept in order, events aligned. `FuzzOutstation` also runs against an outstation with the smallest fragments and hundreds of points. Each finds the panic above within a second; neither existed when it was written.
 - Interop: the masters of stepfunc, opendnp3, DSC go-dnp3 and dnp3py reach each of three go-dnp3 outstations behind one port by its link address; an address nobody has is not answered.
 - One connection with sessions to several outstations, broadcasts to all of them, the limits and the lifecycle of a group.
 

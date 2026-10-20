@@ -62,10 +62,31 @@ func FuzzOutstation(f *testing.F) {
 	_ = db.AddAnalogInput(0, PointConfig{Class: 3}, app.Analog{Flags: app.FlagOnline})
 	_ = db.Add(OctetString, 0, PointConfig{}, app.OctetString{Data: []byte{1}})
 	a := srv.association(1)
-	f.Fuzz(func(t *testing.T, frag []byte) {
+
+	// A second outstation with the smallest fragments and many points of
+	// mixed sizes, so that responses are split at every boundary.
+	small, err := New(WithHandler(&countingHandler{}), WithMaxFragment(249, 2048))
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Cleanup(func() { _ = small.Close() })
+	sdb := small.Database()
+	for i := range uint32(200) {
+		_ = sdb.AddBinaryInput(i, PointConfig{Class: Class(1 + i%3), EventVariation: uint8(1 + i%3)}, app.Binary{Flags: app.FlagOnline})
+	}
+	for i := range uint32(100) {
+		_ = sdb.AddAnalogInput(i, PointConfig{Class: Class(1 + i%3), StaticVariation: uint8(1 + i%6), EventVariation: uint8(1 + i%8)}, app.Analog{Flags: app.FlagOnline})
+	}
+	for i := range uint32(50) {
+		_ = sdb.Add(OctetString, i, PointConfig{Class: 1}, app.OctetString{Data: make([]byte, 1+i%40)})
+	}
+	sa := small.association(1)
+	tick := 0
+
+	run := func(t *testing.T, a *association, s *Server, frag []byte) {
 		done := make(chan struct{})
 		a.post(func() {
-			a.handle(inbound{frag: frag, dest: srv.Address(), at: time.Now()})
+			a.handle(inbound{frag: frag, dest: s.Address(), at: time.Now()})
 			close(done)
 		})
 		select {
@@ -73,5 +94,13 @@ func FuzzOutstation(f *testing.F) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("request not handled within 5s")
 		}
+	}
+	f.Fuzz(func(t *testing.T, frag []byte) {
+		// New events for every input, of every size.
+		tick++
+		_ = sdb.UpdateBinaryInput(uint32(tick%200), app.Binary{Value: tick%2 == 0, Flags: app.FlagOnline})
+		_ = sdb.UpdateAnalogInput(uint32(tick%100), app.Analog{Value: float64(tick), Flags: app.FlagOnline})
+		run(t, a, srv, frag)
+		run(t, sa, small, frag)
 	})
 }
