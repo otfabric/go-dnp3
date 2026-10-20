@@ -86,6 +86,9 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 		switch {
 		case g == 60 && v == 1:
 			for t := range numPointTypes {
+				if t == TimeAndInterval {
+					continue // read by group and variation only, as the references do
+				}
 				statics = append(statics, db.statics(t, selector{all: true}, 0, true)...)
 			}
 		case g == 60 && v >= 2 && v <= 4:
@@ -138,8 +141,12 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 }
 
 func validVariation(t PointType, event bool, gv app.GroupVariation) bool {
-	if t == OctetString {
+	switch t {
+	case OctetString:
 		return true // the variation is the length
+	case TimeAndInterval:
+		return gv == app.G50V4
+	default:
 	}
 	return gv.Known()
 }

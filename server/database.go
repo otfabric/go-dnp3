@@ -37,6 +37,10 @@ const (
 	// to the database.
 	BinaryOutputCommand
 	AnalogOutputCommand
+	// TimeAndInterval are indexed absolute times with an interval (g50v4,
+	// app.AbsoluteTime with Units), for example a schedule. They have no
+	// events and no class.
+	TimeAndInterval
 	numPointTypes
 )
 
@@ -67,6 +71,8 @@ func (t PointType) String() string {
 		return "binary output command"
 	case AnalogOutputCommand:
 		return "analog output command"
+	case TimeAndInterval:
+		return "time and interval"
 	default:
 		return fmt.Sprintf("point type %d", uint8(t))
 	}
@@ -93,6 +99,7 @@ var types = [numPointTypes]typeInfo{
 	SecurityStatistic:   {121, 122, 1, 2},
 	BinaryOutputCommand: {0, 13, 0, 2},
 	AnalogOutputCommand: {0, 43, 0, 3},
+	TimeAndInterval:     {50, 0, 4, 0},
 }
 
 // pointTypeOfGroup returns the point type whose static or event group is g.
@@ -190,6 +197,8 @@ func valueKind(t PointType, v app.Value) error {
 		_, ok = v.(app.Counter)
 	case AnalogInput, FrozenAnalogInput, AnalogOutput:
 		_, ok = v.(app.Analog)
+	case TimeAndInterval:
+		_, ok = v.(app.AbsoluteTime)
 	case OctetString:
 		var s app.OctetString
 		s, ok = v.(app.OctetString)
@@ -232,6 +241,12 @@ func (db *Database) Add(t PointType, index uint32, cfg PointConfig, initial app.
 func checkVariation(t PointType, cfg PointConfig) error {
 	ti := types[t]
 	if t == OctetString {
+		return nil
+	}
+	if t == TimeAndInterval {
+		if cfg.Class != 0 || cfg.EventVariation != 0 || (cfg.StaticVariation != 0 && cfg.StaticVariation != 4) {
+			return fmt.Errorf("%w: a time and interval is g50v4 and has no events", dnp3.ErrInvalidOption)
+		}
 		return nil
 	}
 	if v := cfg.StaticVariation; v != 0 && !app.GV(ti.staticGroup, v).Known() {

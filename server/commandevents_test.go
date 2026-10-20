@@ -90,3 +90,42 @@ func TestCommandEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestTimeAndInterval(t *testing.T) {
+	m := newMaster(t)
+	db := m.srv.Database()
+	ti := app.AbsoluteTime{Time: app.Timestamp(1767225600000), Interval: 15, Units: app.UnitMinutes}
+	if err := db.Add(TimeAndInterval, 0, PointConfig{}, ti); err != nil {
+		t.Fatal(err)
+	}
+	for _, cfg := range []PointConfig{{Class: 1}, {StaticVariation: 1}, {EventVariation: 1}} {
+		if err := db.Add(TimeAndInterval, 1, cfg, ti); err == nil {
+			t.Errorf("time and interval with %+v accepted", cfg)
+		}
+	}
+	if err := db.Add(TimeAndInterval, 1, PointConfig{}, app.Analog{}); err == nil {
+		t.Error("time and interval with an analog value accepted")
+	}
+	m.send(req(1, app.FuncRead, app.IndexRange(app.G50V4, 0, 0)))
+	f := m.recvFunc(app.FuncResponse)
+	if len(f.Headers) != 1 || f.Headers[0].GV != app.G50V4 || f.Headers[0].Objects[0].Value.(app.AbsoluteTime) != ti {
+		t.Fatalf("read of g50v4: %v", f)
+	}
+	m.send(req(4, app.FuncRead, app.ClassHeaders(0)...))
+	for _, h := range m.recvFunc(app.FuncResponse).Headers {
+		if h.GV.Group() == 50 {
+			t.Fatal("time and interval in class 0")
+		}
+	}
+	m.send(req(2, app.FuncRead, app.AllObjects(app.G50V1)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) {
+		t.Fatalf("read of g50v1: %v", f)
+	}
+	m.send(req(3, app.FuncAssignClass, app.AllObjects(app.G60V2), app.AllObjects(app.G50V4)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("assign class of a time and interval: %v", f)
+	}
+	if TimeAndInterval.String() != "time and interval" {
+		t.Fatal("name")
+	}
+}
