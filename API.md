@@ -78,7 +78,7 @@ The master for one outstation.
 | `WithAddresses(local, remote)` | 1, 10 | Link addresses of master and outstation |
 | `WithHandler(Handler)` | none | Receives the measurements of every response and unsolicited response |
 | `WithStateHandler(func(State, error))` | none | Channel state changes |
-| `WithLogger`, `WithMetrics` | silent | See OBSERVABILITY.md |
+| `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithDialer(Dialer)` | `net.Dialer` | TCP dialer |
 | `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`), an outstation that connects (`Accept(net.Listener)`, the dual end point), a pipe |
 | `WithTLS(*tls.Config)` | off | TLS |
@@ -88,7 +88,7 @@ The master for one outstation.
 | `WithMaxFragment(n)` | 2048 | Largest fragment reassembled |
 | `WithLink(Link)` | unconfirmed | `Confirmed`, `Timeout`, `Retries`, `KeepAlive` |
 | `WithStartup(Startup)` | nothing | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect |
-| `WithTimeSync(TimeSync)` | none | Synchronize on NEED_TIME: `TimeSyncLAN`, `TimeSyncNonLAN` |
+| `WithTimeSync(TimeSync)` | `TimeSyncNone` | Synchronize on NEED_TIME: `TimeSyncLAN`, `TimeSyncNonLAN` |
 | `WithAutoClearRestart(bool)` | on | Clear DEVICE_RESTART when reported |
 | `WithAutoIntegrity(bool)` | on | Integrity poll on restart and overflow |
 | `WithAutoEventPoll(bool)` | off | Poll the classes the IIN reports events for |
@@ -98,11 +98,13 @@ The master for one outstation.
 | `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed |
 | `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, after the first challenge; `New` refuses it without `WithSecureAuthentication` |
 
+Constant: `DefaultPort` (20000), the port `Dial` uses when the address has none.
+
 ### Requests
 
-Every request takes a `context.Context` and returns a `*Result` (the
-response fragments, `IIN`, `Measurements()`, `Headers()`) where there is
-one.
+Every request takes a `context.Context` and returns a `*Result` (its fields
+`Fragments` and `IIN`, the IIN of all fragments; `Measurements()`,
+`Headers()`) where there is one.
 
 | Method | Function codes |
 |--------|----------------|
@@ -123,7 +125,7 @@ one.
 | `ReadAttributeSet(ctx, set, variation)`, `WriteAttributeSet(ctx, set, variation, a)` | The same for another set |
 | `Write(ctx, headers...)` | WRITE |
 | `Request(ctx, fc, headers...)` | Any function code |
-| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70) with `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`) |
+| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`) |
 | `Broadcast(ctx, dest, fc, headers...)` | A request to a broadcast address (`link.BroadcastNoConfirm` 0xFFFD, `BroadcastConfirm` 0xFFFE, `BroadcastOptionalConfirm` 0xFFFF); no answer, IIN1.0 in the next response |
 
 Commands: `Command{Index, Value, GV}`, built with `CROB(index, op, on, off)`
@@ -135,7 +137,11 @@ and `SetPoint(index, value)`; `CommandMode`: `SelectBeforeOperate`,
 `Handler` (`HandleMeasurements(ResponseInfo, []Measurement)`) and
 `HandlerFunc`; `Measurement{GV, Index, Value, Event}`; `ResponseInfo{Unsolicited,
 IIN, Seq, FIR, FIN}`; `Measurements(*app.Fragment)` extracts them from any
-fragment.
+fragment. A measurement is indexed point data; its `Value` is one of
+`app.Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `Counter`, `Analog`,
+`AnalogDeadband`, `AnalogCommandEvent`, `AbsoluteTime` (g50v4), `BCD`
+(g101), `UnsignedInteger` (g102), `OctetString` or `SecurityStatistic`.
+[OBJECTS.md](OBJECTS.md) lists the objects.
 
 ## Package `server`
 
@@ -169,7 +175,7 @@ The outstation.
 | `WithMasters(addrs...)` | any | Masters answered; their associations exist from the start |
 | `WithSelfAddress(bool)` | off | Accept the self address 0xFFFC |
 | `WithHandler(Handler)` | `NopHandler` | Controls, and the optional handler interfaces |
-| `WithLogger`, `WithMetrics` | silent | See OBSERVABILITY.md |
+| `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithTLS(*tls.Config)` | off | TLS for `ListenAndServe`, and the TLS client configuration of `DialAndServe` |
 | `WithMaxConnections(n)` | 16 | Concurrent connections |
 | `WithMaxFragment(tx, rx)` | 2048, 2048 | Largest response sent, request reassembled |
@@ -186,9 +192,10 @@ The outstation.
 | `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 10 s), `StatisticsClass` (default 1), `StatisticsThreshold` (default 10) |
 
 Constants: `DefaultPort` (20000), `DefaultEventLimit` (100),
-`DefaultReplyTimeout`, `MaxScheduledFreezes` (16 FREEZE_AT_TIME requests
-waiting, for the server: a periodic one until `Close`); the variable
-`DefaultCritical`.
+`DefaultReplyTimeout`, `MaxScheduledFreezes` (16: the FREEZE_AT_TIME
+requests the server keeps waiting at once; a periodic one keeps its place
+until `Close`); the variable `DefaultCritical`. `Class` is an event class
+(1..3) as `PointConfig`, `Unsolicited` and `SecureAuth` take it.
 
 ### Database
 
@@ -197,8 +204,8 @@ waiting, for the server: a periodic one until `Close`); the variable
 | `PointType` | `BinaryInput`, `DoubleBitInput`, `BinaryOutput`, `Counter`, `FrozenCounter`, `AnalogInput`, `FrozenAnalogInput`, `AnalogOutput`, `OctetString`, `TimeAndInterval` (g50v4, no class); and, kept by the outstation and refused by `Add`, `SecurityStatistic` (per master, with secure authentication), `BinaryOutputCommand`, `AnalogOutputCommand` (command events) |
 | `PointConfig` | `Class`, `StaticVariation`, `EventVariation`, `Deadband`, `ExcludeFromClass0`; for outputs `CommandEventClass`, `CommandEventVariation` (g13v2, g43v3) |
 | `(*Database).Add`, `Remove`, `Get`, `Len` | Points |
-| `(*Database).Update(t, index, value, mode)` | `EventOnChange`, `EventForce`, `EventSuppress` |
-| `(*Database).Batch(func(*Batch) error)` | Updates whose events are reported together |
+| `(*Database).Update(t, index, value, mode)` | `EventMode`: `EventOnChange`, `EventForce`, `EventSuppress` |
+| `(*Database).Batch(func(*Batch) error)` | Updates whose events are reported together (`Batch.Update` and the typed forms) |
 | `AddBinaryInput` ... `AddOctetString`, `UpdateBinaryInput` ... `UpdateOctetString` | Typed forms |
 
 ### Handlers
@@ -226,19 +233,19 @@ directories.
 
 | Symbol | Meaning |
 |--------|---------|
-| `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `String`; `Decode(b)` |
+| `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `HeaderLen`, `String`; `Decode(b)`; `AppendObjectValue(b, gv, v)` encodes one object without header, as a free-format object carries it |
 | `Header{GV, Qualifier, Start, Stop, Count, Objects}` | `EncodedLen`, `String` |
 | `Object{Index, Value}`, `Value` | The closed set of value types |
-| `GroupVariation`, `GV(g, v)`, `G1V2` ... `G122V2` | `Group`, `Variation`, `Name`, `Known`, `IsEvent`, `Size` |
+| `GroupVariation`, `GV(g, v)`, `G1V0` ... `G122V2`, `OctetStringGV(g, n)` | `Group`, `Variation`, `Name`, `Known`, `IsEvent`, `Size`; [OBJECTS.md](OBJECTS.md) lists them all |
 | `FunctionCode`, `Func*` | `String`, `Defined`, `IsResponse`, `NoAck` |
 | `IIN`, `IIN*` | `Has`, `IIN1`, `IIN2`, `String`; `IINBit` |
-| `Control`, `SingleControl`, `ParseControl`, `NextSeq` | The application control octet |
-| `Qualifier`, `Qual*`, `RangeQualifier`, `CountQualifier`, `IndexQualifier` | Qualifier codes |
+| `Control{FIR, FIN, CON, UNS, Seq}`, `SingleControl`, `ParseControl`, `NextSeq` | The application control octet (`Byte`, `String`) |
+| `Qualifier`, `Qual*`, `RangeQualifier`, `CountQualifier`, `IndexQualifier` | Qualifier codes (`IsRange`, `IsCount`, `IsIndexed`, `IsFreeFormat`, `Prefix`, `Range`, `Valid`) |
 | `AllObjects`, `ClassHeaders`, `IndexRange`, `IndexList`, `CountOf`, `Ranged`, `Indexed`, `Counted`, `FreeFormat` | Header constructors |
-| `Timestamp`, `TimestampOf`, `Now` | DNP3 time |
-| Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD`, `UnsignedInteger`, `DataSetCharacteristics`, `SecurityStatistic`, `Raw` |
-| Enumerations | `Flags`, `DoubleBit`, `CommandStatus`, `OpType`, `TripClose`, `IntervalUnit` |
-| Attributes | `Attribute`, `AttrType`, `Attr*` variations, `StringAttribute`, `UintAttribute`, `IntAttribute`, `FloatAttribute`, `TimeAttribute`, `ListAttribute`, `AttributeListEntry` |
+| `Timestamp`, `TimestampOf`, `Now`, `MaxTimestamp` | DNP3 time (`Time`, `String`) |
+| Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD`, `UnsignedInteger`, `DataSetCharacteristics` (g86v2, `Flags DataSetFlags`), `SecurityStatistic`, `Raw` |
+| Enumerations | `Flags`, `DoubleBit`, `CommandStatus`, `OpType`, `TripClose`, `IntervalUnit`, `DataSetFlags` (`DataSetReadable` ... `DataSetMasterDefined`) |
+| Attributes | `Attribute`, `AttrType`, `Attr*` variations, `StringAttribute`, `UintAttribute`, `IntAttribute`, `FloatAttribute`, `TimeAttribute`, `ListAttribute`, `AttributeListEntry`; read with `Text`, `Uint`, `Int`, `Float`, `List` |
 | Files | `FileAuthentication`, `FileCommand`, `FileCommandStatus`, `FileTransport`, `FileTransportStatus`, `FileDescriptor`, `FileSpecification`, `FileMode`, `FileStatus`, `FileType`, `Permissions`, `AppendFileDescriptor`, `DecodeFileDescriptors` |
 | Authentication | `AuthChallenge` ... `AuthUpdateKeyChangeConfirmation`, `MACAlgorithm`, `KeyWrap`, `KeyStatus`, `AuthErrorCode`, `ChallengeReason` |
 | Errors | `ErrMalformed`, `ErrUnknownObject`, `ErrInvalidQualifier`, `ErrInvalidValue`, `ErrUnknownFunction` |
@@ -247,7 +254,7 @@ directories.
 
 `Header` (`NewHeader`, `FIR`, `FIN`, `Seq`), `Segmenter` (`Segment`,
 `Seq`), `Reassembler` (`NewReassembler`, `Add`, `Reset`, `Pending`),
-`MaxSegmentData`, `DefaultMaxFragment`; errors `ErrEmpty`, `ErrNoFirst`,
+`MaxSegment`, `MaxSegmentData`, `DefaultMaxFragment`; errors `ErrEmpty`, `ErrNoFirst`,
 `ErrSequence`, `ErrTooLarge`.
 
 ## Package `link`
@@ -270,5 +277,3 @@ directories.
 security statistics as g121 indexes. `DefaultCritical`: the function codes challenged by default
 and sent in aggressive mode. `AggressiveOverhead`: what aggressive mode adds to a request.
 
-`app.AppendObjectValue(b, gv, v)` encodes one object without header, as a
-free-format object carries it.

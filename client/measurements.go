@@ -9,11 +9,11 @@ import (
 	"github.com/otfabric/go-dnp3/app"
 )
 
-// Measurement is one point value or event of a response: indexed point
-// data, the value of one of the point types of IEEE 1815-2012 clause 11.
-// Objects without an index that describe the device or a procedure, such
-// as the time and date of time synchronization (g50v1..g50v3), are not
-// measurements. OBJECTS.md lists which objects are.
+// Measurement is one point value or event of a response: indexed data of
+// a point, sent with its index. Objects without an index that describe the
+// device or a procedure, such as the time and date of time synchronization
+// (g50v1..g50v3), are not measurements; OBJECTS.md marks the objects that
+// are.
 type Measurement struct {
 	// GV is the object the value was sent as, for example app.G30V5.
 	GV app.GroupVariation

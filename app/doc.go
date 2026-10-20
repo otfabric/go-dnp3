@@ -20,7 +20,8 @@
 // attributes (group 0), BCD and small integers, octet strings and virtual
 // terminal objects, and the secure authentication objects (groups 120 to
 // 122). Data set and private registration objects (groups 83 to 91) are
-// carried as [Raw] payload.
+// carried as [Raw] payload, except the data set characteristics (g86v2,
+// [DataSetCharacteristics]).
 //
 // The package is a pure codec: it does no I/O and keeps no state between
 // fragments. It imports nothing outside the standard library.

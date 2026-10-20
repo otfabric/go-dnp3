@@ -32,17 +32,22 @@ c, err := client.Dial(ctx, addr, client.WithLogger(logger))
 ```
 
 Every entry carries `component` (`dnp3.client` or `dnp3.server`) and the
-fields of its context: `remote` and `outstation` for a client, `outstation`,
-`remote` and `master` for a server.
+fields of its context: `remote` and `outstation` for a client; for a
+server `outstation`, with `remote` on the entries of a connection and
+`master` on those of a master's association. With a plain `Logger` the
+same fields are a prefix of the formatted line.
 
-Debug entries are built only when the handler takes debug entries
-(`DebugEnabled`): the per-frame and per-fragment entries cost nothing at
-info level.
+Debug entries are built only when the logger says it takes them: a logger
+with a `DebugEnabled() bool` method is asked, and the slog adapters ask
+their handler, so the per-frame and per-fragment entries cost nothing at
+info level. Any other logger, `NewStdLogger` and `NopLogger` included,
+receives every debug entry, one per frame and fragment; leave `WithLogger`
+out to log nothing.
 
 ### Context
 
 When the logger implements `dnp3.ContextLogger`, entries that belong to a
-request (a retry, the request itself at debug level) are logged with the
+request (a retry, the request itself and a broadcast at debug level) are logged with the
 request's context, so that a handler can attach trace and span
 identifiers.
 
@@ -59,7 +64,8 @@ identifiers.
 | info | `connection to the master lost, reconnecting` (`DialAndServe`, also after a failed dial) | `address`, `error`, `delay` |
 | warn | `connection lost`, `reconnect failed` | `error`, `retry_in` |
 | warn | `request failed, retrying` | `function`, `attempt`, `retry_in`, `error` |
-| warn | `automatic task failed`, `startup sequence failed` | `task`, `error` |
+| warn | `automatic task failed` | `task`, `error` |
+| warn | `startup sequence failed` | `error` |
 | warn | `event buffer overflow` | `master`, `class`, `discarded` |
 | warn | `keep-alive failed` | `remote_addr`, `error` |
 | warn | `authentication failed`, `challenge reply too late`, `aggressive mode request refused` | `user`, `csq` |
@@ -68,10 +74,17 @@ identifiers.
 | warn | `authentication error received` | `user`, `code` |
 | warn | `objects too large for a fragment left out` | `count` |
 | warn | `connection refused: limit reached` | `remote`, `limit` |
-| warn | `fragment dropped`, `multi-fragment request ignored`, `frame with invalid FCV bit ignored` | |
+| warn | `fragment dropped` | `error` |
+| warn | `multi-fragment request ignored` | `control` |
+| warn | `frame with invalid FCV bit ignored` | `frame` |
+| warn | `unauthenticated critical broadcast discarded` | `function` |
+| info | `confirmed user data while the link is not reset ignored` | |
+| error | `no random challenge data`, `key status MAC` | `error` |
+| error | `response does not encode` | `fragment`, `error` |
 | debug | `challenge answered` | `csq`, `user` |
 | debug | `frame sent`, `frame received` | `frame` |
 | debug | `request sent`, `request received`, `response sent`, `fragment received` | `fragment` |
+| debug | `broadcast sent` | `fragment`, `dest` |
 | debug | framing, transport and decode errors; ignored frames and fragments | `error`, ... |
 
 ## Metrics
@@ -84,7 +97,7 @@ implement only what you need.
 | Callback | When |
 |----------|------|
 | `OnConnect(remote)` | A channel started |
-| `OnDisconnect(remote, err)` | A channel ended; `err` nil when closed by the application |
+| `OnDisconnect(remote, err)` | A channel ended; `err` nil when closed by the application, or by `Connect` after a failed startup sequence (`Connect` returns that error) |
 | `OnFrameSent(remote, frame, size)`, `OnFrameReceived` | Every link frame |
 | `OnFramingError(remote, err)` | Octets skipped or a frame discarded: start, length, CRC |
 | `OnFragmentSent(remote, fragment, size)`, `OnFragmentReceived` | Every application fragment |
@@ -129,7 +142,8 @@ func (m *counters) OnRequestDone(_ net.Addr, _ uint16, _ app.FunctionCode, _ tim
 
 `client.WithStateHandler` is called with each change of the channel state
 (`StateConnecting`, `StateConnected`, `StateDisconnected`) and the error
-that caused it, nil when the application closed the client. Notifications
-are delivered in order, on the client's dispatcher goroutine together with
-the measurements, and the last one (`StateDisconnected` from `Close`) before
-`Close` returns. `(*Client).State()` returns the current state at any time.
+that caused it, nil when the application closed the client, and again with
+`StateConnecting` for each failed reconnect attempt. Notifications are
+delivered in order, on the client's dispatcher goroutine together with the
+measurements; the last one (`StateDisconnected` from `Close`) is called by
+`Close` itself, after every earlier one, before it returns. `(*Client).State()` returns the current state at any time.

@@ -1720,32 +1720,32 @@
     {
       "group": 0,
       "name": "Device Attributes",
-      "variations": "the attribute (1..253; 254 all attributes, 255 the list of variations)",
+      "variations": "the attribute, 1..253; 254 all attributes; 255 the list of variations; 0 any, in a request",
       "point": false
     },
     {
       "group": 110,
       "name": "Octet String",
-      "variations": "the length, 1..255",
+      "variations": "the length, 1..255; 0 any length, in a request",
       "point": true
     },
     {
       "group": 111,
       "name": "Octet String Event",
-      "variations": "the length, 1..255",
+      "variations": "the length, 1..255; 0 any length, in a request",
       "event": true,
       "point": true
     },
     {
       "group": 112,
       "name": "Virtual Terminal Output Block",
-      "variations": "the length, 1..255",
+      "variations": "the length, 1..255; 0 any length, in a request",
       "point": false
     },
     {
       "group": 113,
       "name": "Virtual Terminal Event Data",
-      "variations": "the length, 1..255",
+      "variations": "the length, 1..255; 0 any length, in a request",
       "event": true,
       "point": false
     }

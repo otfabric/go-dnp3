@@ -394,7 +394,7 @@ type UnsignedInteger struct {
 }
 
 // DataSetCharacteristics is the characteristics octet of a data set
-// descriptor (g86v2, IEEE 1815-2012 A.47.2).
+// descriptor (g86v2, IEEE 1815-2012 Annex A).
 type DataSetCharacteristics struct {
 	Flags DataSetFlags
 }

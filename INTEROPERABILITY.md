@@ -26,7 +26,7 @@ of a device profile, and how it has been verified.
 | TLS | ✅ `crypto/tls` | ✅ |
 | UDP | ✅ connected socket | ✅ one master per socket; `ServeUDPTo` names the master for unsolicited responses before it sends |
 | Serial, any byte stream | ✅ `WithStream` | ✅ `ServeConn` |
-| Dual end point (outstation dials the master, annex A.3) | ✅ `client.Accept`: waits for the outstation's connection, again after each loss with `WithReconnect` | ✅ `DialAndServe`: connects, serves, reconnects with backoff (`Redial`); TLS with the outstation as TLS client |
+| Dual end point (outstation dials the master) | ✅ `client.Accept`: waits for the outstation's connection, again after each loss with `WithReconnect` | ✅ `DialAndServe`: connects, serves, reconnects with backoff (`Redial`); TLS with the outstation as TLS client |
 
 ## Data link layer
 
@@ -43,13 +43,13 @@ of a device profile, and how it has been verified.
 | Primary frame timeout and retries | ✅ `Link.Timeout`, `Link.Retries` |
 | DFC (data flow control) | sent as 0; ignored on receipt |
 | FCV checked against the function | ✅ frames with an invalid FCV are ignored |
-| Multi-drop: several outstations on one channel | ✅ one `Client` per outstation (one connection each) | ✅ `server.Group`: several `Server`s, each at its own address, on the same connections, serial lines and UDP sockets; broadcasts reach all of them |
+| Multi-drop: several outstations on one channel | ✅ master: one `Client` per outstation, each with its own connection (TCP, UDP); the client has no channel shared by several outstations on one serial line. Outstation: `server.Group`, several `Server`s, each at its own address, on the same connections, serial lines and UDP sockets; broadcasts reach all of them |
 
 ## Transport function
 
 | Item | Support |
 |------|---------|
-| Segments of 249 octets, FIR/FIN, six-bit sequence | ✅ |
+| Segments of up to 249 octets of fragment data (250 with the transport header), FIR/FIN, six-bit sequence | ✅ |
 | Reassembly rules of clause 8.2.1.2 | ✅ FIR restarts, a gap discards the fragment, a non-FIR outside a fragment is discarded |
 | Fragment size | 2048 by default, at least 249 (`WithMaxFragment`) |
 
@@ -76,7 +76,7 @@ of a device profile, and how it has been verified.
 | 3, 4 | SELECT, OPERATE | ✅ | ✅ |
 | 5, 6 | DIRECT_OPERATE, _NR | ✅ | ✅ |
 | 7..10 | IMMED_FREEZE, FREEZE_CLEAR, _NR | ✅ | ✅ counters and analog inputs |
-| 11, 12 | FREEZE_AT_TIME, _NR | ✅ | ✅ time 0 at once; a time to come and every interval after it (up to `MaxScheduledFreezes` waiting); a time that has passed without an interval is refused (A.23.2). Scheduled freezes belong to the `Server`, not to one master: restarts and reconnections leave them waiting, `Close` stops them |
+| 11, 12 | FREEZE_AT_TIME, _NR | ✅ 11; 12 with `Request` | ✅ time 0 at once; a time to come and every interval after it (up to `MaxScheduledFreezes` waiting); a time that has passed without an interval is refused (A.23.2). Scheduled freezes belong to the `Server`, not to one master: restarts and reconnections leave them waiting, `Close` stops them |
 | 13, 14 | COLD_RESTART, WARM_RESTART | ✅ | ✅ with `RestartHandler` |
 | 15..19 | INITIALIZE_DATA, INITIALIZE_APPL, START_APPL, STOP_APPL, SAVE_CONFIG | `Request` | ✅ with `ApplicationHandler` |
 | 20, 21 | ENABLE_UNSOLICITED, DISABLE_UNSOLICITED | ✅ | ✅ with `WithUnsolicited` |
@@ -85,7 +85,7 @@ of a device profile, and how it has been verified.
 | 24 | RECORD_CURRENT_TIME | ✅ | ✅ |
 | 25..30 | OPEN_FILE, CLOSE_FILE, DELETE_FILE, GET_FILE_INFO, AUTHENTICATE_FILE, ABORT_FILE | ✅ | ✅ with `WithFileServer` |
 | 31 | ACTIVATE_CONFIG | `Request` | ✅ with `ApplicationHandler` |
-| 32, 33 | AUTHENTICATE_REQ, AUTH_REQ_NO_ACK | ✅ | ✅ with `WithSecureAuthentication` |
+| 32, 33 | AUTHENTICATE_REQ, AUTH_REQ_NO_ACK | ✅ 32; 33 not sent | ✅ with `WithSecureAuthentication` |
 | 129, 130, 131 | RESPONSE, UNSOLICITED_RESPONSE, AUTHENTICATE_RESP | ✅ | ✅ |
 
 Any other code is answered with NO_FUNC_CODE_SUPPORT.
@@ -94,7 +94,7 @@ Any other code is answered with NO_FUNC_CODE_SUPPORT.
 
 The codec decodes and encodes every variation below, in every qualifier
 the standard allows for it (start-stop 0x00..0x02, virtual 0x03..0x05, all
-0x06, count 0x07..0x09, index-prefixed 0x17/0x28/0x39, free-format
+0x06, count 0x07..0x09, index-prefixed 0x17..0x19, 0x27..0x29, 0x37..0x39, free-format
 0x4B/0x5B/0x6B). The outstation's database serves the point types; the
 others are used by the procedures. [OBJECTS.md](OBJECTS.md) lists each
 variation with its size and whether it is point data, generated from the
@@ -123,15 +123,15 @@ stepfunc dnp3 and DSC go-dnp3.
 | 70 | file control v1 (raw), v2..v8 | file transfer |
 | 80 | internal indications | read, clear of DEVICE_RESTART |
 | 0 | device attributes, all data types, the list of variations | ✅ `WithAttributes` (set 0), `WithAttributeSet` (other sets, writable variations) |
-| 101, 102 | BCD integers, unsigned 8-bit integer | codec |
+| 101, 102 | BCD integers, unsigned 8-bit integer | codec; reported by `client.Measurements`; not served by the outstation's database |
 | 110, 111 | octet strings, events | ✅ |
 | 112, 113 | virtual terminal | codec |
 | 120 | authentication v1..v15 | secure authentication |
 | 121, 122 | security statistics, events | ✅ per association with secure authentication |
-| 83, 85..88, 90, 91 | private registration, data sets, application identifier, status of requested operation | raw payload |
+| 83, 85..88, 90, 91 | private registration, data sets, application identifier, status of requested operation | raw payload in the codec, except the data set characteristics g86v2 (`app.DataSetCharacteristics`, one octet) |
 
 Default variations of the outstation (configurable per point): static
-g1v2, g3v2, g10v2, g20v1, g21v1, g30v1, g31v1, g40v1, g110; events g2v2,
+g1v2, g3v2, g10v2, g20v1, g21v1, g30v1, g31v1, g40v1, g50v4, g110, g121v1; events g2v2,
 g4v2, g11v2, g13v2, g22v5, g23v5, g32v3, g33v3, g42v3, g43v3, g111, g122v2.
 
 A read of a packed variation (g1v1, g3v1, g10v1) reports a point whose
@@ -161,7 +161,8 @@ is not lost, as the reference outstations do.
 
 Version 5, clause 7. Update keys are configured on both ends; session
 keys are negotiated by the session key change, or, without an update key,
-a pre-shared session key is used directly.
+a pre-shared session key is used directly (outside the standard, see
+[Deviations and choices](#deviations-and-choices)).
 
 | Item | Support |
 |------|---------|
@@ -181,9 +182,14 @@ a pre-shared session key is used directly.
 
 ## Deviations and choices
 
-- **Multi-fragment requests** are ignored by the outstation and not sent by
-  the master: a request is one fragment, as the standard's application
-  layer has it (DSC go-dnp3 refuses them as well).
+- **Multi-fragment requests**, which the standard's application layer does
+  not allow, are ignored by the outstation and never sent by the master: a
+  request is one fragment (DSC go-dnp3 refuses them as well).
+- **Pre-shared session keys.** Without an update key, `secauth.User.Key` is
+  used as the session key with no session key change. This is outside
+  SAv5, which always sets session keys by the key change, and works only
+  between go-dnp3 ends or a peer configured the same way; it is meant for
+  testing (see [SECURITY.md](SECURITY.md)).
 - **A read of an index that does not exist** is answered with the indexes
   that do and PARAMETER_ERROR.
 - **Associations are per master address.** A master that reconnects from
@@ -197,7 +203,7 @@ a pre-shared session key is used directly.
 
 | Level | Status |
 |-------|--------|
-| Codec unit tests, known vectors, round trip of every variation and qualifier | ✅ |
+| Codec unit tests, known vectors, round trip of every variation in start-stop, count, index-prefixed and free-format qualifiers | ✅ |
 | Fuzzing: link frame decoder, stream reader, transport reassembly, application fragment decoder with stable re-encoding, the outstation's request handling, also with the smallest fragments (`FuzzOutstation`), the splitting of responses into fragments (`FuzzPack`) | ✅ in CI |
 | Chaos: corrupted, split and delayed octets and killed connections under load, with and without secure authentication | ✅ `e2e/chaos_test.go` |
 | Link procedures frame by frame; noisy and duplicating lines | ✅ |
@@ -210,7 +216,7 @@ a pre-shared session key is used directly.
 | UDP, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3 over a pseudo-terminal bridged to TCP |
 | File transfer: master | ✅ against DSC go-dnp3's file server: read, write of several blocks, append, AUTHENTICATE_FILE, list, info, delete, missing files |
-| File transfer: outstation | ✅ against the masters of stepfunc (get, put, append, list, info, authenticate) and DSC go-dnp3 (also delete; authenticate) |
+| File transfer: outstation | ✅ against the masters of stepfunc (get, put, append, list, info, authenticate) and DSC go-dnp3 (get, put, list, info, delete, authenticate; no append) |
 | Contract 1.3 (device attributes, several controls, freeze at time, analog freeze, deadbands, event buffer overflow, link confirms and keep-alive, broadcast, management, several outstations) | ✅ against every reference that has each, see [Interop coverage](#interop-coverage) |
 | Secure Authentication, both roles | ✅ against DSC go-dnp3 (HMAC-SHA-256-16, AES-128 key wrap): key change at connect, challenged controls, periodic key change in a session, a second connection, a wrong update key refused, security statistics read both ways; the other references do not implement it |
 | Requests without a response | ✅ DIRECT OPERATE NO ACK and FREEZE AND CLEAR NO ACK as master against stepfunc, opendnp3 and DSC go-dnp3; as outstation from DSC go-dnp3's and dnp3py's masters |
@@ -231,7 +237,7 @@ images offer.
 |---|:---:|:---:|:---:|:---:|
 | Integrity poll: values and flags of every point type of the baseline fixture | M O | M O | M O | O |
 | Reads of ranges and variations | M O | M O | M O | O |
-| Read of all objects of a group | O | O | M | O |
+| Read of all objects of a group | M O | M O | M | O |
 | Direct operate, select-before-operate, set-points, ranges, refused codes and points | M O | M O | M O | O |
 | Direct operate no ack | M | M | M O | O |
 | Events, their confirmation, event polls | M O | M O | M O | O |
@@ -249,7 +255,7 @@ images offer.
 | Secure Authentication: key change, challenges, re-key, wrong key | | | M O | |
 | Security statistics, reads and g122 events | | | M O | |
 | Device attributes, other sets, read and write (contract 1.3) | M O | | M O | |
-| Several controls in one request, the limit per request (TOO_MANY_OPS) | M O | M O | M O | O |
+| Several controls in one request, the limit per request (TOO_MANY_OBJS) | M O | M O | M O | O |
 | FREEZE AT TIME, scheduled | M O | | M O | O |
 | Analog freeze into frozen analog inputs | O | O | M | O |
 | Deadbands (g34): write; read back | M O | | M O (write) | |
@@ -272,7 +278,7 @@ counter without a frozen counter uncleared by FREEZE AND CLEAR. Two more
 known bugs touch the contract 1.3 tests, which avoid them: DSC go-dnp3
 refuses FREEZE AT TIME with time 0 (the tests use a time to come), and
 stepfunc's master decodes a one-octet signed attribute without its sign
-(go-dnp3 sends four octets). Two
+(go-dnp3 sends four octets). Three
 findings about the references that the suite works with: opendnp3's UDP
 outstation answers only the fixed peer it is given, so go-dnp3's master
 runs in a container on its network for that test; DSC go-dnp3's
@@ -298,7 +304,7 @@ statistics. Against the references:
 | AES-GMAC | — | — | — | — | ✅ |
 | Dual end point | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Command events (g13, g43) from the outstation | ✅ | — | — | ✅ | ✅ |
-| Virtual terminal (g112, g113), data sets (g85..g88) | — codec | not documented | not documented | not documented | ✅ |
+| Virtual terminal (g112, g113), data sets (g85..g88) | — codec only | not documented | not documented | ✅ outstation data set backend, terminals | ✅ |
 
 The Triangle MicroWorks column is from its public product descriptions;
 it is not in the interop suite (its adapter is on hold in dnp3-interop),
@@ -306,7 +312,7 @@ so treat it as indicative.
 
 The gaps, and what closing them would be worth:
 
-- **Remote update key change and user management (g120v10..v15).** Lets a
+- **Remote update key change and user management (g120v8, g120v10..v15).** Lets a
   central authority distribute update keys and add or revoke users,
   symmetric or with certificates (IEC 62351-8). Worth it for a utility
   that runs such an authority; elsewhere update keys are provisioned with

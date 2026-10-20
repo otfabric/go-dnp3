@@ -13,7 +13,7 @@ DNP3 has three layers, and the module follows them:
 │                      function code, IIN, object      │  (codec, object library)
 │                      headers, objects                │  client, server (procedures)
 ├──────────────────────────────────────────────────────┤
-│  Transport function  segments of up to 249 octets,   │  package transport
+│  Transport function  segments of up to 250 octets,   │  package transport
 │                      FIR / FIN / sequence             │
 ├──────────────────────────────────────────────────────┤
 │  Data link layer     FT3 frames, CRC per 16 octets,  │  package link (codec)
@@ -25,8 +25,9 @@ DNP3 has three layers, and the module follows them:
 
 - **The codecs are exported and pure.** `link`, `transport` and `app` do no
   I/O beyond `link.Reader` over an `io.Reader`, keep no state across
-  frames (the transport `Segmenter` and `Reassembler` keep only their
-  sequence numbers) and import nothing outside the standard library.
+  fragments (the transport `Segmenter` keeps its sequence number, the
+  `Reassembler` the fragment it is assembling) and import nothing outside
+  the standard library.
 - **The procedures are internal.** The link layer procedures run in
   `internal/channel`, whose API is shaped by the client and the server and
   nothing else. The application layer procedures live in `client` and
@@ -48,8 +49,9 @@ dnp3 (root)          errors, State, Logger, Metrics          imports: app, link
   └── server         outstation                                 imports: root, app, link, transport, secauth, channel, logx
 ```
 
-`client` and `server` never import each other; their tests do, to use the
-other side as a peer.
+`client` and `server` never import each other. The client's tests use an
+outstation as their peer, the server's tests a scripted master, and `e2e`
+uses both.
 
 The codec is driven by a table, one entry per group and variation, of its
 family (how it is encoded), numeric type, flags, time and event. The table,
@@ -213,6 +215,10 @@ and reports one as a g122 event every `StatisticsThreshold` increments.
 | Outstation conformance | a scripted master sending exact requests: malformed requests and their IIN, repeated requests, broadcast, confirm timeouts, unsolicited retries and hold, select timeout, pattern control | `server` |
 | Master | timeouts and retries against a silent peer, queue limit, TLS, polls, state and logging | `client` |
 | Outstation fuzzing | arbitrary request fragments into an outstation with secure authentication, file transfer and every point type (`FuzzOutstation`, also with the smallest fragments); the splitting of responses into fragments for any headers and size (`FuzzPack`) | `server` |
-| End to end | master against outstation for every function; the dual end point; concurrency, many masters, parallel masters with secure authentication and files, reconnects, rapid open and close, cancellation | `e2e` |
+| End to end | master against outstation for every function; the dual end point; concurrency and stress (`e2e/stress_test.go`), many masters, parallel masters with secure authentication and files, reconnects, rapid open and close, cancellation | `e2e` |
 | Chaos | a proxy corrupting, splitting and delaying octets and killing connections while every kind of request runs, with and without secure authentication: no data that was not sent, no control executed more often than sent, recovery, no goroutine left | `e2e/chaos_test.go` |
-| Interop | both roles against stepfunc dnp3, opendnp3 and DSC go-dnp3, and as outstation against dnp3py | `interop` (build tag) |
+| Interop | both roles against stepfunc dnp3, opendnp3, DSC go-dnp3 and dnp3py (against dnp3py's outstation, its fixture only) | `interop` (build tag) |
+| Secure authentication | MACs, key wrap vectors, the key change data, the statistics | `secauth` |
+| Catalog | every entry of `app/catalog.json` against the codec; the generated files up to date | `app` (`TestCatalog`), `make generate-check` |
+| Examples | each self-contained example runs to its end | `make examples`, CI |
+| Benchmarks | encoding and decoding of frames, segments and fragments | `make bench` |

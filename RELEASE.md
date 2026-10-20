@@ -1,5 +1,33 @@
 # go-dnp3 Releases
 
+## v1.3.1
+
+**Date:** 2026-10-20
+**Previous release:** v1.3.0
+
+## Summary
+
+The documentation reviewed for correctness before the repository goes
+public: every claim checked against the code, the comparison with stepfunc
+dnp3, opendnp3 and DSC go-dnp3 checked against their sources. No change of
+behaviour.
+
+## Changes
+
+### Docs
+
+- **The comparison with the other stacks** (README) corrected from their sources: stepfunc's licence covers non-commercial and non-production use; DSC go-dnp3 has `log/slog`, `context.Context` and blocking requests, `Stats()` counters, data sets and the IED conformance procedures (dnp3c) in CI, as stepfunc has; stepfunc, opendnp3 and DSC can all run an outstation that dials its master; rows for multi-drop, data sets and the conformance procedures added. The Limitations name the conformance procedures go-dnp3 does not run.
+- **Error semantics** (ERRORS.md, `dnp3.ErrProtocol`): a response with an unexpected sequence number is ignored, not an `ErrProtocol`; a request whose headers do not encode returns the codec error; which methods return a `*Result` together with an `*IINError`; what the `Serve` methods return after `Close`; what is retried.
+- **Observability** (OBSERVABILITY.md, `dnp3.FieldLogger`): which loggers receive debug entries; the fields of each entry and the entries that were missing; the state handler on failed reconnects and on `Close`.
+- **API.md**: the exported names that were missing, and the values a `Measurement` carries.
+- **INTEROPERABILITY.md**: the multi-drop row, which did not render; the qualifiers, function codes and default variations as implemented; pre-shared session keys listed as a deviation; the interop matrix and the data set capabilities of DSC go-dnp3 corrected.
+- **OBJECTS.md**: what Point and Kind mean, and variation 0 of the open-ended groups.
+- **ARCHITECTURE, CONTRIBUTING, SECURITY**: the segment size, the state the transport keeps, the tests that exist, the release notes convention, the supported versions, aggressive mode on the outstation.
+- **Citations**: the dual end point and g86v2 cite IEEE 1815-2012 without the annex subclauses, which were wrong.
+- **examples/observability** shows the outstation's metrics too, as its description says.
+
+---
+
 ## v1.3.0
 
 **Date:** 2026-10-20
@@ -9,9 +37,13 @@
 
 The objects come from one catalog that generates the codec's table, the
 points `client.Measurements` reports and OBJECTS.md; a weekly upstream
-watch compares it with stepfunc dnp3, DSC go-dnp3 and dnp3-interop. g86v2
-is now decoded as the one octet IEEE 1815-2012 defines: code that read it
-as `app.Raw` must switch to `app.DataSetCharacteristics`.
+watch compares it with stepfunc dnp3 and DSC go-dnp3 and looks for a new
+dnp3-interop release. g86v2 is now decoded as the one octet IEEE 1815-2012
+defines.
+
+**Upgrade notes**
+
+- g86v2 (Data Set Descriptor - Characteristics) now decodes to `app.DataSetCharacteristics`, not `app.Raw`. It is a correction to IEEE 1815-2012 Annex A, released as a fix: code that type-asserted `app.Raw` for g86v2 must switch to the new type.
 
 ## Changes
 
@@ -27,7 +59,7 @@ as `app.Raw` must switch to `app.DataSetCharacteristics`.
 
 ### Fixed
 
-- **g86v2 (Data Set Descriptor - Characteristics) is one octet, as IEEE 1815-2012 A.47.2 defines it.** It was carried as a free-format `app.Raw`; it now decodes to `app.DataSetCharacteristics` and is sent with a range or index prefix like other fixed-size objects. Code that decoded g86v2 as `app.Raw` needs to switch to the new type. The upstream watch found it: DSC go-dnp3 defines it as one octet too.
+- **g86v2 (Data Set Descriptor - Characteristics) is one octet, as IEEE 1815-2012 Annex A defines it.** It was carried as a free-format `app.Raw`; it now decodes to `app.DataSetCharacteristics` and is sent with a range or index prefix like other fixed-size objects. Code that decoded g86v2 as `app.Raw` needs to switch to the new type. The upstream watch found it: DSC go-dnp3 defines it as one octet too.
 
 ### Tests
 
@@ -111,7 +143,7 @@ The first production release. It completes Secure Authentication with
 aggressive mode and security statistics, adds the dual end point (an
 outstation that connects to its master), and fixes what a new full-stack
 chaos test, parallel tests and an outstation fuzz target found. The
-interop suite covers every feature the dnp3-interop v0.2.0 images offer,
+interop suite covers every feature the dnp3-interop v0.3.0 images offer,
 in both directions. From this release on the API follows semantic
 versioning: no breaking change without a new major version.
 
@@ -127,7 +159,7 @@ versioning: no breaking change without a new major version.
 
 - **Aggressive mode** (IEEE 1815-2012 clause 7.5.2.2.4), both roles. `client.WithAggressiveMode` sends critical requests with a g120v3 object first and a g120v9 MAC over the last challenge and the request last, so the outstation executes them without a challenge. The outstation verifies the MAC and the challenge sequence number. Verified between go-dnp3's own ends: no reference in dnp3-interop implements it.
 - **Security statistics** (clause 7.6): the outstation keeps the 18 statistics per association (`secauth.Statistic`), serves them as g121v1 and reports g122v2 events every `SecureAuth.StatisticsThreshold` increments in `SecureAuth.StatisticsClass`. Verified against DSC Systems go-dnp3 in both directions.
-- **Dual end point** (annex A.3): `server.DialAndServe` connects to the master, serves the connection and reconnects with backoff (`server.Redial`), with TLS as the TLS client; `client.Accept` makes the master wait for the outstation's connection.
+- **Dual end point**: `server.DialAndServe` connects to the master, serves the connection and reconnects with backoff (`server.Redial`), with TLS as the TLS client; `client.Accept` makes the master wait for the outstation's connection.
 - **Time and interval** (g50v4): `server.TimeAndInterval` points (`app.AbsoluteTime` with `Units`), read by group and variation; like the reference outstations, not in class 0.
 - **Command events** (g13, g43): an output whose `PointConfig.CommandEventClass` is set reports every executed OPERATE, DIRECT OPERATE and DIRECT OPERATE NO ACK as an event with the commanded state or value and the handler's status (`CommandEventVariation`, default g13v2 and g43v3).
 - `server.SecureAuth.ReplyTimeout` (default `DefaultReplyTimeout`, 10 s): a challenge reply that arrives later is refused.

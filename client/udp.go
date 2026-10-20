@@ -25,7 +25,7 @@ func UDP(addr string) StreamOpener {
 }
 
 // Accept returns a StreamOpener for an outstation that establishes the
-// connection (the dual end point of IEEE 1815-2012 annex A.3): it waits
+// connection (the dual end point of IEEE 1815-2012): it waits
 // for the outstation to connect on l. Use it with WithStream; with
 // WithReconnect the client waits for the next connection when one ends.
 // The client does not close l. For TLS, give a listener of

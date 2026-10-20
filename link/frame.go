@@ -186,8 +186,8 @@ func FrameLength(b []byte) (int, error) {
 // number of octets it occupies. The user data of the frame is a new slice,
 // not a view into b.
 //
-// A buffer that holds only part of a frame fails with [ErrShortBuffer].
-// Every other error wraps [ErrFraming].
+// Every error wraps [ErrFraming]; a buffer that holds only part of a frame
+// also wraps [ErrShortBuffer].
 func Decode(b []byte) (Frame, int, error) {
 	var f Frame
 	if len(b) < HeaderLength {
