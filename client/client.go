@@ -46,6 +46,9 @@ type Client struct {
 	// started is closed when the startup sequence of the current channel
 	// has ended: automatic tasks wait for it.
 	started chan struct{}
+	// sessionKey is the control direction session key negotiated on the
+	// current channel, nil before the first session key change.
+	sessionKey []byte
 
 	// turn admits one transaction at a time; waiting counts the requests
 	// queued for it.
@@ -178,6 +181,8 @@ func (c *Client) connect(ctx context.Context) error {
 		return dnp3.ErrClosed
 	}
 	c.ch, c.sess, c.remote, c.dialing = ch, sess, remote, false
+	clear(c.sessionKey)
+	c.sessionKey = nil
 	started := make(chan struct{})
 	c.started = started
 	c.lastUns = nil
@@ -188,7 +193,10 @@ func (c *Client) connect(ctx context.Context) error {
 	c.log.Info("connected", "remote_addr", addrString(remote))
 	c.setState(dnp3.StateConnected, nil)
 
-	err = c.runStartup(ctx)
+	err = c.changeSessionKeys(ctx)
+	if err == nil {
+		err = c.runStartup(ctx)
+	}
 	close(started)
 	if err != nil {
 		c.log.Warn("startup sequence failed", "error", err)

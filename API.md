@@ -94,7 +94,8 @@ The master for one outstation.
 | `WithAutoEventPoll(bool)` | off | Poll the classes the IIN reports events for |
 | `WithPoll(Poll)` | none | A periodic READ (`Interval`, `Headers`); repeatable |
 | `WithQueueLimit(n)` | 64 | Requests that may wait for their turn |
-| `WithSecureAuthentication(secauth.User)` | off | Answer challenges with a pre-shared key |
+| `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key, challenge replies |
+| `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed |
 
 ### Requests
 
@@ -145,7 +146,8 @@ The outstation.
 | `(*Server).ListenAndServe(addr)` | TCP (with `WithTLS`, TLS) on addr, `:20000` when empty |
 | `(*Server).Serve(net.Listener)` | Accept on any listener |
 | `(*Server).ServeConn(io.ReadWriteCloser, net.Addr)` | Serve one stream: serial, a pipe |
-| `(*Server).ServeUDP(net.PacketConn)` | DNP3 over UDP |
+| `(*Server).ServeUDP(net.PacketConn)` | DNP3 over UDP; answers the address that sent last |
+| `(*Server).ServeUDPTo(net.PacketConn, net.Addr)` | The same, with the master's address known from the start |
 | `(*Server).Database()` | The points |
 | `(*Server).SetIndications(bits, on)` | LOCAL_CONTROL, DEVICE_TROUBLE, CONFIG_CORRUPT |
 | `(*Server).Restart()` | Behave as after a restart |
@@ -248,4 +250,9 @@ directories.
 ## Package `secauth`
 
 `MAC(alg, key, data)`, `Equal(a, b)`, `AuthData(challenge, critical)`,
-`User{Number, Key, MAC}` (`Algorithm`, `Validate`).
+`KeyWrap(kek, plaintext)`, `KeyUnwrap(kek, wrapped)` (RFC 3394, `ErrKeyWrap`),
+`KeyChangeData(control, monitoring, keyStatus)`, `ParseKeyChangeData(plain, keyStatus...)`,
+`User{Number, UpdateKey, Key, MAC}` (`Algorithm`, `KeyWrapAlgorithm`, `SessionKeyLen`, `Validate`).
+
+`app.AppendObjectValue(b, gv, v)` encodes one object without header, as a
+free-format object carries it.

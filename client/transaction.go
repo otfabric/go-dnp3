@@ -19,6 +19,10 @@ type Result struct {
 	// Fragments are the response fragments, in order. Empty for requests
 	// without a response.
 	Fragments []*app.Fragment
+
+	// request is the encoding of the request as sent; a session key
+	// change's confirmation is a MAC over it.
+	request []byte
 }
 
 // Measurements returns the measurements of all fragments.
@@ -142,7 +146,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	if m := c.opts.metrics; m != nil {
 		m.OnFragmentSent(c.remoteAddr(), req, len(data))
 	}
-	res := &Result{}
+	res := &Result{request: data}
 	if fc.NoAck() {
 		return res, nil
 	}

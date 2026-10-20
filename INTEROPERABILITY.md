@@ -22,7 +22,7 @@ of a device profile, and how it has been verified.
 |------|--------|------------|
 | TCP, port 20000 | ✅ | ✅ any number of connections (`WithMaxConnections`) |
 | TLS | ✅ `crypto/tls` | ✅ |
-| UDP | ✅ connected socket | ✅ one master per socket |
+| UDP | ✅ connected socket | ✅ one master per socket; `ServeUDPTo` names the master for unsolicited responses before it sends |
 | Serial, any byte stream | ✅ `WithStream` | ✅ `ServeConn` |
 | Dual end point (outstation dials the master) | — | — |
 
@@ -154,7 +154,9 @@ is not lost, as the reference outstations do.
 
 ## Secure Authentication
 
-Version 5, clause 7, with a pre-shared session key in both directions.
+Version 5, clause 7. Update keys are configured on both ends; session
+keys are negotiated by the session key change, or, without an update key,
+a pre-shared session key is used directly.
 
 | Item | Support |
 |------|---------|
@@ -162,10 +164,12 @@ Version 5, clause 7, with a pre-shared session key in both directions.
 | Critical function codes | `server.DefaultCritical`, configurable |
 | MAC algorithms | HMAC-SHA-256 truncated to 8 and 16, HMAC-SHA-1 truncated to 4, 8 and 10 |
 | Authentication error (g120v7) | ✅ sent on a wrong MAC, reported as `*dnp3.AuthError` |
-| Session key status request and status (g120v4, v5) | ✅ answered: keys are always OK |
-| Session key change (g120v6), update key change (g120v11..v15), user status change (g120v10), certificates (g120v8) | — objects only, procedures not implemented |
+| Session key status request and status (g120v4, v5) | ✅ both roles: fresh challenge data per status, MAC over the last key change with the monitoring key |
+| Session key change (g120v6), AES-128 and AES-256 key wrap (RFC 3394) | ✅ both roles: at every connection and at the key change interval (`client.WithKeyChangeInterval`, default 15 minutes); keys invalid after the connection ends |
+| Key status message in the key change data | the master sends the g120v5 object with its MAC value; the outstation accepts it with or without, as implementations differ |
+| Update key change (g120v11..v15), user status change (g120v10), certificates (g120v8) | — objects only, procedures not implemented |
 | Aggressive mode (g120v3 + g120v9) | — objects only |
-| AES-GMAC, key wrap | — |
+| AES-GMAC | — |
 | Security statistics (g121, g122) | — objects only |
 
 ## Deviations and choices

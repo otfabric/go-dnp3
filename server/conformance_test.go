@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"github.com/otfabric/go-dnp3/app"
 	"github.com/otfabric/go-dnp3/internal/channel"
 	"github.com/otfabric/go-dnp3/link"
+	"github.com/otfabric/go-dnp3/secauth"
 )
 
 // master is a scripted master: it sends exact fragments and reads the
@@ -586,4 +588,74 @@ func (h *countingHandler) indexes() []uint32 {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]uint32(nil), h.idx...)
+}
+
+// TestSessionKeyChangeForms: the key status message in the key change data
+// is accepted with and without its MAC value, since implementations
+// differ; anything else is refused and keeps the keys as they were.
+func TestSessionKeyChangeForms(t *testing.T) {
+	uk := []byte("0123456789abcdef")
+	m := newMaster(t, WithHandler(&countingHandler{}), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, UpdateKey: uk}}))
+	seq := uint8(0)
+	status := func() app.AuthSessionKeyStatus {
+		t.Helper()
+		m.send(req(seq, app.FuncAuthRequest, app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: 1})))
+		seq = app.NextSeq(seq)
+		return m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value.(app.AuthSessionKeyStatus)
+	}
+	change := func(st app.AuthSessionKeyStatus, withMAC bool, key []byte) (app.Value, []byte, []byte) {
+		t.Helper()
+		form := st
+		if !withMAC {
+			form.MACValue = nil
+		}
+		msg, _ := app.AppendObjectValue(nil, app.G120V5, form)
+		ctrl, mon := bytes.Repeat([]byte{byte(seq)}, 16), bytes.Repeat([]byte{byte(seq) + 1}, 16)
+		plain, _ := secauth.KeyChangeData(ctrl, mon, msg)
+		wrapped, _ := secauth.KeyWrap(key, plain)
+		f := req(seq, app.FuncAuthRequest, app.FreeFormat(app.G120V6, app.AuthSessionKeyChange{KSQ: st.KSQ, User: 1, WrappedKeys: wrapped}))
+		seq = app.NextSeq(seq)
+		raw, _ := f.Encode()
+		m.sendRaw(raw)
+		return m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value, raw, mon
+	}
+
+	st := status()
+	if st.Status != app.KeyStatusNotInit || len(st.MACValue) != 0 || st.KeyWrap != app.KeyWrapAES128 || len(st.Challenge) != 32 {
+		t.Fatalf("initial key status %+v", st)
+	}
+	// First change, the form without the MAC (there is none yet anyway).
+	v, raw, mon := change(st, false, uk)
+	done, ok := v.(app.AuthSessionKeyStatus)
+	want, _ := secauth.MAC(done.MAC, mon, raw)
+	if !ok || done.Status != app.KeyStatusOK || !secauth.Equal(done.MACValue, want) {
+		t.Fatalf("after the first change: %+v", v)
+	}
+	// Second change, the form with the MAC: accepted too.
+	st = status()
+	if len(st.MACValue) == 0 {
+		t.Fatal("key status of initialized keys without a MAC")
+	}
+	if v, _, _ := change(st, true, uk); v.(app.AuthSessionKeyStatus).Status != app.KeyStatusOK {
+		t.Fatalf("form with MAC refused: %+v", v)
+	}
+	// Third, without the MAC although there is one: accepted as well.
+	st = status()
+	if v, _, _ := change(st, false, uk); v.(app.AuthSessionKeyStatus).Status != app.KeyStatusOK {
+		t.Fatalf("form without MAC refused: %+v", v)
+	}
+	// A wrong update key, a stale KSQ, a change without a status request.
+	st = status()
+	if v, _, _ := change(st, true, []byte("fedcba9876543210")); v.(app.AuthError).Code != app.AuthErrAuthenticationFailed {
+		t.Fatalf("wrong update key: %+v", v)
+	}
+	st.KSQ++
+	if v, _, _ := change(st, true, uk); v.(app.AuthError).Code != app.AuthErrAuthenticationFailed {
+		t.Fatalf("change without a status request: %+v", v)
+	}
+	// An unknown user.
+	m.send(req(seq, app.FuncAuthRequest, app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: 9})))
+	if v := m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value.(app.AuthError); v.Code != app.AuthErrUnknownUser {
+		t.Fatalf("unknown user: %+v", v)
+	}
 }

@@ -4,12 +4,12 @@
 // Authentication version 5 (IEEE 1815-2012 clause 7): the message
 // authentication codes and the construction of the data they protect.
 //
-// The challenge-reply procedure that uses it is wired into the client and
-// the server through their WithSecureAuthentication option. This package
-// supports pre-shared session keys and HMAC with SHA-256 (the algorithm
-// every SAv5 device must implement) and SHA-1; the session key change and
-// update key change procedures of clause 7.6 are not implemented, so keys
-// are configured on both ends out of band.
+// The procedures that use it are wired into the client and the server
+// through their WithSecureAuthentication option: the challenge of critical
+// requests and the session key change, with HMAC-SHA-256 (which every SAv5
+// device must implement) or HMAC-SHA-1, and AES-128 or AES-256 key wrap
+// (RFC 3394). Update keys are configured on both ends out of band: the
+// update key change and user management procedures are not implemented.
 package secauth
 
 import (
@@ -61,16 +61,40 @@ func AuthData(challenge, criticalFragment []byte) []byte {
 	return append(out, criticalFragment...)
 }
 
-// User holds the keys and identity of one SAv5 user. In pre-shared mode
-// the control-direction session key is used for both challenge and reply.
+// User holds the keys and identity of one SAv5 user.
+//
+// With an UpdateKey the session keys are negotiated by the session key
+// change procedure: the master wraps fresh keys with the update key on
+// every connection and at the key change interval. Without one, Key is a
+// pre-shared control direction session key used directly.
 type User struct {
 	// Number is the user number; 1 is the default user.
 	Number uint16
-	// Key is the pre-shared control-direction session key (16 or 32
-	// octets for AES key wrap, but any length works for HMAC).
+	// UpdateKey is the update key: 16 octets (AES-128 key wrap) or 32
+	// octets (AES-256).
+	UpdateKey []byte
+	// Key is a pre-shared control direction session key, used when there
+	// is no UpdateKey.
 	Key []byte
 	// MAC is the algorithm; zero selects HMAC-SHA-256 truncated to 16.
 	MAC app.MACAlgorithm
+}
+
+// KeyWrapAlgorithm returns the key wrap algorithm of the update key.
+func (u User) KeyWrapAlgorithm() app.KeyWrap {
+	if len(u.UpdateKey) == 32 {
+		return app.KeyWrapAES256
+	}
+	return app.KeyWrapAES128
+}
+
+// SessionKeyLen returns the length of the session keys the master
+// generates: that of the update key.
+func (u User) SessionKeyLen() int {
+	if len(u.UpdateKey) == 32 {
+		return 32
+	}
+	return 16
 }
 
 // Algorithm returns the user's MAC algorithm, defaulting to
@@ -84,8 +108,11 @@ func (u User) Algorithm() app.MACAlgorithm {
 
 // Validate checks that the user can be used.
 func (u User) Validate() error {
-	if len(u.Key) == 0 {
-		return fmt.Errorf("secauth: user %d has no key", u.Number)
+	switch {
+	case len(u.UpdateKey) != 0 && len(u.UpdateKey) != 16 && len(u.UpdateKey) != 32:
+		return fmt.Errorf("secauth: user %d: update key of %d octets, need 16 or 32", u.Number, len(u.UpdateKey))
+	case len(u.UpdateKey) == 0 && len(u.Key) == 0:
+		return fmt.Errorf("secauth: user %d has no update key and no session key", u.Number)
 	}
 	if u.Algorithm().Len() == 0 {
 		return fmt.Errorf("secauth: user %d has unsupported MAC algorithm %s", u.Number, u.Algorithm())

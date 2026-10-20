@@ -51,6 +51,13 @@ func (c *Client) taskLoop() {
 			c.pollLoop(i, p, stop)
 		}()
 	}
+	if u := c.opts.auth; u != nil && len(u.UpdateKey) > 0 {
+		polls.Add(1)
+		go func() {
+			defer polls.Done()
+			c.keyChangeLoop(stop)
+		}()
+	}
 	defer func() {
 		close(stop)
 		polls.Wait()
@@ -171,4 +178,18 @@ func (c *Client) runStartup(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// keyChangeLoop changes the session keys at the key change interval.
+func (c *Client) keyChangeLoop(stop <-chan struct{}) {
+	t := time.NewTicker(c.opts.keyChange)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			c.enqueue(task{name: "key-change", run: c.changeSessionKeys})
+		}
+	}
 }

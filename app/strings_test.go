@@ -131,3 +131,23 @@ func TestValueMarkers(t *testing.T) {
 		t.Error("descriptor with offset 0 accepted")
 	}
 }
+
+func TestAppendObjectValue(t *testing.T) {
+	ks := AuthSessionKeyStatus{KSQ: 7, User: 1, KeyWrap: KeyWrapAES128, Status: KeyStatusNotInit, Challenge: []byte{1, 2, 3, 4}}
+	b, err := AppendObjectValue(nil, G120V5, ks)
+	if err != nil || len(b) != 4+2+3+2+4 {
+		t.Fatalf("%x %v", b, err)
+	}
+	// Identical to the object inside an encoded fragment.
+	f := Fragment{Function: FuncAuthResponse, Headers: []Header{FreeFormat(G120V5, ks)}}
+	enc, _ := f.Encode()
+	if string(enc[len(enc)-len(b):]) != string(b) {
+		t.Fatal("differs from the encoding in a fragment")
+	}
+	if _, err := AppendObjectValue(nil, GV(200, 1), ks); err == nil {
+		t.Fatal("unknown object accepted")
+	}
+	if _, err := AppendObjectValue(nil, G2V3, Binary{}); err == nil {
+		t.Fatal("relative time accepted")
+	}
+}
