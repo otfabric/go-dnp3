@@ -19,7 +19,7 @@ on:
         description: "opendnp3 reference image (default: the pinned release)"
         required: false
       dscsystems_image:
-        description: "DSC Systems go-dnp3 reference image (default: the pinned release)"
+        description: "DSC go-dnp3 reference image (default: the pinned release)"
         required: false
       dnp3py_image:
         description: "dnp3py reference image (default: the pinned release)"
@@ -31,7 +31,7 @@ permissions:
 
 env:
   # otfabric/dnp3-interop v0.4.1: stepfunc dnp3 1.7.0, opendnp3 3.1.2,
-  # DSC Systems go-dnp3 v0.8.1, dnp3py 0.6.0.
+  # DSC go-dnp3 v0.8.1, dnp3py 0.6.0.
   # Keep in step with the Makefile and interop/harness.go.
   DNP3_INTEROP_STEPFUNC_IMAGE: ${{ inputs.stepfunc_image || 'ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:84f32f97a35df004e6585d2a874e213d5c0a638e7e557da250fe6e7f5cc4bf9b' }}
   DNP3_INTEROP_OPENDNP3_IMAGE: ${{ inputs.opendnp3_image || 'ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a706e024958394b53f1df449ea669c0a4020e4779888db18a7e2b8abd1e1e74e' }}

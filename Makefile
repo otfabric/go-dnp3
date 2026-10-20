@@ -28,7 +28,7 @@ COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e' | pas
 INTEROP_TAGS := interop
 
 # Reference implementations for 'make interop': otfabric/dnp3-interop v0.4.1
-# (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1, dnp3py
+# (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.1, dnp3py
 # 0.6.0), pinned by multi-arch index digest. Keep in step with
 # interop/harness.go. Override to test other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev

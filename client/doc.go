@@ -9,8 +9,8 @@
 // [New] and [Client.Connect] do the same in two steps. Requests are
 // methods that block until the outstation answered or the context ended:
 // [Client.IntegrityPoll], [Client.EventPoll], [Client.Read],
-// [Client.Operate], [Client.SyncTime], [Client.ColdRestart], the file
-// transfer methods and more. Unsolicited responses and the measurements of
+// [Client.Operate], [Client.SyncTime], [Client.ColdRestart], [Client.Broadcast],
+// [Client.ReadAttributeSet], the file transfer methods and more. Unsolicited responses and the measurements of
 // every response go to the [Handler] of [WithHandler].
 //
 // Transports: TCP (the default, port 20000), TLS ([WithTLS]), UDP

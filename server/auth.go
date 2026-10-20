@@ -318,7 +318,9 @@ func (a *association) aggressive(req *app.Fragment, in inbound) *app.Fragment {
 	}
 	if !ok {
 		a.count(secauth.StatUnexpectedMessages)
-		a.authError(req.Control.Seq, 0, sa.User.Number, app.AuthErrAuthenticationFailed)
+		if !in.dest.Broadcast() {
+			a.authError(req.Control.Seq, 0, sa.User.Number, app.AuthErrAuthenticationFailed)
+		}
 		return nil
 	}
 	// The octets the MAC covers end where the g120v9 object begins: its
@@ -336,7 +338,10 @@ func (a *association) aggressive(req *app.Fragment, in inbound) *app.Fragment {
 	if !ok {
 		a.log.Warn("aggressive mode request refused", "user", am.User, "csq", am.CSQ)
 		a.count(secauth.StatAuthenticationFailures)
-		a.authError(req.Control.Seq, am.CSQ, am.User, app.AuthErrAuthenticationFailed)
+		if !in.dest.Broadcast() {
+			// Nobody answers a broadcast, not even with an error.
+			a.authError(req.Control.Seq, am.CSQ, am.User, app.AuthErrAuthenticationFailed)
+		}
 		return nil
 	}
 	a.csq = am.CSQ

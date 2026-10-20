@@ -34,7 +34,7 @@ of a device profile, and how it has been verified.
 |------|---------|
 | FT3 frames, CRC per header and 16-octet block | ✅ encode and decode, 1..250 octets of user data |
 | Resynchronisation after damage | ✅ skip to start octets, step through a bad header, drop a frame with a bad data CRC |
-| Addresses 0..0xFFEF, broadcast 0xFFFD..0xFFFF | ✅; masters ignore broadcasts, broadcasts carry only user data |
+| Addresses 0..0xFFEF, broadcast 0xFFFD..0xFFFF | ✅; the master sends broadcasts with `Client.Broadcast` and ignores those it receives; broadcasts carry only user data |
 | Self address 0xFFFC | ✅ outstation, `WithSelfAddress` |
 | UNCONFIRMED_USER_DATA | ✅ default |
 | CONFIRMED_USER_DATA with RESET_LINK_STATES and the frame count bit | ✅ both roles (`Link.Confirmed`); repeats discarded by FCB; NACK resets the link once |
@@ -76,7 +76,7 @@ of a device profile, and how it has been verified.
 | 3, 4 | SELECT, OPERATE | ✅ | ✅ |
 | 5, 6 | DIRECT_OPERATE, _NR | ✅ | ✅ |
 | 7..10 | IMMED_FREEZE, FREEZE_CLEAR, _NR | ✅ | ✅ counters and analog inputs |
-| 11, 12 | FREEZE_AT_TIME, _NR | ✅ | ✅ time 0 at once; a time to come and every interval after it (up to `MaxScheduledFreezes` waiting); a time that has passed without an interval is refused (A.23.2) |
+| 11, 12 | FREEZE_AT_TIME, _NR | ✅ | ✅ time 0 at once; a time to come and every interval after it (up to `MaxScheduledFreezes` waiting); a time that has passed without an interval is refused (A.23.2). Scheduled freezes belong to the `Server`, not to one master: restarts and reconnections leave them waiting, `Close` stops them |
 | 13, 14 | COLD_RESTART, WARM_RESTART | ✅ | ✅ with `RestartHandler` |
 | 15..19 | INITIALIZE_DATA, INITIALIZE_APPL, START_APPL, STOP_APPL, SAVE_CONFIG | `Request` | ✅ with `ApplicationHandler` |
 | 20, 21 | ENABLE_UNSOLICITED, DISABLE_UNSOLICITED | ✅ | ✅ with `WithUnsolicited` |
@@ -141,7 +141,7 @@ is not lost, as the reference outstations do.
 |-----------|--------|------------|
 | Integrity poll, event poll, read of ranges, index lists, counts | ✅ | ✅ |
 | Event reporting in time order across types | ✅ | ✅ per-master buffers, limits per type, oldest discarded with overflow |
-| Event deadbands | ✅ writes g34 | ✅ per point (`PointConfig.Deadband`) for analog and counter points; analog input deadbands writable by the master (g34) |
+| Event deadbands | ✅ writes and reads g34 | ✅ per point (`PointConfig.Deadband`) for analog and counter points; analog input deadbands written and read by the master (g34) |
 | Unsolicited: null response at connection, enable/disable per class, hold time and count, retries, retry delay | ✅ | ✅ classes survive connections |
 | Select-before-operate: same objects, next sequence number, select timeout | ✅ | ✅ |
 | Direct operate, no-ack, pattern control | ✅ | ✅ |
@@ -150,7 +150,7 @@ is not lost, as the reference outstations do.
 | Clear of DEVICE_RESTART | ✅ automatic | ✅ |
 | Freeze, freeze-and-clear | ✅ | ✅ unchanged frozen values produce no event |
 | Assign class | ✅ | ✅ |
-| File transfer: read, write, directory, info, delete, authenticate, abort | ✅ | ✅ |
+| File transfer: read, write, append (`FileOptions.Append`), directory, info, delete, authenticate, abort | ✅ | ✅ |
 | Device attributes | ✅ | ✅ |
 | Broadcast | ✅ `Broadcast` to 0xFFFD, 0xFFFE or 0xFFFF, for the requests that need no answer | ✅ executed without a response, also as a master's first frame; IIN1.0 in the next response |
 
@@ -206,8 +206,9 @@ a pre-shared session key is used directly.
 | TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3, including a refused certificate of another CA |
 | UDP, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3 over a pseudo-terminal bridged to TCP |
-| File transfer: master | ✅ against DSC go-dnp3's file server: read, write of several blocks, list, info, delete, missing files |
-| File transfer: outstation | ✅ against the masters of stepfunc (get, put, list, info) and DSC go-dnp3 (also delete) |
+| File transfer: master | ✅ against DSC go-dnp3's file server: read, write of several blocks, append, AUTHENTICATE_FILE, list, info, delete, missing files |
+| File transfer: outstation | ✅ against the masters of stepfunc (get, put, append, list, info, authenticate) and DSC go-dnp3 (also delete; authenticate) |
+| Contract 1.3 (device attributes, several controls, freeze at time, analog freeze, deadbands, event buffer overflow, link confirms and keep-alive, broadcast, management, several outstations) | ✅ against every reference that has each, see [Interop coverage](#interop-coverage) |
 | Secure Authentication, both roles | ✅ against DSC go-dnp3 (HMAC-SHA-256-16, AES-128 key wrap): key change at connect, challenged controls, periodic key change in a session, a second connection, a wrong update key refused, security statistics read both ways; the other references do not implement it |
 | Requests without a response | ✅ DIRECT OPERATE NO ACK and FREEZE AND CLEAR NO ACK as master against stepfunc, opendnp3 and DSC go-dnp3; as outstation from DSC go-dnp3's and dnp3py's masters |
 | Dual end point, both roles, TCP and TLS | ✅ against stepfunc, opendnp3 and DSC go-dnp3 (stepfunc's master listens over TCP only) |
@@ -247,7 +248,7 @@ images offer.
 | Device attributes, other sets, read and write (contract 1.3) | M O | | M O | |
 | Several controls in one request, the limit per request (TOO_MANY_OPS) | M O | M O | M O | O |
 | FREEZE AT TIME, scheduled | M O | | M O | O |
-| Analog freeze into frozen analog inputs | O | O | M O | O |
+| Analog freeze into frozen analog inputs | O | O | M | O |
 | Deadbands (g34): write; read back | M O | | M O (write) | |
 | File append, AUTHENTICATE_FILE | O | | M O | |
 | Event buffer overflow (IIN2.3) | M O | M O | M O | M O |
@@ -264,7 +265,11 @@ images offer.
 
 Known bugs of a reference that the fixture shows (dnp3-interop's
 `tests/known-bugs.tsv`) are logged, not failed: DSC go-dnp3 v0.8.1 leaves a
-counter without a frozen counter uncleared by FREEZE AND CLEAR. Two
+counter without a frozen counter uncleared by FREEZE AND CLEAR. Two more
+known bugs touch the contract 1.3 tests, which avoid them: DSC go-dnp3
+refuses FREEZE AT TIME with time 0 (the tests use a time to come), and
+stepfunc's master decodes a one-octet signed attribute without its sign
+(go-dnp3 sends four octets). Two
 findings about the references that the suite works with: opendnp3's UDP
 outstation answers only the fixed peer it is given, so go-dnp3's master
 runs in a container on its network for that test; DSC go-dnp3's
@@ -315,5 +320,5 @@ The gaps, and what closing them would be worth:
   methods.
 - **Several outstations behind one channel.** go-dnp3 serves one
   outstation per `Server`; several need a port each (opendnp3 and DSC
-  Systems serve them on one). Its master reaches each of theirs.
+  go-dnp3 serve them on one). Its master reaches each of theirs.
 - **Multi-fragment requests** are not a gap: requests are one fragment.

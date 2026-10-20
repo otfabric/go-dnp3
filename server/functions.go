@@ -158,8 +158,9 @@ func (a *association) synchronized(ctx context.Context, t time.Time) {
 
 // freeze copies counters into frozen counters, and analog inputs into
 // frozen analog inputs, for the points the headers name. FREEZE_AT_TIME
-// is executed at once when its time has passed and its interval is zero;
-// a scheduled freeze is not supported.
+// with time 0 and interval 0 is executed at once; otherwise it is
+// scheduled (scheduleFreeze). A time that has passed, without an
+// interval, is refused.
 func (a *association) freeze(req *app.Fragment) *response {
 	clearAfter := req.Function == app.FuncFreezeClear || req.Function == app.FuncFreezeClearNoAck
 	hs := req.Headers
@@ -250,7 +251,9 @@ func (s *Server) freezeNow(hs []app.Header, clear bool) app.IIN {
 }
 
 // MaxScheduledFreezes is how many FREEZE_AT_TIME requests the outstation
-// keeps waiting at once; a further one is refused.
+// keeps waiting at once; a further one is refused. They belong to the
+// Server: a periodic one keeps its place until Close, whatever happens to
+// the master's connection.
 const MaxScheduledFreezes = 16
 
 // scheduleFreeze freezes the points of hs at when and, with an interval,

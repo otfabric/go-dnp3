@@ -17,7 +17,7 @@ What dnp3-interop's contract 1.3 tests, in both roles. No breaking change.
 - `client.FileOptions.Append`: `WriteFile` appends to the file (OPEN_FILE in APPEND mode).
 - The outstation answers READ of g34, the deadbands of its analog inputs.
 - **Device attribute sets** other than set 0: `server.WithAttributeSet(set, attrs, writable...)` with `AttributeSetWriteHandler`, and `Client.ReadAttributeSet`, `WriteAttributeSet`. A writable attribute takes a value of its type and the outstation keeps it.
-- **Scheduled FREEZE_AT_TIME** (IEEE 1815-2012 A.23.2): a time to come is waited for and an interval repeats the freeze, up to `server.MaxScheduledFreezes` waiting; time 0 freezes at once. A time that has passed, without an interval, is refused.
+- **Scheduled FREEZE_AT_TIME** (IEEE 1815-2012 A.23.2): a time to come is waited for and an interval repeats the freeze until `Close`, up to `server.MaxScheduledFreezes` waiting; time 0 freezes at once. A time that has passed, without an interval, is refused.
 
 ### Changed
 
@@ -29,6 +29,7 @@ What dnp3-interop's contract 1.3 tests, in both roles. No breaking change.
 
 ### Fixed
 
+- **With secure authentication, a critical broadcast was carried out unauthenticated.** A broadcast cannot be challenged, so the outstation executed a critical request sent to a broadcast address (a control, a freeze, a write) without any MAC; v1.0.0 has this too. Such a request is now carried out only in aggressive mode with a valid MAC; otherwise it is discarded, counted as a discarded message and not answered.
 - **An outstation ignored a broadcast that was the master's first frame**: it had no association for the master yet. It now accepts the master on a broadcast frame as on any other.
 
 ---

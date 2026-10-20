@@ -124,9 +124,14 @@ on a multi-drop serial line; on TCP there is usually one.
 
 `server.Server` accepts connections, or establishes them itself with
 `DialAndServe` (the dual end point), and wraps each in a channel. Sessions
-are created when a frame from an allowed master arrives, or at once when
-exactly one master is configured, so that the null unsolicited response
-can be sent before the master speaks.
+are created when a frame from an allowed master arrives (a broadcast
+frame too), or at once when exactly one master is configured, so that the
+null unsolicited response can be sent before the master speaks.
+
+Scheduled FREEZE_AT_TIME requests are `time.AfterFunc` timers of the
+`Server`, outside the associations' goroutines: they run on the
+outstation's synchronized clock, at most `MaxScheduledFreezes` wait, and
+only `Close` stops them.
 
 The state of a master lives in its **association**, keyed by the master's
 link address and kept across connections: its event buffer, internal

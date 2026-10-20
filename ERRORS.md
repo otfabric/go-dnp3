@@ -32,6 +32,7 @@ How failures are reported, and how to tell them apart.
 | An aggressive mode request, or a challenge reply that came too late, refused | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
 | A response that does not fit the request (echo, sequence) | wraps `dnp3.ErrProtocol` | `errors.Is` |
 | An option or argument that cannot be used | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
+| `Client.Broadcast` | only local errors: `ErrInvalidOption` (not a broadcast address, a function that needs an answer), `ErrNotConnected`, send errors; the outstations answer nothing, IIN1.0 shows in their next response | `errors.Is` |
 | The caller's context ended | `context.Canceled`, `context.DeadlineExceeded` | `errors.Is` |
 
 ## Sentinels

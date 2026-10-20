@@ -186,7 +186,8 @@ The outstation.
 
 Constants: `DefaultPort` (20000), `DefaultEventLimit` (100),
 `DefaultReplyTimeout`, `MaxScheduledFreezes` (16 FREEZE_AT_TIME requests
-waiting); the variable `DefaultCritical`.
+waiting, for the server: a periodic one until `Close`); the variable
+`DefaultCritical`.
 
 ### Database
 

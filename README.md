@@ -17,13 +17,15 @@ The library provides:
   range, unsolicited responses with confirmation and duplicate detection,
   controls (select-before-operate, direct operate, no-ack; relay output
   blocks, pattern control, set-points), time synchronization by the LAN and
-  the non-LAN procedure, restarts, freezes, assign class, device
-  attributes, file transfer, secure authentication
+  the non-LAN procedure, restarts, freezes (also at a time), assign class,
+  device attributes of any set, file transfer, broadcasts, secure
+  authentication
 - A **server** (outstation): a point database for every point type with
   deadbands and event classes, event buffers per master that survive
   reconnects, multi-fragment responses with confirmation, unsolicited
   responses with hold time and retries, select-before-operate with timeout
-  and sequence checks, any number of masters and connections
+  and sequence checks, device attributes of any set, scheduled freezes,
+  any number of masters and connections
 - The complete **link layer** (FT3 frames, CRCs, reset of link states,
   confirmed user data with the frame count bit, link status keep-alive) and
   the **transport function**, also on multi-drop channels
@@ -70,7 +72,7 @@ The library provides:
 
 ## go-dnp3 vs stepfunc dnp3, opendnp3 and DSC go-dnp3
 
-go-dnp3 is tested against three other implementations (see
+go-dnp3 is tested against four other implementations, three of which this table compares (see
 [Interop tests](#interop-tests)). All are good libraries; this table shows
 where they differ so you can pick the right one for your project.
 
@@ -88,7 +90,7 @@ where they differ so you can pick the right one for your project.
 | File transfer (g70) | ✅ both roles | master | — | ✅ |
 | Secure Authentication v5 | ✅ session key change, challenges, aggressive mode, statistics | — | — | symmetric subset with statistics |
 | Dual end point (outstation dials) | ✅ | not documented | — | not documented |
-| Device attributes (g0) | ✅ both roles | ✅ | not documented | not documented |
+| Device attributes (g0) | ✅ both roles, any set | ✅ | — | ✅ |
 | TLS | ✅ `crypto/tls` | ✅ | ✅ | ✅ |
 | UDP | ✅ | ✅ | ✅ | ✅ |
 | Serial | ✅ any byte stream | ✅ | ✅ | ✅ |
@@ -330,8 +332,8 @@ flags, reads of ranges and variations, every control case of the fixture
 unsupported codes and points), events and their confirmation, unsolicited
 responses, both time synchronization procedures, cold and warm restarts,
 freeze and clear, and assign class. The transports and procedures of
-dnp3-interop's contract 1.1 are tested in both directions with every
-reference that has them: TLS with mutual authentication (a test PKI is
+dnp3-interop's contracts 1.1 to 1.3 are tested in both directions where a
+reference has the feature (see the matrix): TLS with mutual authentication (a test PKI is
 generated per run), UDP, serial lines (a pseudo-terminal in the container
 bridged to TCP), file transfer against the files fixture, and Secure
 Authentication with session key changes and the security statistics; also

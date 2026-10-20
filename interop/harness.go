@@ -29,7 +29,7 @@ type adapter struct {
 
 // The reference images this version of go-dnp3 is qualified against:
 // otfabric/dnp3-interop v0.4.1 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
-// Systems go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
+// go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
 // so that a run is reproducible. Moving to another release of
 // dnp3-interop means changing these constants; the Makefile and the
 // interop workflow follow.

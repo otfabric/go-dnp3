@@ -213,3 +213,47 @@ func TestReplyTimeout(t *testing.T) {
 		t.Fatalf("error messages received %d", v.Value)
 	}
 }
+
+// TestCriticalBroadcast: with secure authentication a critical broadcast,
+// which cannot be challenged, is carried out only in aggressive mode, and
+// nothing is answered either way.
+func TestCriticalBroadcast(t *testing.T) {
+	crob := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})
+	h := &countingHandler{}
+	m := newMaster(t, WithHandler(h), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: testSessionKey}}))
+	m.sendBroadcast(req(1, app.FuncDirectOperateNoAck, crob))
+	m.none(200 * time.Millisecond)
+	if h.count() != 0 {
+		t.Fatal("an unauthenticated critical broadcast was carried out")
+	}
+	// After a challenge, an aggressive mode broadcast with the right MAC.
+	last := challenged(t, m, 2, crob)
+	ch, _ := app.Decode(last)
+	csq := ch.Headers[0].Objects[0].Value.(app.AuthChallenge).CSQ
+	executed := h.count()
+	ok := aggressiveReq(3, csq+1, last, testSessionKey, crob)
+	ok.Function = app.FuncDirectOperateNoAck
+	ok.Headers = ok.Headers[:len(ok.Headers)-1]
+	b, _ := ok.Encode()
+	mac, _ := secauth.MAC(app.MACHMACSHA256Trunc16, testSessionKey, secauth.AuthData(last, b))
+	ok.Headers = append(ok.Headers, app.FreeFormat(app.G120V9, app.AuthMAC{MAC: mac}))
+	m.sendBroadcast(ok)
+	m.none(200 * time.Millisecond)
+	if h.count() != executed+1 {
+		t.Fatal("an authenticated aggressive mode broadcast was not carried out")
+	}
+	// A wrong MAC in a broadcast: not carried out, not answered.
+	bad := aggressiveReq(4, csq+2, last, []byte("another session key, 32 octets!"), crob)
+	bad.Function = app.FuncDirectOperateNoAck
+	m.sendBroadcast(bad)
+	m.none(200 * time.Millisecond)
+	if h.count() != executed+1 {
+		t.Fatal("a broadcast with a wrong MAC was carried out")
+	}
+	m.sendBroadcast(req(5, app.FuncDirectOperateNoAck, app.Counted(app.G120V3, app.AuthAggressiveMode{CSQ: csq + 3, User: 1}), crob))
+	m.none(200 * time.Millisecond)
+	m.send(req(6, app.FuncRead, app.IndexRange(app.G121V1, uint32(secauth.StatDiscardedMessages), uint32(secauth.StatDiscardedMessages))))
+	if v := m.recvFunc(app.FuncResponse).Headers[0].Objects[0].Value.(app.SecurityStatistic); v.Value < 1 {
+		t.Fatalf("discarded messages %d", v.Value)
+	}
+}
