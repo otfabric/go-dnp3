@@ -248,7 +248,7 @@ func objectsDoc(c *Catalog) ([]byte, error) {
 	w.WriteString("# DNP3 objects\n\n")
 	fmt.Fprintf(&w, "Every group and variation the `app` package encodes and decodes, from %s.\n", c.Standard)
 	w.WriteString("The catalog [`app/catalog.json`](app/catalog.json) is the source: this page, the\nconstants and table of the `app` package and the objects `client.Measurements`\nreports are generated from it.\n\n")
-	w.WriteString("**Size** is the octets of one object; \"—\" when it is not fixed (packed bits,\nfree-format and variable-length objects). **Point** marks the data\n`client.Measurements` reports.\n\n")
+	w.WriteString("**Size** is the octets of one object; \"—\" when it is not fixed (packed bits,\nfree-format and variable-length objects). **Point** marks indexed point\ndata: the value or event of a point, one of the point types of IEEE\n1815-2012 clause 11, sent with its index. These are the objects\n`client.Measurements` reports. Objects about the device or a procedure\nare not points, even in a group that has one: the time and date of time\nsynchronization (g50v1, g50v3) and the freeze time (g50v2) have no index,\nwhile g50v4, the time and interval point type, does.\n\n")
 	w.WriteString("| Object | Name | Kind | Size | Point |\n|---|---|---|---:|:---:|\n")
 	for _, o := range c.Objects {
 		kind := "static"

@@ -8,8 +8,13 @@ constants and table of the `app` package and the objects `client.Measurements`
 reports are generated from it.
 
 **Size** is the octets of one object; "—" when it is not fixed (packed bits,
-free-format and variable-length objects). **Point** marks the data
-`client.Measurements` reports.
+free-format and variable-length objects). **Point** marks indexed point
+data: the value or event of a point, one of the point types of IEEE
+1815-2012 clause 11, sent with its index. These are the objects
+`client.Measurements` reports. Objects about the device or a procedure
+are not points, even in a group that has one: the time and date of time
+synchronization (g50v1, g50v3) and the freeze time (g50v2) have no index,
+while g50v4, the time and interval point type, does.
 
 | Object | Name | Kind | Size | Point |
 |---|---|---|---:|:---:|
