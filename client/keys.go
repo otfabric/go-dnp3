@@ -50,27 +50,7 @@ func (c *Client) changeSessionKeys(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		form := st
-		if !keyStatusWithMAC {
-			form.MACValue = nil
-		}
-		msg, err := app.AppendObjectValue(nil, app.G120V5, form)
-		if err != nil {
-			return err
-		}
-		control, monitoring := make([]byte, u.SessionKeyLen()), make([]byte, u.SessionKeyLen())
-		if _, err := rand.Read(control); err != nil {
-			return err
-		}
-		if _, err := rand.Read(monitoring); err != nil {
-			return err
-		}
-		plain, err := secauth.KeyChangeData(control, monitoring, msg)
-		if err != nil {
-			return err
-		}
-		wrapped, err := secauth.KeyWrap(u.UpdateKey, plain)
-		clear(plain)
+		wrapped, control, monitoring, err := wrapSessionKeys(*u, st, keyStatusWithMAC)
 		if err != nil {
 			return err
 		}
@@ -95,6 +75,35 @@ func (c *Client) changeSessionKeys(ctx context.Context) error {
 		c.log.Info("session keys changed", "user", u.Number)
 		return nil
 	})
+}
+
+// wrapSessionKeys generates fresh control and monitoring direction session
+// keys and wraps them with the user's update key, together with the key
+// status message st: the g120v5 object as it was received, with its MAC
+// value when withMAC is set.
+func wrapSessionKeys(u secauth.User, st app.AuthSessionKeyStatus, withMAC bool) (wrapped, control, monitoring []byte, err error) {
+	if !withMAC {
+		st.MACValue = nil
+	}
+	msg, err := app.AppendObjectValue(nil, app.G120V5, st)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	keys := make([]byte, 2*u.SessionKeyLen())
+	if _, err := rand.Read(keys); err != nil {
+		return nil, nil, nil, err
+	}
+	control, monitoring = keys[:u.SessionKeyLen()], keys[u.SessionKeyLen():]
+	plain, err := secauth.KeyChangeData(control, monitoring, msg)
+	if err == nil {
+		wrapped, err = secauth.KeyWrap(u.UpdateKey, plain)
+		clear(plain)
+	}
+	if err != nil {
+		clear(keys)
+		return nil, nil, nil, err
+	}
+	return wrapped, control, monitoring, nil
 }
 
 // keyStatus returns the session key status object of a response.

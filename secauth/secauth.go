@@ -114,8 +114,8 @@ func (u User) Validate() error {
 	case len(u.UpdateKey) == 0 && len(u.Key) == 0:
 		return fmt.Errorf("secauth: user %d has no update key and no session key", u.Number)
 	}
-	if u.Algorithm().Len() == 0 {
-		return fmt.Errorf("secauth: user %d has unsupported MAC algorithm %s", u.Number, u.Algorithm())
+	if _, err := MAC(u.Algorithm(), []byte{0}, nil); err != nil {
+		return fmt.Errorf("secauth: user %d: unsupported MAC algorithm %s", u.Number, u.Algorithm())
 	}
 	return nil
 }

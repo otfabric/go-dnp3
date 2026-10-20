@@ -132,3 +132,26 @@ func TestKeyChangeData(t *testing.T) {
 		t.Fatal("update key lengths")
 	}
 }
+
+func TestKeyWrapEdges(t *testing.T) {
+	// A KEK AES cannot use, with data of a valid length.
+	if _, err := KeyUnwrap(make([]byte, 5), make([]byte, 24)); err == nil || errors.Is(err, ErrKeyWrap) {
+		t.Fatalf("bad KEK: %v", err)
+	}
+	// A key status message longer than what follows the keys.
+	plain, _ := KeyChangeData(bytes.Repeat([]byte{1}, 16), bytes.Repeat([]byte{2}, 16), []byte{7})
+	if _, _, err := ParseKeyChangeData(plain, bytes.Repeat([]byte{7}, 40)); !errors.Is(err, ErrKeyWrap) {
+		t.Fatalf("long key status: %v", err)
+	}
+	// A key status message of the right length with other content.
+	plain2, _ := KeyChangeData(bytes.Repeat([]byte{1}, 16), bytes.Repeat([]byte{2}, 16), bytes.Repeat([]byte{7}, 8))
+	if _, _, err := ParseKeyChangeData(plain2, bytes.Repeat([]byte{8}, 8)); !errors.Is(err, ErrKeyWrap) {
+		t.Fatalf("other key status: %v", err)
+	}
+	if (User{UpdateKey: make([]byte, 16)}).SessionKeyLen() != 16 {
+		t.Fatal("AES-128 session key length")
+	}
+	if (User{Key: []byte("k"), MAC: app.MACAESGMAC}).Validate() == nil {
+		t.Fatal("AES-GMAC accepted although MAC cannot compute it")
+	}
+}

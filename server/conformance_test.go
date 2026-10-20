@@ -659,3 +659,82 @@ func TestSessionKeyChangeForms(t *testing.T) {
 		t.Fatalf("unknown user: %+v", v)
 	}
 }
+
+// TestChallengeReply drives the challenge of a critical request by hand,
+// with a pre-shared session key and with session keys from a key change.
+func TestChallengeReply(t *testing.T) {
+	crob := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})
+	answer := func(m *master, seq uint8, key []byte, alg app.MACAlgorithm) (*app.Fragment, error) {
+		t.Helper()
+		op := req(seq, app.FuncDirectOperate, crob)
+		critical, _ := op.Encode()
+		m.sendRaw(critical)
+		chf := m.recvFunc(app.FuncAuthResponse)
+		raw, _ := chf.Encode()
+		ch := chf.Headers[0].Objects[0].Value.(app.AuthChallenge)
+		mac, err := secauth.MAC(alg, key, secauth.AuthData(raw, critical))
+		if err != nil {
+			return nil, err
+		}
+		m.send(req(app.NextSeq(seq), app.FuncAuthRequest, app.FreeFormat(app.G120V2, app.AuthReply{CSQ: ch.CSQ, User: 1, MAC: mac})))
+		return m.recv(), nil
+	}
+
+	// Pre-shared session key.
+	key := []byte("pre-shared session key 32 octets")
+	h := &countingHandler{}
+	m := newMaster(t, WithHandler(h), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: key}}))
+	f, err := answer(m, 1, key, app.MACHMACSHA256Trunc16)
+	if err != nil || f.Function != app.FuncResponse || f.Control.Seq != 2 || h.count() != 1 {
+		t.Fatalf("pre-shared key: %v %v executed=%d", f, err, h.count())
+	}
+	// Its key status is always OK.
+	m.send(req(3, app.FuncAuthRequest, app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: 1})))
+	if st := m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value.(app.AuthSessionKeyStatus); st.Status != app.KeyStatusOK {
+		t.Fatalf("pre-shared key status %s", st.Status)
+	}
+	// A wrong key: an authentication error, nothing executed.
+	f, _ = answer(m, 4, []byte("wrong"), app.MACHMACSHA256Trunc16)
+	if f.Function != app.FuncAuthResponse || f.Headers[0].Objects[0].Value.(app.AuthError).Code != app.AuthErrAuthenticationFailed || h.count() != 1 {
+		t.Fatalf("wrong key: %v", f)
+	}
+	// A reply nobody asked for, and a key change in pre-shared mode.
+	m.send(req(6, app.FuncAuthRequest, app.FreeFormat(app.G120V2, app.AuthReply{CSQ: 99, User: 1, MAC: []byte{1}})))
+	if v := m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value; v.(app.AuthError).Code != app.AuthErrAuthenticationFailed {
+		t.Fatalf("unrequested reply: %v", v)
+	}
+	m.send(req(7, app.FuncAuthRequest, app.FreeFormat(app.G120V6, app.AuthSessionKeyChange{KSQ: 1, User: 1, WrappedKeys: make([]byte, 24)})))
+	if v := m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value; v.(app.AuthError).Code != app.AuthErrAuthenticationFailed {
+		t.Fatalf("key change in pre-shared mode: %v", v)
+	}
+	// An authentication request with no authentication object.
+	m.send(req(8, app.FuncAuthRequest, app.AllObjects(app.G1V0)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("empty authentication request: %s", f.IIN)
+	}
+
+	// Session keys from a key change: before it, no reply verifies.
+	uk := []byte("0123456789abcdef")
+	n := newMaster(t, WithHandler(h), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, UpdateKey: uk}}))
+	if f, _ := answer(n, 1, uk, app.MACHMACSHA256Trunc16); f.Function != app.FuncAuthResponse || h.count() != 1 {
+		t.Fatalf("reply before any key change: %v", f)
+	}
+	n.send(req(3, app.FuncAuthRequest, app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: 1})))
+	st := n.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value.(app.AuthSessionKeyStatus)
+	ctrl := bytes.Repeat([]byte{0x11}, 16)
+	msg, _ := app.AppendObjectValue(nil, app.G120V5, st)
+	plain, _ := secauth.KeyChangeData(ctrl, bytes.Repeat([]byte{0x22}, 16), msg)
+	wrapped, _ := secauth.KeyWrap(uk, plain)
+	n.send(req(4, app.FuncAuthRequest, app.FreeFormat(app.G120V6, app.AuthSessionKeyChange{KSQ: st.KSQ, User: 1, WrappedKeys: wrapped})))
+	n.recvFunc(app.FuncAuthResponse)
+	if f, err := answer(n, 5, ctrl, app.MACHMACSHA256Trunc16); err != nil || f.Function != app.FuncResponse || h.count() != 2 {
+		t.Fatalf("reply with the negotiated key: %v %v", f, err)
+	}
+
+	// An outstation without secure authentication.
+	o := newMaster(t)
+	o.send(req(1, app.FuncAuthRequest, app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: 1})))
+	if f := o.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINNoFuncCodeSupport) {
+		t.Fatalf("without secure authentication: %s", f.IIN)
+	}
+}
