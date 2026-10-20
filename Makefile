@@ -27,15 +27,15 @@ COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e' | pas
 # Build tag of the interop package (excluded from default ./... builds).
 INTEROP_TAGS := interop
 
-# Reference implementations for 'make interop': otfabric/dnp3-interop v0.3.0
-# (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1, dnp3py
+# Reference implementations for 'make interop': otfabric/dnp3-interop v0.4.1
+# (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.1, dnp3py
 # 0.6.0), pinned by multi-arch index digest. Keep in step with
 # interop/harness.go. Override to test other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev
-DNP3_INTEROP_STEPFUNC_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:36bf0a983ce9d1d16f1a290cc6afba191406afb2f51119e21f80121e581bb9f3
-DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:6c03763221722c7af1a38af475189e98e1d57cc10ae90220f31376fde6343944
-DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:12af7a377323926ff8f6de9c95d9a1c89fab479c5a84831a144abadd10e7e01a
-DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6584d9d00a4c91ef67c710025bda288e2b4611decc9908008721594b31ec7db8
+DNP3_INTEROP_STEPFUNC_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:84f32f97a35df004e6585d2a874e213d5c0a638e7e557da250fe6e7f5cc4bf9b
+DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a706e024958394b53f1df449ea669c0a4020e4779888db18a7e2b8abd1e1e74e
+DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:fc0796b9ab72efbf966dfbf1d78e1cb09730d5e2860c679d335df68e3f367eee
+DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:d79d17d50ffeeb8595d304a76dc739a0a1fa915e88874cca53319002dbca6dc4
 
 all: build ## Default target: build the examples
 
@@ -114,7 +114,7 @@ fuzz: ## Run the codec and outstation fuzz targets for FUZZTIME each (default 30
 	@go test -run='^$$' -fuzz='^FuzzOutstation$$' -fuzztime=$(FUZZTIME) ./server
 
 test-interop: ## Run the interop suite against the stepfunc, opendnp3, dscsystems and dnp3py reference images (needs Docker)
-	@echo "Running interop tests against dnp3-interop v0.3.0: stepfunc, opendnp3, dscsystems, dnp3py"
+	@echo "Running interop tests against dnp3-interop v0.4.1: stepfunc, opendnp3, dscsystems, dnp3py"
 	@DNP3_INTEROP_STEPFUNC_IMAGE="$(DNP3_INTEROP_STEPFUNC_IMAGE)" \
 		DNP3_INTEROP_OPENDNP3_IMAGE="$(DNP3_INTEROP_OPENDNP3_IMAGE)" \
 		DNP3_INTEROP_DSCSYSTEMS_IMAGE="$(DNP3_INTEROP_DSCSYSTEMS_IMAGE)" \

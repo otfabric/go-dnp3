@@ -99,17 +99,17 @@ const (
 	// accepts frames sent to it as if they were sent to its own address.
 	SelfAddress Address = 0xFFFC
 
-	// BroadcastNoConfirm is the broadcast address for which the
-	// application layer must not request confirmation.
+	// BroadcastNoConfirm is the broadcast address (0xFFFD) for which the
+	// outstations must not request an application confirmation.
 	BroadcastNoConfirm Address = 0xFFFD
 
-	// BroadcastOptionalConfirm is the broadcast address for which the
-	// application layer may request confirmation.
-	BroadcastOptionalConfirm Address = 0xFFFE
+	// BroadcastConfirm is the broadcast address (0xFFFE) for which the
+	// outstations must request an application confirmation.
+	BroadcastConfirm Address = 0xFFFE
 
-	// BroadcastConfirm is the broadcast address for which the application
-	// layer requests confirmation.
-	BroadcastConfirm Address = 0xFFFF
+	// BroadcastOptionalConfirm is the broadcast address (0xFFFF) for which
+	// the outstations may request an application confirmation.
+	BroadcastOptionalConfirm Address = 0xFFFF
 )
 
 // Broadcast reports whether a is one of the three broadcast addresses.

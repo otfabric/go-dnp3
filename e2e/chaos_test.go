@@ -265,9 +265,11 @@ func TestChaos(t *testing.T) {
 			}
 			// The database changes all the time.
 			run(func(context.Context) {
+				// The bound first: a poll between the two must not see a value
+				// above it.
 				n := written.Load() + 1
-				_ = db.UpdateAnalogInput(0, app.Analog{Value: float64(n), Flags: app.FlagOnline})
 				written.Store(n)
+				_ = db.UpdateAnalogInput(0, app.Analog{Value: float64(n), Flags: app.FlagOnline})
 				time.Sleep(time.Millisecond)
 			})
 			// Polls: every value read was written.

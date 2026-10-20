@@ -1,5 +1,40 @@
 # go-dnp3 Releases
 
+## v1.1.0
+
+**Date:** 2026-10-20
+**Previous release:** v1.0.0
+
+## Summary
+
+What dnp3-interop's contract 1.3 tests, in both roles. No breaking change.
+
+## Changes
+
+### Added
+
+- `Client.Broadcast(ctx, dest, fc, headers...)`: a request to the broadcast addresses 0xFFFD, 0xFFFE or 0xFFFF; the outstations answer nothing and set IIN1.0 in their next response.
+- `client.FileOptions.Append`: `WriteFile` appends to the file (OPEN_FILE in APPEND mode).
+- The outstation answers READ of g34, the deadbands of its analog inputs.
+- **Device attribute sets** other than set 0: `server.WithAttributeSet(set, attrs, writable...)` with `AttributeSetWriteHandler`, and `Client.ReadAttributeSet`, `WriteAttributeSet`. A writable attribute takes a value of its type and the outstation keeps it.
+- **Scheduled FREEZE_AT_TIME** (IEEE 1815-2012 A.23.2): a time to come is waited for and an interval repeats the freeze until `Close`, up to `server.MaxScheduledFreezes` waiting; time 0 freezes at once. A time that has passed, without an interval, is refused.
+
+### Changed
+
+- FREEZE_AT_TIME with a time to come or an interval is carried out, where it was refused with PARAMETER_ERROR; one with a time that has passed and no interval is now refused, where it froze at once.
+
+### Tests
+
+- Interop against dnp3-interop v0.4.1 (contract 1.3), both directions where a reference has the feature: device attributes, several controls in one request, freeze at time and analog freeze, deadbands, file append and authentication, event buffer overflow, link confirms and keep-alive, broadcast, the management functions, several outstations behind one port.
+
+### Fixed
+
+- **The values of `link.BroadcastConfirm` and `link.BroadcastOptionalConfirm` were swapped.** IEEE 1815 has 0xFFFE for a broadcast whose confirmation is mandatory and 0xFFFF for one where it is optional, as opendnp3 and DSC go-dnp3 do; go-dnp3 had them the other way round. `BroadcastNoConfirm` (0xFFFD) was right. go-dnp3 treats the three alike, so only code that compared against the values sees a difference.
+- **With secure authentication, a critical broadcast was carried out unauthenticated.** A broadcast cannot be challenged, so the outstation executed a critical request sent to a broadcast address (a control, a freeze, a write) without any MAC; v1.0.0 has this too. Such a request is now carried out only in aggressive mode with a valid MAC; otherwise it is discarded, counted as a discarded message and not answered.
+- **An outstation ignored a broadcast that was the master's first frame**: it had no association for the master yet. It now accepts the master on a broadcast frame as on any other.
+
+---
+
 ## v1.0.0
 
 **Date:** 2026-10-20

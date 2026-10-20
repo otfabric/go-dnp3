@@ -10,6 +10,7 @@ import (
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/link"
 )
 
 // Read sends a READ with the given headers and returns the response, all
@@ -58,6 +59,50 @@ func (c *Client) EventPoll(ctx context.Context, classes ...int) (*Result, error)
 // failure (with WithRetry) only for READ.
 func (c *Client) Request(ctx context.Context, fc app.FunctionCode, headers ...app.Header) (*Result, error) {
 	return c.request(ctx, fc, fc == app.FuncRead, headers...)
+}
+
+// Broadcast sends a request to every outstation on the channel, at the
+// broadcast address dest: link.BroadcastNoConfirm (0xFFFD),
+// link.BroadcastConfirm (0xFFFE, confirmation mandatory) or
+// link.BroadcastOptionalConfirm (0xFFFF, confirmation optional). Nobody answers;
+// each outstation executes the request and sets IIN1.0 BROADCAST in its
+// next response. Requests that need an answer (READ, SELECT, OPERATE, the
+// file and authentication functions) cannot be broadcast.
+func (c *Client) Broadcast(ctx context.Context, dest link.Address, fc app.FunctionCode, headers ...app.Header) error {
+	if !dest.Broadcast() {
+		return invalidOption("broadcast to %d: not a broadcast address", dest)
+	}
+	switch fc {
+	case app.FuncConfirm, app.FuncRead, app.FuncSelect, app.FuncOperate, app.FuncOpenFile, app.FuncCloseFile,
+		app.FuncDeleteFile, app.FuncGetFileInfo, app.FuncAuthenticateFile, app.FuncAbortFile,
+		app.FuncAuthRequest, app.FuncAuthRequestNoAck:
+		return invalidOption("%s cannot be broadcast", fc)
+	default:
+	}
+	return c.do(ctx, fc, false, func(ctx context.Context) error {
+		c.mu.Lock()
+		sess := c.sess
+		if sess == nil {
+			c.mu.Unlock()
+			return dnp3.ErrNotConnected
+		}
+		seq := c.seq
+		c.seq = app.NextSeq(seq)
+		c.mu.Unlock()
+		req := &app.Fragment{Control: app.SingleControl(seq), Function: fc, Headers: headers}
+		data, err := req.Encode()
+		if err != nil {
+			return err
+		}
+		if err := sess.SendBroadcast(ctx, data, dest); err != nil {
+			return sendError(err)
+		}
+		if m := c.opts.metrics; m != nil {
+			m.OnFragmentSent(c.remoteAddr(), req, len(data))
+		}
+		c.log.DebugContext(ctx, "broadcast sent", "fragment", req.String(), "dest", dest)
+		return nil
+	})
 }
 
 // Write sends a WRITE with the given headers.
@@ -414,7 +459,13 @@ func (c *Client) ClearRestart(ctx context.Context) error {
 // example app.AttrManufacturerName), app.AttrAllAttributes or
 // app.AttrListOfVariations. The result maps variations to values.
 func (c *Client) ReadAttributes(ctx context.Context, variation uint8) (map[uint8]app.Attribute, error) {
-	res, err := c.Read(ctx, app.IndexRange(app.GV(0, variation), 0, 0))
+	return c.ReadAttributeSet(ctx, 0, variation)
+}
+
+// ReadAttributeSet is ReadAttributes for another set of device attributes
+// (IEEE 1815-2012 clause 11.9.1).
+func (c *Client) ReadAttributeSet(ctx context.Context, set uint16, variation uint8) (map[uint8]app.Attribute, error) {
+	res, err := c.Read(ctx, app.IndexRange(app.GV(0, variation), uint32(set), uint32(set)))
 	if err != nil {
 		return nil, err
 	}
@@ -434,6 +485,11 @@ func (c *Client) ReadAttributes(ctx context.Context, variation uint8) (map[uint8
 
 // WriteAttribute writes a device attribute of set 0.
 func (c *Client) WriteAttribute(ctx context.Context, variation uint8, a app.Attribute) error {
-	_, err := c.Write(ctx, app.Ranged(app.GV(0, variation), 0, a))
+	return c.WriteAttributeSet(ctx, 0, variation, a)
+}
+
+// WriteAttributeSet writes a device attribute of another set.
+func (c *Client) WriteAttributeSet(ctx context.Context, set uint16, variation uint8, a app.Attribute) error {
+	_, err := c.Write(ctx, app.Ranged(app.GV(0, variation), uint32(set), a))
 	return err
 }

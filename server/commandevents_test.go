@@ -129,3 +129,47 @@ func TestTimeAndInterval(t *testing.T) {
 		t.Fatal("name")
 	}
 }
+
+func TestDeadbandRead(t *testing.T) {
+	m := newMaster(t)
+	db := m.srv.Database()
+	_ = db.AddAnalogInput(0, PointConfig{Deadband: 5}, app.Analog{})
+	_ = db.AddAnalogInput(1, PointConfig{Deadband: 70000}, app.Analog{})
+	_ = db.AddAnalogInput(2, PointConfig{Deadband: 0.25}, app.Analog{})
+	m.send(req(1, app.FuncRead, app.AllObjects(app.G34V0)))
+	f := m.recvFunc(app.FuncResponse)
+	got := map[uint32]app.GroupVariation{}
+	for _, h := range f.Headers {
+		for _, o := range h.Objects {
+			got[o.Index] = h.GV
+			if want := map[uint32]float64{0: 5, 1: 70000, 2: 0.25}[o.Index]; o.Value.(app.AnalogDeadband).Value != want {
+				t.Errorf("deadband %d = %v", o.Index, o.Value)
+			}
+		}
+	}
+	if got[0] != app.G34V1 || got[1] != app.G34V2 || got[2] != app.G34V3 {
+		t.Fatalf("variations %v", got)
+	}
+	// A requested variation, an index list, a missing point, an unknown
+	// variation.
+	m.send(req(2, app.FuncRead, app.IndexRange(app.G34V3, 0, 1)))
+	if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 1 || f.Headers[0].GV != app.G34V3 || len(f.Headers[0].Objects) != 2 {
+		t.Fatalf("g34v3 range: %v", f)
+	}
+	m.send(req(3, app.FuncRead, app.IndexList(app.G34V0, 0, 2)))
+	if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 2 {
+		t.Fatalf("index list: %v", f)
+	}
+	m.send(req(4, app.FuncRead, app.IndexRange(app.G34V1, 0, 5)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("range past the points: %v", f)
+	}
+	m.send(req(5, app.FuncRead, app.AllObjects(app.GV(34, 9))))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) {
+		t.Fatalf("g34v9: %v", f)
+	}
+	m.send(req(6, app.FuncRead, app.CountOf(app.G34V0, 2)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("count qualifier: %v", f)
+	}
+}

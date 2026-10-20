@@ -17,13 +17,15 @@ The library provides:
   range, unsolicited responses with confirmation and duplicate detection,
   controls (select-before-operate, direct operate, no-ack; relay output
   blocks, pattern control, set-points), time synchronization by the LAN and
-  the non-LAN procedure, restarts, freezes, assign class, device
-  attributes, file transfer, secure authentication
+  the non-LAN procedure, restarts, freezes (also at a time), assign class,
+  device attributes of any set, file transfer, broadcasts, secure
+  authentication
 - A **server** (outstation): a point database for every point type with
   deadbands and event classes, event buffers per master that survive
   reconnects, multi-fragment responses with confirmation, unsolicited
   responses with hold time and retries, select-before-operate with timeout
-  and sequence checks, any number of masters and connections
+  and sequence checks, device attributes of any set, scheduled freezes,
+  any number of masters and connections
 - The complete **link layer** (FT3 frames, CRCs, reset of link states,
   confirmed user data with the frame count bit, link status keep-alive) and
   the **transport function**, also on multi-drop channels
@@ -43,9 +45,9 @@ The library provides:
   overflow), periodic polls, structured logging, metrics hooks, TCP, TLS,
   UDP and serial (any byte stream)
 - **Verified against third-party stacks**: as master and as outstation
-  against Step Function I/O's dnp3, opendnp3, DSC Systems' go-dnp3 and
+  against Step Function I/O's dnp3, opendnp3, DSC go-dnp3 and
   dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.3.0,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.4.1,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -53,7 +55,7 @@ The library provides:
 
 ## Table of contents
 
-- [go-dnp3 vs stepfunc dnp3, opendnp3 and DSC Systems go-dnp3](#go-dnp3-vs-stepfunc-dnp3-opendnp3-and-dsc-systems-go-dnp3)
+- [go-dnp3 vs stepfunc dnp3, opendnp3 and DSC go-dnp3](#go-dnp3-vs-stepfunc-dnp3-opendnp3-and-dsc-go-dnp3)
 - [Install](#install)
 - [Project structure](#project-structure)
 - [Client quickstart](#client-quickstart)
@@ -68,13 +70,13 @@ The library provides:
 - [Limitations](#limitations)
 - [License](#license)
 
-## go-dnp3 vs stepfunc dnp3, opendnp3 and DSC Systems go-dnp3
+## go-dnp3 vs stepfunc dnp3, opendnp3 and DSC go-dnp3
 
-go-dnp3 is tested against three other implementations (see
+go-dnp3 is tested against four other implementations, three of which this table compares (see
 [Interop tests](#interop-tests)). All are good libraries; this table shows
 where they differ so you can pick the right one for your project.
 
-| Capability | otfabric/go-dnp3 | stepfunc dnp3 | opendnp3 | DSC Systems go-dnp3 |
+| Capability | otfabric/go-dnp3 | stepfunc dnp3 | opendnp3 | DSC go-dnp3 |
 |---|:---:|:---:|:---:|:---:|
 | Language | Go | Rust (C, C++, .NET, Java bindings) | C++ (Java, .NET bindings) | Go |
 | License | MIT | non-commercial; commercial licence available | Apache-2.0 | GPL-3.0 |
@@ -88,7 +90,7 @@ where they differ so you can pick the right one for your project.
 | File transfer (g70) | ✅ both roles | master | — | ✅ |
 | Secure Authentication v5 | ✅ session key change, challenges, aggressive mode, statistics | — | — | symmetric subset with statistics |
 | Dual end point (outstation dials) | ✅ | not documented | — | not documented |
-| Device attributes (g0) | ✅ both roles | ✅ | not documented | not documented |
+| Device attributes (g0) | ✅ both roles, any set | ✅ | — | ✅ |
 | TLS | ✅ `crypto/tls` | ✅ | ✅ | ✅ |
 | UDP | ✅ | ✅ | ✅ | ✅ |
 | Serial | ✅ any byte stream | ✅ | ✅ | ✅ |
@@ -103,7 +105,7 @@ where they differ so you can pick the right one for your project.
 not exercise it, which may be the adapter's limit rather than the library's.
 
 ✅ = available · — = not available or not documented. For stepfunc dnp3
-1.7.0, opendnp3 3.1.2 and DSC Systems go-dnp3 v0.8.1, the versions go-dnp3
+1.7.0, opendnp3 3.1.2 and DSC go-dnp3 v0.8.1, the versions go-dnp3
 is tested against, from their public sources, their documentation and the
 [dnp3-interop capability records](https://github.com/otfabric/dnp3-interop),
 as of October 2026. If you spot an inaccuracy, please
@@ -314,14 +316,14 @@ many masters and concurrent requests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.3.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.3.0),
+of [otfabric/dnp3-interop v0.4.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.1),
 pinned by digest:
 
 | Reference | Version | Licence | Roles tested |
 |-----------|---------|---------|--------------|
 | Step Function I/O dnp3 | 1.7.0 | non-commercial | master and outstation |
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
-| DSC Systems go-dnp3 | v0.8.1 | GPL-3.0 | master and outstation |
+| DSC go-dnp3 | v0.8.1 | GPL-3.0 | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
 
 Both directions cover the integrity poll against the fixture's values and
@@ -330,15 +332,19 @@ flags, reads of ranges and variations, every control case of the fixture
 unsupported codes and points), events and their confirmation, unsolicited
 responses, both time synchronization procedures, cold and warm restarts,
 freeze and clear, and assign class. The transports and procedures of
-dnp3-interop's contract 1.1 are tested in both directions with every
-reference that has them: TLS with mutual authentication (a test PKI is
+dnp3-interop's contracts 1.1 to 1.3 are tested in both directions where a
+reference has the feature (see the matrix): TLS with mutual authentication (a test PKI is
 generated per run), UDP, serial lines (a pseudo-terminal in the container
 bridged to TCP), file transfer against the files fixture, and Secure
 Authentication with session key changes and the security statistics; also
 the requests without a response (DIRECT OPERATE NO ACK, the `_NR`
 freezes), reads of all objects of a group, and contract 1.2: the dual end
 point over TCP and TLS, frozen analog inputs, command events, time and
-interval, security statistic events, and the dnp3py fixture. The
+interval, security statistic events, and the dnp3py fixture; and contract
+1.3: device attribute sets, several controls in one request, scheduled
+freezes and analog freeze, deadbands, file append and authentication, event
+buffer overflow, link confirms and keep-alive, broadcast, the management
+functions and several outstations behind one port. The
 [coverage matrix](INTEROPERABILITY.md#interop-coverage) shows each feature
 per reference and direction. Deviations a reference has from the
 fixture are those dnp3-interop records as known bugs. Docker is needed; the
@@ -358,8 +364,8 @@ linked into go-dnp3.
 - **Data sets, private registration objects and the virtual terminal**
   (groups 83, 85..88, 90, 91 raw; 112, 113 decoded) have no procedures:
   exchange them with the generic request methods.
-- **FREEZE_AT_TIME** is executed only for a time that has passed with no
-  interval; scheduled freezes are refused.
+- **Several outstations behind one port**: a `Server` is one outstation;
+  serve several on their own ports.
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation: a

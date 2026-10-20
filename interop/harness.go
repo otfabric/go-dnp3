@@ -21,24 +21,24 @@ import (
 )
 
 // adapter is one reference implementation, as a container image that follows
-// the dnp3-interop container contract 1.2.
+// the dnp3-interop container contract 1.3.
 type adapter struct {
 	name  string
 	image string
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.3.0 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
-// Systems go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
+// otfabric/dnp3-interop v0.4.1 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
+// go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
 // so that a run is reproducible. Moving to another release of
 // dnp3-interop means changing these constants; the Makefile and the
 // interop workflow follow.
 const (
-	interopRelease         = "v0.3.0"
-	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:36bf0a983ce9d1d16f1a290cc6afba191406afb2f51119e21f80121e581bb9f3"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:6c03763221722c7af1a38af475189e98e1d57cc10ae90220f31376fde6343944"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:12af7a377323926ff8f6de9c95d9a1c89fab479c5a84831a144abadd10e7e01a"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6584d9d00a4c91ef67c710025bda288e2b4611decc9908008721594b31ec7db8"
+	interopRelease         = "v0.4.1"
+	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:84f32f97a35df004e6585d2a874e213d5c0a638e7e557da250fe6e7f5cc4bf9b"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a706e024958394b53f1df449ea669c0a4020e4779888db18a7e2b8abd1e1e74e"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:fc0796b9ab72efbf966dfbf1d78e1cb09730d5e2860c679d335df68e3f367eee"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:d79d17d50ffeeb8595d304a76dc739a0a1fa915e88874cca53319002dbca6dc4"
 )
 
 // adapters returns the reference implementations to test against. The image
@@ -353,13 +353,15 @@ type result struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
-	IIN            []string    `json:"iin"`
-	Objects        []resultObj `json:"objects"`
-	CommandStatus  *string     `json:"commandStatus"`
-	RestartDelayMs *float64    `json:"restartDelayMs"`
-	File           *fileEntry  `json:"file"`
-	Files          []fileEntry `json:"files"`
-	FileStatus     *string     `json:"fileStatus"`
+	IIN             []string     `json:"iin"`
+	Objects         []resultObj  `json:"objects"`
+	CommandStatus   *string      `json:"commandStatus"`
+	RestartDelayMs  *float64     `json:"restartDelayMs"`
+	CommandStatuses []*string    `json:"commandStatuses"`
+	Attributes      []resultAttr `json:"attributes"`
+	File            *fileEntry   `json:"file"`
+	Files           []fileEntry  `json:"files"`
+	FileStatus      *string      `json:"fileStatus"`
 
 	exit int
 }
@@ -376,6 +378,14 @@ type resultObj struct {
 	Status      string   `json:"status"`
 	Units       *float64 `json:"units"`
 	Association *float64 `json:"association"`
+}
+
+// resultAttr is a device attribute of attribute-read (contract 1.3).
+type resultAttr struct {
+	Set       int    `json:"set"`
+	Variation int    `json:"variation"`
+	Type      string `json:"type"`
+	Value     any    `json:"value"`
 }
 
 // fileEntry is a file of a file operation's result.

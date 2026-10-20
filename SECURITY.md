@@ -45,11 +45,12 @@ Plain DNP3 carries no authentication and no encryption: anyone who can reach an 
 - **Use an update key.** With `secauth.User.UpdateKey` (16 or 32 random octets) the master generates fresh session keys on every connection and at the key change interval, and sends them wrapped with the update key (AES key wrap, RFC 3394); the outstation drops them when the connection ends. The pre-shared session key mode (`secauth.User.Key` without an update key) never changes its key and is meant for testing
 - **Update keys are configured out of band.** The update key change procedures (symmetric and asymmetric) and user management are not implemented, nor is AES-GMAC: keep update keys out of source control and rotate them by reconfiguring both ends
 - **Aggressive mode** (`client.WithAggressiveMode`) saves the challenge round trip: the MAC is bound to the last challenge and the outstation checks that the challenge sequence numbers follow each other, so a request cannot be replayed. It still trusts one challenge for several requests; enable it only where the latency matters
+- **A critical broadcast is carried out only in aggressive mode.** A broadcast cannot be challenged: with secure authentication the outstation discards a critical one without a valid aggressive mode MAC, counts it as discarded and answers nothing
 - **A held critical request expires.** `SecureAuth.ReplyTimeout` (10 s by default) bounds how long the outstation waits for the reply to its challenge
 - **Watch the security statistics.** The outstation counts authentication failures, refused key changes, reply timeouts and more per master (g121, readable by any master); `StatisticsThreshold` and `StatisticsClass` make them events (g122) a SCADA system can alarm on
 - **Only the control direction is authenticated.** Responses and unsolicited data from the outstation are not authenticated; use TLS to protect them
 - **Non-critical requests (READ) are not challenged.** They disclose data without authentication; use TLS where that matters
-- Secure Authentication is verified against DSC Systems go-dnp3 in both roles (dnp3-interop v0.2.0, contract 1.1); aggressive mode only between go-dnp3's ends, as no reference implements it (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
+- Secure Authentication is verified against DSC go-dnp3 in both roles (dnp3-interop v0.4.1; file authentication since contract 1.3); aggressive mode only between go-dnp3's ends, as no reference implements it (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
 
 ### Resource Limits
 
@@ -59,7 +60,7 @@ The library bounds what a peer can make it hold:
 - Every count and range in a request is checked against the octets that carry it before anything is allocated for it; the fuzz targets check this
 - Received fragments wait in bounded queues; a peer that floods them loses fragments, not memory
 - Event buffers have a limit per point type (`server.WithEventLimits`)
-- The outstation limits connections (`server.WithMaxConnections`, 16 by default), controls per request (`WithMaxControls`) and open files per master (16)
+- The outstation limits connections (`server.WithMaxConnections`, 16 by default), controls per request (`WithMaxControls`), open files per master (16) and scheduled FREEZE_AT_TIME requests (`server.MaxScheduledFreezes`, 16)
 - Writes are bounded by a deadline on streams that support one (TCP, TLS, UDP: 10 s), so a peer that stops reading closes its connection instead of blocking the station
 
 ### File Transfer

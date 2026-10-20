@@ -34,6 +34,11 @@ func FuzzOutstation(f *testing.F) {
 		req(12, app.FuncAssignClass, app.AllObjects(app.G60V2), app.AllObjects(app.G1V0)),
 		req(13, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})),
 		req(14, app.FuncRead, app.AllObjects(app.GV(0, 254))),
+		// Found by fuzzing: a range over every attribute set.
+		req(15, app.FuncRead, app.Header{GV: app.GV(0, app.AttrAllAttributes), Qualifier: app.Qual4ByteStartStop, Stop: 0xFFFFFFFF}),
+		req(1, app.FuncWrite, app.Ranged(app.GV(0, 10), 1, app.StringAttribute("x"))),
+		req(2, app.FuncFreezeAtTime, app.Counted(app.G50V2, app.AbsoluteTime{Interval: 1}), app.AllObjects(app.G20V0)),
+		req(3, app.FuncRead, app.AllObjects(app.G34V0)),
 	}
 	for _, s := range seeds {
 		b, err := s.Encode()
@@ -44,7 +49,8 @@ func FuzzOutstation(f *testing.F) {
 	}
 	srv, err := New(WithHandler(&countingHandler{}),
 		WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: testSessionKey}, StatisticsThreshold: 1}),
-		WithFileServer(FSFileServer{FS: fstest.MapFS{"a.txt": {Data: []byte("hello")}}}))
+		WithFileServer(FSFileServer{FS: fstest.MapFS{"a.txt": {Data: []byte("hello")}}}),
+		WithAttributeSet(1, map[uint8]app.Attribute{10: app.StringAttribute("t")}, 10))
 	if err != nil {
 		f.Fatal(err)
 	}

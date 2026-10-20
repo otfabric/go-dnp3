@@ -3,6 +3,8 @@
 package server
 
 import (
+	"math"
+
 	"github.com/otfabric/go-dnp3/app"
 )
 
@@ -93,6 +95,13 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 			}
 		case g == 60 && v >= 2 && v <= 4:
 			sels = append(sels, &eventSelector{classes: 1 << (v - 1), limit: limit})
+		case g == 34:
+			sel, ok := selectorOf(h)
+			if !ok {
+				p.iin |= app.IINParameterError
+				continue
+			}
+			statics = append(statics, db.deadbandItems(sel, v, &p)...)
 		case g == 80 && v == 1:
 			sel, ok := selectorOf(h)
 			if !ok {
@@ -313,4 +322,50 @@ func packedLosesQuality(gv app.GroupVariation, v app.Value) bool {
 		f = x.Flags
 	}
 	return f != app.FlagOnline
+}
+
+// deadbandItems returns the deadbands of the analog inputs a READ of g34
+// names: in the requested variation, or the smallest that holds the value
+// (v1 16-bit, v2 32-bit, v3 floating point). The caller holds mu.
+func (db *Database) deadbandItems(sel selector, requested uint8, p *readPlan) []item {
+	if requested > 3 {
+		p.iin |= app.IINObjectUnknown
+		return nil
+	}
+	if !sel.all && !db.covers(AnalogInput, sel) {
+		p.iin |= app.IINParameterError
+	}
+	var out []item
+	var cur *item
+	var last uint32
+	indexed := sel.indexes != nil
+	for _, idx := range db.indexes(AnalogInput) {
+		if !sel.has(idx) {
+			continue
+		}
+		d := db.points[AnalogInput][idx].cfg.Deadband
+		v := requested
+		if v == 0 {
+			switch {
+			case d == math.Trunc(d) && d >= 0 && d <= math.MaxUint16:
+				v = 1
+			case d == math.Trunc(d) && d >= 0 && d <= math.MaxUint32:
+				v = 2
+			default:
+				v = 3
+			}
+		}
+		gv := app.GV(34, v)
+		if cur == nil || cur.h.GV != gv || (!indexed && idx != last+1) {
+			q := app.Qual1ByteStartStop
+			if indexed {
+				q = app.Qual2ByteIndexCount
+			}
+			out = append(out, item{h: app.Header{GV: gv, Qualifier: q}})
+			cur = &out[len(out)-1]
+		}
+		cur.h.Objects = append(cur.h.Objects, app.Object{Index: idx, Value: app.AnalogDeadband{Value: d}})
+		last = idx
+	}
+	return out
 }

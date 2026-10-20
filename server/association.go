@@ -356,7 +356,14 @@ func (a *association) handle(in inbound) {
 		if req = a.aggressive(req, in); req == nil {
 			return
 		}
-	} else if err == nil && !broadcast && a.critical(req.Function) {
+	} else if err == nil && a.critical(req.Function) {
+		if broadcast {
+			// A broadcast cannot be challenged: with secure authentication
+			// a critical one is carried out only in aggressive mode.
+			a.log.Warn("unauthenticated critical broadcast discarded", "function", req.Function.String())
+			a.count(secauth.StatDiscardedMessages)
+			return
+		}
 		a.sendChallenge(req, in)
 		return
 	}

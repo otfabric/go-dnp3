@@ -10,6 +10,9 @@
 // [Handler] of [WithHandler] and its optional interfaces; file transfer to
 // the [FileServer] of [WithFileServer].
 //
+// Device attributes are [WithAttributes] (set 0) and [WithAttributeSet];
+// FREEZE_AT_TIME requests are scheduled ([MaxScheduledFreezes]).
+//
 // Transports: [Server.ListenAndServe] and [Server.Serve] for TCP, TLS with
 // [WithTLS], [Server.ServeUDP] for UDP, [Server.ServeConn] for any byte
 // stream such as a serial port, and [Server.DialAndServe] for the dual end

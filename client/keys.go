@@ -14,7 +14,7 @@ import (
 
 // keyStatusWithMAC selects the form of the key status message in the key
 // change data: the g120v5 object as received, with or without its MAC
-// value. Without it is what every known outstation accepts: DSC Systems
+// value. Without it is what every known outstation accepts: DSC go-dnp3
 // go-dnp3 compares the message without the MAC and refuses the other
 // form, which matters from the second key change of a session on (the
 // first key status carries no MAC); opendnp3 and this library's

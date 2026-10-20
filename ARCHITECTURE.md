@@ -124,9 +124,14 @@ on a multi-drop serial line; on TCP there is usually one.
 
 `server.Server` accepts connections, or establishes them itself with
 `DialAndServe` (the dual end point), and wraps each in a channel. Sessions
-are created when a frame from an allowed master arrives, or at once when
-exactly one master is configured, so that the null unsolicited response
-can be sent before the master speaks.
+are created when a frame from an allowed master arrives (a broadcast
+frame too), or at once when exactly one master is configured, so that the
+null unsolicited response can be sent before the master speaks.
+
+Scheduled FREEZE_AT_TIME requests are `time.AfterFunc` timers of the
+`Server`, outside the associations' goroutines: they run on the
+outstation's synchronized clock, at most `MaxScheduledFreezes` wait, and
+only `Close` stops them.
 
 The state of a master lives in its **association**, keyed by the master's
 link address and kept across connections: its event buffer, internal
@@ -201,4 +206,4 @@ and reports one as a g122 event every `StatisticsThreshold` increments.
 | Outstation fuzzing | arbitrary request fragments into an outstation with secure authentication, file transfer and every point type (`FuzzOutstation`) | `server` |
 | End to end | master against outstation for every function; the dual end point; concurrency, many masters, parallel masters with secure authentication and files, reconnects, rapid open and close, cancellation | `e2e` |
 | Chaos | a proxy corrupting, splitting and delaying octets and killing connections while every kind of request runs, with and without secure authentication: no data that was not sent, no control executed more often than sent, recovery, no goroutine left | `e2e/chaos_test.go` |
-| Interop | both roles against stepfunc dnp3, opendnp3 and DSC Systems go-dnp3, and as outstation against dnp3py | `interop` (build tag) |
+| Interop | both roles against stepfunc dnp3, opendnp3 and DSC go-dnp3, and as outstation against dnp3py | `interop` (build tag) |

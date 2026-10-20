@@ -161,6 +161,10 @@ func TestDecodeErrors(t *testing.T) {
 }
 
 func TestAddress(t *testing.T) {
+	// IEEE 1815: 0xFFFD no confirmation, 0xFFFE mandatory, 0xFFFF optional.
+	if BroadcastNoConfirm != 0xFFFD || BroadcastConfirm != 0xFFFE || BroadcastOptionalConfirm != 0xFFFF {
+		t.Fatal("broadcast addresses")
+	}
 	if !BroadcastConfirm.Broadcast() || !BroadcastNoConfirm.Broadcast() || SelfAddress.Broadcast() {
 		t.Error("Broadcast")
 	}

@@ -36,6 +36,7 @@ type Server struct {
 	channels   map[*channel.Channel]struct{}
 	listeners  map[net.Listener]struct{}
 	indication app.IIN
+	freezes    map[*time.Timer]struct{} // scheduled FREEZE_AT_TIME
 	closed     bool
 	closeCh    chan struct{}
 	wg         sync.WaitGroup
@@ -54,6 +55,7 @@ func New(opts ...Option) (*Server, error) {
 		opts:      o,
 		clock:     newClock(),
 		log:       logx.New(o.logger, "server", "outstation", o.address),
+		freezes:   make(map[*time.Timer]struct{}),
 		assocs:    make(map[link.Address]*association),
 		channels:  make(map[*channel.Channel]struct{}),
 		listeners: make(map[net.Listener]struct{}),
@@ -247,7 +249,7 @@ func (s *Server) ServeConn(rw io.ReadWriteCloser, remote net.Addr) error {
 		Metrics: s.opts.metrics,
 		Log:     s.log.With("remote", addrString(remote)),
 		Accept: func(local, master link.Address) *channel.Session {
-			if local != s.opts.address && (!s.opts.selfAddress || local != link.SelfAddress) {
+			if local != s.opts.address && !local.Broadcast() && (!s.opts.selfAddress || local != link.SelfAddress) {
 				return nil
 			}
 			if !s.masterAllowed(master) {
@@ -336,6 +338,10 @@ func (s *Server) Close() error {
 	}
 	s.closed = true
 	close(s.closeCh)
+	for t := range s.freezes {
+		t.Stop()
+	}
+	clear(s.freezes)
 	for l := range s.listeners {
 		_ = l.Close()
 	}

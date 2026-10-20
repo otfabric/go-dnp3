@@ -515,12 +515,30 @@ func TestAssignClassAndFreeze(t *testing.T) {
 		res, err := p.c.Read(c, app.AllObjects(app.G31V0))
 		return err == nil && res.Measurements()[0].Value.(app.Analog).Value == 9
 	})
-	if err := p.c.FreezeAtTime(c, time.Now().Add(-time.Second), 0, app.AllObjects(app.G20V0)); err != nil {
+	// FREEZE_AT_TIME (IEEE 1815-2012 A.23.2): a time that has passed,
+	// without an interval, cannot be met; a time to come is waited for.
+	var ie *dnp3.IINError
+	if err := p.c.FreezeAtTime(c, time.Now().Add(-time.Second), 0, app.AllObjects(app.G20V0)); !errors.As(err, &ie) {
+		t.Fatalf("freeze at a time that has passed: %v", err)
+	}
+	_ = p.db.UpdateAnalogInput(0, app.Analog{Value: 11, Flags: app.FlagOnline})
+	if err := p.c.FreezeAtTime(c, time.Now().Add(200*time.Millisecond), 0, app.AllObjects(app.G30V0)); err != nil {
+		t.Fatalf("freeze at a time to come: %v", err)
+	}
+	if res, _ := p.c.Read(c, app.AllObjects(app.G31V0)); res.Measurements()[0].Value.(app.Analog).Value != 9 {
+		t.Fatal("frozen before its time")
+	}
+	waitUntil(t, "the scheduled freeze", func() bool {
+		res, err := p.c.Read(c, app.AllObjects(app.G31V0))
+		return err == nil && res.Measurements()[0].Value.(app.Analog).Value == 11
+	})
+	// Time 0, interval 0: at once.
+	_ = p.db.UpdateAnalogInput(0, app.Analog{Value: 12, Flags: app.FlagOnline})
+	if _, err := p.c.Request(c, app.FuncFreezeAtTime, app.Counted(app.G50V2, app.AbsoluteTime{}), app.AllObjects(app.G30V0)); err != nil {
 		t.Fatal(err)
 	}
-	var ie *dnp3.IINError
-	if err := p.c.FreezeAtTime(c, time.Now().Add(time.Hour), time.Minute, app.AllObjects(app.G20V0)); !errors.As(err, &ie) {
-		t.Fatalf("scheduled freeze: %v", err)
+	if res, _ := p.c.Read(c, app.AllObjects(app.G31V0)); res.Measurements()[0].Value.(app.Analog).Value != 12 {
+		t.Fatal("FREEZE_AT_TIME with time 0 did not freeze at once")
 	}
 }
 

@@ -89,7 +89,7 @@ func (a *association) critical(fc app.FunctionCode) bool {
 // sendChallenge holds a critical request and challenges the master.
 func (a *association) sendChallenge(req *app.Fragment, in inbound) {
 	sa := a.srv.opts.auth
-	// 32 octets: the standard asks for at least 4, and DSC Systems
+	// 32 octets: the standard asks for at least 4, and DSC go-dnp3
 	// go-dnp3's master answers only challenges of 32.
 	data := make([]byte, 32)
 	if _, err := rand.Read(data); err != nil {
@@ -318,7 +318,9 @@ func (a *association) aggressive(req *app.Fragment, in inbound) *app.Fragment {
 	}
 	if !ok {
 		a.count(secauth.StatUnexpectedMessages)
-		a.authError(req.Control.Seq, 0, sa.User.Number, app.AuthErrAuthenticationFailed)
+		if !in.dest.Broadcast() {
+			a.authError(req.Control.Seq, 0, sa.User.Number, app.AuthErrAuthenticationFailed)
+		}
 		return nil
 	}
 	// The octets the MAC covers end where the g120v9 object begins: its
@@ -336,7 +338,10 @@ func (a *association) aggressive(req *app.Fragment, in inbound) *app.Fragment {
 	if !ok {
 		a.log.Warn("aggressive mode request refused", "user", am.User, "csq", am.CSQ)
 		a.count(secauth.StatAuthenticationFailures)
-		a.authError(req.Control.Seq, am.CSQ, am.User, app.AuthErrAuthenticationFailed)
+		if !in.dest.Broadcast() {
+			// Nobody answers a broadcast, not even with an error.
+			a.authError(req.Control.Seq, am.CSQ, am.User, app.AuthErrAuthenticationFailed)
+		}
 		return nil
 	}
 	a.csq = am.CSQ

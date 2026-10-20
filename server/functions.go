@@ -5,6 +5,8 @@ package server
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/otfabric/go-dnp3/app"
@@ -112,14 +114,10 @@ func (a *association) write(req *app.Fragment) *response {
 			}
 			db.mu.Unlock()
 		default:
-			switch g := h.GV.Group(); {
-			case g == 0 && wh != nil:
-				for _, o := range h.Objects {
-					if err := wh.WriteAttribute(ctx, h.GV.Variation(), o.Value.(app.Attribute)); err != nil {
-						r.iin |= app.IINParameterError
-					}
-				}
-			case g == 110:
+			switch h.GV.Group() {
+			case 0:
+				r.iin |= a.writeAttributes(ctx, h)
+			case 110:
 				for _, o := range h.Objects {
 					s := o.Value.(app.OctetString)
 					if err := a.srv.db.Update(OctetString, o.Index, s, EventOnChange); err != nil {
@@ -132,7 +130,7 @@ func (a *association) write(req *app.Fragment) *response {
 						}
 					}
 				}
-			case g == 70:
+			case 70:
 				r.iin |= a.writeFile(h)
 			default:
 				r.iin |= app.IINObjectUnknown
@@ -160,10 +158,10 @@ func (a *association) synchronized(ctx context.Context, t time.Time) {
 
 // freeze copies counters into frozen counters, and analog inputs into
 // frozen analog inputs, for the points the headers name. FREEZE_AT_TIME
-// is executed at once when its time has passed and its interval is zero;
-// a scheduled freeze is not supported.
+// with time 0 and interval 0 is executed at once; otherwise it is
+// scheduled (scheduleFreeze). A time that has passed, without an
+// interval, is refused.
 func (a *association) freeze(req *app.Fragment) *response {
-	r := &response{}
 	clearAfter := req.Function == app.FuncFreezeClear || req.Function == app.FuncFreezeClearNoAck
 	hs := req.Headers
 	if req.Function == app.FuncFreezeAtTime || req.Function == app.FuncFreezeAtTimeNoAck {
@@ -171,29 +169,64 @@ func (a *association) freeze(req *app.Fragment) *response {
 			return &response{iin: app.IINParameterError}
 		}
 		at := hs[0].Objects[0].Value.(app.AbsoluteTime)
-		if at.Interval != 0 || at.Time.Time().After(a.srv.clock.time()) {
-			return &response{iin: app.IINParameterError}
-		}
 		hs = hs[1:]
+		if iin := freezeHeadersValid(hs); iin != 0 {
+			return &response{iin: iin}
+		}
+		// IEEE 1815-2012 A.23.2: time 0 and interval 0 freeze at once;
+		// otherwise at the time and every interval after it. A time that
+		// has passed, without an interval, cannot be met.
+		interval := time.Duration(at.Interval) * time.Millisecond
+		if at.Time != 0 || interval != 0 {
+			when := at.Time.Time()
+			if at.Time == 0 {
+				when = a.srv.clock.time()
+			}
+			if interval == 0 && !when.After(a.srv.clock.time()) {
+				return &response{iin: app.IINParameterError}
+			}
+			if !a.srv.scheduleFreeze(when, interval, hs) {
+				return &response{iin: app.IINParameterError}
+			}
+			return &response{}
+		}
 	}
-	now := a.srv.clock.now()
-	db := a.srv.db
-	err := db.Batch(func(b *Batch) error {
+	return &response{iin: a.srv.freezeNow(hs, clearAfter)}
+}
+
+// freezeHeadersValid checks the headers of a freeze: counters (group 20)
+// or analog inputs (group 30), with a qualifier that names points.
+func freezeHeadersValid(hs []app.Header) app.IIN {
+	var iin app.IIN
+	for i := range hs {
+		switch hs[i].GV.Group() {
+		case 20, 30:
+			if _, ok := selectorOf(&hs[i]); !ok {
+				iin |= app.IINParameterError
+			}
+		default:
+			iin |= app.IINObjectUnknown
+		}
+	}
+	return iin
+}
+
+// freezeNow copies the counters or analog inputs the headers name into
+// their frozen points, clearing the counters with clear.
+func (s *Server) freezeNow(hs []app.Header, clear bool) app.IIN {
+	iin := freezeHeadersValid(hs)
+	now := s.clock.now()
+	db := s.db
+	// The batch updates points of the kinds it reads: it cannot fail.
+	_ = db.Batch(func(b *Batch) error {
 		for i := range hs {
 			h := &hs[i]
-			var src, dst PointType
-			switch h.GV.Group() {
-			case 20:
-				src, dst = Counter, FrozenCounter
-			case 30:
+			src, dst := Counter, FrozenCounter
+			if h.GV.Group() == 30 {
 				src, dst = AnalogInput, FrozenAnalogInput
-			default:
-				r.iin |= app.IINObjectUnknown
-				continue
 			}
 			sel, ok := selectorOf(h)
-			if !ok {
-				r.iin |= app.IINParameterError
+			if !ok || (h.GV.Group() != 20 && h.GV.Group() != 30) {
 				continue
 			}
 			for _, idx := range db.indexes(src) {
@@ -205,7 +238,7 @@ func (a *association) freeze(req *app.Fragment) *response {
 					// An unchanged frozen value produces no event.
 					_ = b.Update(dst, idx, withTime(p.value, now), EventOnChange)
 				}
-				if clearAfter && src == Counter {
+				if clear && src == Counter {
 					c := p.value.(app.Counter)
 					c.Value, c.Time = 0, now
 					_ = b.Update(Counter, idx, c, EventOnChange)
@@ -214,10 +247,44 @@ func (a *association) freeze(req *app.Fragment) *response {
 		}
 		return nil
 	})
-	if err != nil {
-		r.iin |= app.IINParameterError
+	return iin
+}
+
+// MaxScheduledFreezes is how many FREEZE_AT_TIME requests the outstation
+// keeps waiting at once; a further one is refused. They belong to the
+// Server: a periodic one keeps its place until Close, whatever happens to
+// the master's connection.
+const MaxScheduledFreezes = 16
+
+// scheduleFreeze freezes the points of hs at when and, with an interval,
+// every interval after it, until Close. It reports false when there are
+// MaxScheduledFreezes already.
+func (s *Server) scheduleFreeze(when time.Time, interval time.Duration, hs []app.Header) bool {
+	hs = append([]app.Header(nil), hs...)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || len(s.freezes) >= MaxScheduledFreezes {
+		return false
 	}
-	return r
+	now := s.clock.time()
+	if interval > 0 && !when.After(now) {
+		// The next occurrence after now.
+		when = when.Add((now.Sub(when)/interval + 1) * interval)
+	}
+	var t *time.Timer
+	t = time.AfterFunc(when.Sub(now), func() {
+		_ = s.freezeNow(hs, false)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		// Close empties the map: a timer it stopped is not set again.
+		if _, waiting := s.freezes[t]; waiting && interval > 0 {
+			t.Reset(interval)
+			return
+		}
+		delete(s.freezes, t)
+	})
+	s.freezes[t] = struct{}{}
+	return true
 }
 
 func (a *association) restartRequest(req *app.Fragment) *response {
@@ -315,33 +382,121 @@ func (s *Server) readOther(a *association, h *app.Header, p *readPlan) bool {
 	return false
 }
 
-func (s *Server) attributeItems(h *app.Header, p *readPlan) []item {
-	attrs := s.opts.attributes
-	one := func(v uint8, at app.Attribute) item {
-		return item{h: app.Ranged(app.GV(0, v), 0, at)}
+// attributeSet is one set of device attributes. legacy marks set 0 of
+// WithAttributes: writable when the handler is a WriteHandler.
+type attributeSet struct {
+	mu       sync.Mutex
+	attrs    map[uint8]app.Attribute
+	writable map[uint8]bool
+	legacy   bool
+}
+
+func (as *attributeSet) isWritable(h Handler, v uint8) bool {
+	if as.legacy {
+		_, ok := h.(WriteHandler)
+		return ok
 	}
-	switch v := h.GV.Variation(); v {
+	return as.writable[v]
+}
+
+// attributeSets returns the sets a READ or WRITE of group 0 names: the
+// range of the header, set 0 for any other qualifier.
+func attributeSets(h *app.Header) (start, stop uint32) {
+	if h.Qualifier.IsRange() {
+		return h.Start, h.Stop
+	}
+	return 0, 0
+}
+
+func (s *Server) attributeItems(h *app.Header, p *readPlan) []item {
+	start, stop := attributeSets(h)
+	// The configured sets in the range, in order: a range is not walked
+	// set by set, it may span four billion of them.
+	var sets []uint32
+	for set := range s.opts.attributes {
+		if uint32(set) >= start && uint32(set) <= stop {
+			sets = append(sets, uint32(set))
+		}
+	}
+	slices.Sort(sets)
+	if uint64(stop)-uint64(start)+1 != uint64(len(sets)) {
+		p.iin |= app.IINParameterError // the range names sets that do not exist
+	}
+	var out []item
+	for _, set := range sets {
+		out = append(out, s.attributeSetItems(set, s.opts.attributes[uint16(set)], h.GV.Variation(), p)...)
+	}
+	return out
+}
+
+func (s *Server) attributeSetItems(set uint32, as *attributeSet, v uint8, p *readPlan) []item {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	one := func(v uint8, at app.Attribute) item {
+		return item{h: app.Ranged(app.GV(0, v), set, at)}
+	}
+	switch v {
 	case app.AttrAllAttributes:
 		var out []item
-		for _, v := range sortedVariations(attrs) {
-			out = append(out, one(v, attrs[v]))
+		for _, v := range sortedVariations(as.attrs) {
+			out = append(out, one(v, as.attrs[v]))
 		}
 		return out
 	case app.AttrListOfVariations:
-		_, writable := s.opts.handler.(WriteHandler)
 		var entries []app.AttributeListEntry
-		for _, v := range sortedVariations(attrs) {
-			entries = append(entries, app.AttributeListEntry{Variation: v, Writable: writable})
+		for _, v := range sortedVariations(as.attrs) {
+			entries = append(entries, app.AttributeListEntry{Variation: v, Writable: as.isWritable(s.opts.handler, v)})
 		}
 		return []item{one(v, app.ListAttribute(entries...))}
 	default:
-		at, ok := attrs[v]
+		at, ok := as.attrs[v]
 		if !ok {
 			p.iin |= app.IINObjectUnknown
 			return nil
 		}
 		return []item{one(v, at)}
 	}
+}
+
+// writeAttributes handles a WRITE of group 0 and returns its IIN bits.
+func (a *association) writeAttributes(ctx context.Context, h app.Header) app.IIN {
+	var iin app.IIN
+	start, _ := attributeSets(&h)
+	if h.Qualifier.IsIndexed() && len(h.Objects) > 0 {
+		start = h.Objects[0].Index
+	}
+	as := a.srv.opts.attributes[uint16(start)]
+	if start > 0xFFFF || as == nil {
+		return app.IINParameterError
+	}
+	v := h.GV.Variation()
+	for _, o := range h.Objects {
+		val := o.Value.(app.Attribute)
+		if as.legacy {
+			wh, ok := a.srv.opts.handler.(WriteHandler)
+			if !ok || wh.WriteAttribute(ctx, v, val) != nil {
+				iin |= app.IINParameterError
+			}
+			continue
+		}
+		as.mu.Lock()
+		cur, exists := as.attrs[v]
+		ok := exists && as.writable[v] && cur.Type == val.Type
+		as.mu.Unlock()
+		if ok {
+			if sw, has := a.srv.opts.handler.(AttributeSetWriteHandler); has {
+				ok = sw.WriteAttributeSet(ctx, uint16(start), v, val) == nil
+			}
+		}
+		if !ok {
+			iin |= app.IINParameterError
+			continue
+		}
+		as.mu.Lock()
+		as.attrs[v] = val
+		as.mu.Unlock()
+	}
+	return iin
 }
 
 func sortedVariations(m map[uint8]app.Attribute) []uint8 {

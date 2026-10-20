@@ -542,3 +542,28 @@ func TestFragmentsBeforeEOFAreDelivered(t *testing.T) {
 		}
 	}
 }
+
+// TestAcceptOnBroadcast: a master's first frame may be a broadcast; the
+// channel asks Accept for its session, and a refused one drops the frame.
+func TestAcceptOnBroadcast(t *testing.T) {
+	a, b := tcpPair(t)
+	in := newInbox()
+	var och *Channel
+	och = New(b, Config{Remote: b.RemoteAddr(), Accept: func(local, remote link.Address) *Session {
+		if remote != 77 {
+			return nil
+		}
+		return och.AddSession(SessionConfig{Local: outstationAddr, Remote: remote, OnFragment: in.fn})
+	}})
+	och.Start()
+	defer func() { och.Close(nil); <-och.Done() }()
+	m := newRaw(t, a)
+	m.write(link.Frame{Dir: true, Function: link.PrimaryUnconfirmedUserData, Dest: link.BroadcastNoConfirm, Src: 78, Data: segmentOf([]byte{8})})
+	m.write(link.Frame{Dir: true, Function: link.PrimaryUnconfirmedUserData, Dest: link.BroadcastNoConfirm, Src: 77, Data: segmentOf([]byte{9})})
+	if d := in.next(t); !bytes.Equal(d.frag, []byte{9}) || d.dest != link.BroadcastNoConfirm {
+		t.Fatalf("broadcast as first frame: %v to %d", d.frag, d.dest)
+	}
+	if ss := och.Sessions(); len(ss) != 1 || ss[0].Remote() != 77 {
+		t.Fatal("refused master got a session")
+	}
+}

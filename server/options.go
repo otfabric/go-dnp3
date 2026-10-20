@@ -73,7 +73,7 @@ type options struct {
 	link           Link
 	eventLimits    map[PointType]int
 	needTime       time.Duration
-	attributes     map[uint8]app.Attribute
+	attributes     map[uint16]*attributeSet
 	files          FileServer
 	auth           *SecureAuth
 }
@@ -282,16 +282,42 @@ func WithTimeSync(interval time.Duration) Option {
 // built from them; an attribute is writable when the [Handler] implements
 // [WriteHandler].
 func WithAttributes(attrs map[uint8]app.Attribute) Option {
+	return func(o *options) error { return o.addAttributeSet(0, attrs, nil, true) }
+}
+
+// WithAttributeSet sets the device attributes of another set (group 0,
+// the set is the index; IEEE 1815-2012 clause 11.9.1), keyed by
+// variation. The variations in writable can be written by a master, with
+// a value of the same type: the outstation stores it and, when the
+// [Handler] implements [AttributeSetWriteHandler], tells it first. Other
+// writes are refused.
+func WithAttributeSet(set uint16, attrs map[uint8]app.Attribute, writable ...uint8) Option {
 	return func(o *options) error {
-		o.attributes = make(map[uint8]app.Attribute, len(attrs))
-		for v, a := range attrs {
-			if v == app.AttrAllAttributes || v == app.AttrListOfVariations || v == 0 {
-				return invalidOption("attribute variation %d", v)
+		for _, v := range writable {
+			if _, ok := attrs[v]; !ok {
+				return invalidOption("writable attribute %d of set %d does not exist", v, set)
 			}
-			o.attributes[v] = a
 		}
-		return nil
+		return o.addAttributeSet(set, attrs, writable, false)
 	}
+}
+
+func (o *options) addAttributeSet(set uint16, attrs map[uint8]app.Attribute, writable []uint8, legacy bool) error {
+	as := &attributeSet{attrs: make(map[uint8]app.Attribute, len(attrs)), writable: map[uint8]bool{}, legacy: legacy}
+	for v, a := range attrs {
+		if v == app.AttrAllAttributes || v == app.AttrListOfVariations || v == 0 {
+			return invalidOption("attribute variation %d", v)
+		}
+		as.attrs[v] = a
+	}
+	for _, v := range writable {
+		as.writable[v] = true
+	}
+	if o.attributes == nil {
+		o.attributes = map[uint16]*attributeSet{}
+	}
+	o.attributes[set] = as
+	return nil
 }
 
 // WithFileServer serves file transfer (group 70) from fs.
