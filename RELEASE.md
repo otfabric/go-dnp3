@@ -1,5 +1,32 @@
 # go-dnp3 Releases
 
+## v0.2.1
+
+**Date:** 2026-10-20
+**Previous release:** v0.2.0
+
+## Summary
+
+Secure Authentication fixes found by the interop tests against DSC
+Systems go-dnp3, the first other stack with SAv5 in dnp3-interop. The
+interop suite now covers dnp3-interop v0.2.0 (contract 1.1): TLS, UDP,
+serial, file transfer and Secure Authentication, in both directions. No
+API change.
+
+## Changes
+
+### Fixed
+
+- **The master replied to a challenge with a new sequence number.** The authentication reply (g120v2) now keeps the sequence number of the challenge, which is that of the critical request, and the response to the request is expected with it (IEEE 1815-2012 clause 7.4). An outstation that follows this, as DSC Systems go-dnp3 does, ignored the reply's answer and the request timed out. The outstation accepts either.
+- **Every key change after the first failed against DSC Systems' outstation.** The master put the key status message into the key change data with its MAC value. The first key status after a connection has none, so only a second key change within one connection (`client.WithKeyChangeInterval`) was refused. The master now leaves the MAC out, the form every known outstation accepts; go-dnp3's outstation still accepts both.
+- **DSC Systems' master could not answer go-dnp3's challenges.** The outstation sent 16 octets of challenge data; it now sends 32, which that master requires and the standard allows.
+
+### Tests
+
+- Interop tests for dnp3-interop contract 1.1, both directions: TLS with mutual authentication against a generated test PKI, UDP (against opendnp3's outstation from a container on its network), serial over a bridged pseudo-terminal, file transfer against the files fixture, and Secure Authentication with session key changes and a wrong update key.
+
+---
+
 ## v0.2.0
 
 **Date:** 2026-10-20
