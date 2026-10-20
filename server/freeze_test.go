@@ -269,3 +269,31 @@ func TestBroadcastFirst(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+func TestAttributeHugeRange(t *testing.T) {
+	m := newMaster(t, WithAttributeSet(1, map[uint8]app.Attribute{1: app.UintAttribute(1)}))
+	m.send(req(1, app.FuncRead, app.Header{GV: app.GV(0, app.AttrAllAttributes), Qualifier: app.Qual4ByteStartStop, Start: 0, Stop: 0xFFFFFFFF}))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINParameterError) || len(f.Headers) != 1 {
+		t.Fatalf("read of every set: %v", f)
+	}
+}
+
+// TestHugeRanges: a READ, deadband read or freeze naming four billion
+// indexes is answered at once.
+func TestHugeRanges(t *testing.T) {
+	m := newMaster(t)
+	huge := func(gv app.GroupVariation) app.Header {
+		return app.Header{GV: gv, Qualifier: app.Qual4ByteStartStop, Start: 0, Stop: 0xFFFFFFFF}
+	}
+	for i, h := range []app.Header{huge(app.G30V0), huge(app.G34V0), huge(app.G121V1), huge(app.G1V0)} {
+		start := time.Now()
+		m.send(req(uint8(i), app.FuncRead, h))
+		if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) && h.GV != app.G121V1 {
+			t.Errorf("%s over every index: %v", h.GV, f)
+		}
+		if d := time.Since(start); d > time.Second {
+			t.Errorf("%s over every index took %v", h.GV, d)
+		}
+	}
+}

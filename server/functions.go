@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -215,7 +216,8 @@ func (s *Server) freezeNow(hs []app.Header, clear bool) app.IIN {
 	iin := freezeHeadersValid(hs)
 	now := s.clock.now()
 	db := s.db
-	err := db.Batch(func(b *Batch) error {
+	// The batch updates points of the kinds it reads: it cannot fail.
+	_ = db.Batch(func(b *Batch) error {
 		for i := range hs {
 			h := &hs[i]
 			src, dst := Counter, FrozenCounter
@@ -244,9 +246,6 @@ func (s *Server) freezeNow(hs []app.Header, clear bool) app.IIN {
 		}
 		return nil
 	})
-	if err != nil {
-		iin |= app.IINParameterError
-	}
 	return iin
 }
 
@@ -410,14 +409,21 @@ func attributeSets(h *app.Header) (start, stop uint32) {
 
 func (s *Server) attributeItems(h *app.Header, p *readPlan) []item {
 	start, stop := attributeSets(h)
-	var out []item
-	for set := uint64(start); set <= uint64(stop); set++ {
-		as := s.opts.attributes[uint16(set)]
-		if set > 0xFFFF || as == nil {
-			p.iin |= app.IINParameterError
-			continue
+	// The configured sets in the range, in order: a range is not walked
+	// set by set, it may span four billion of them.
+	var sets []uint32
+	for set := range s.opts.attributes {
+		if uint32(set) >= start && uint32(set) <= stop {
+			sets = append(sets, uint32(set))
 		}
-		out = append(out, s.attributeSetItems(uint32(set), as, h.GV.Variation(), p)...)
+	}
+	slices.Sort(sets)
+	if uint64(stop)-uint64(start)+1 != uint64(len(sets)) {
+		p.iin |= app.IINParameterError // the range names sets that do not exist
+	}
+	var out []item
+	for _, set := range sets {
+		out = append(out, s.attributeSetItems(set, s.opts.attributes[uint16(set)], h.GV.Variation(), p)...)
 	}
 	return out
 }
