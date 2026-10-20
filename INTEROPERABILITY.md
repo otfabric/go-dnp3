@@ -76,7 +76,7 @@ of a device profile, and how it has been verified.
 | 3, 4 | SELECT, OPERATE | ✅ | ✅ |
 | 5, 6 | DIRECT_OPERATE, _NR | ✅ | ✅ |
 | 7..10 | IMMED_FREEZE, FREEZE_CLEAR, _NR | ✅ | ✅ counters and analog inputs |
-| 11, 12 | FREEZE_AT_TIME, _NR | ✅ | partly: a time that has passed, no interval |
+| 11, 12 | FREEZE_AT_TIME, _NR | ✅ | ✅ time 0 at once; a time to come and every interval after it (up to `MaxScheduledFreezes` waiting); a time that has passed without an interval is refused (A.23.2) |
 | 13, 14 | COLD_RESTART, WARM_RESTART | ✅ | ✅ with `RestartHandler` |
 | 15..19 | INITIALIZE_DATA, INITIALIZE_APPL, START_APPL, STOP_APPL, SAVE_CONFIG | `Request` | ✅ with `ApplicationHandler` |
 | 20, 21 | ENABLE_UNSOLICITED, DISABLE_UNSOLICITED | ✅ | ✅ with `WithUnsolicited` |
@@ -109,7 +109,7 @@ others are used by the procedures.
 | 21, 23 | frozen counters, events | ✅ |
 | 30, 32 | analog inputs, events, integer and floating point | ✅ |
 | 31, 33 | frozen analog inputs, events | ✅ |
-| 34 | analog input deadbands | ✅ written by the master |
+| 34 | analog input deadbands | ✅ written by the master, read back (v1, v2 or v3, the smallest that holds the value unless one is asked for) |
 | 40, 42 | analog output status, events | ✅ |
 | 41 | analog output blocks | controls |
 | 43 | analog output command events | ✅ as group 13, with the commanded value |
@@ -119,7 +119,7 @@ others are used by the procedures.
 | 60 | class objects | polls, unsolicited control, assign class |
 | 70 | file control v1 (raw), v2..v8 | file transfer |
 | 80 | internal indications | read, clear of DEVICE_RESTART |
-| 0 | device attributes, all data types, the list of variations | ✅ `WithAttributes` |
+| 0 | device attributes, all data types, the list of variations | ✅ `WithAttributes` (set 0), `WithAttributeSet` (other sets, writable variations) |
 | 101, 102 | BCD integers, unsigned 8-bit integer | codec |
 | 110, 111 | octet strings, events | ✅ |
 | 112, 113 | virtual terminal | codec |
@@ -152,7 +152,7 @@ is not lost, as the reference outstations do.
 | Assign class | ✅ | ✅ |
 | File transfer: read, write, directory, info, delete, authenticate, abort | ✅ | ✅ |
 | Device attributes | ✅ | ✅ |
-| Broadcast | — not sent | ✅ executed without a response, IIN1.0 in the next one |
+| Broadcast | ✅ `Broadcast` to 0xFFFD, 0xFFFE or 0xFFFF, for the requests that need no answer | ✅ executed without a response, also as a master's first frame; IIN1.0 in the next response |
 
 ## Secure Authentication
 
@@ -181,8 +181,6 @@ a pre-shared session key is used directly.
 - **Multi-fragment requests** are ignored by the outstation and not sent by
   the master: a request is one fragment, as the standard's application
   layer has it (DSC Systems go-dnp3 refuses them as well).
-- **FREEZE_AT_TIME** with a future time or an interval is refused with
-  PARAMETER_ERROR.
 - **A read of an index that does not exist** is answered with the indexes
   that do and PARAMETER_ERROR.
 - **Associations are per master address.** A master that reconnects from
@@ -203,8 +201,8 @@ a pre-shared session key is used directly.
 | Outstation conformance with a scripted master | ✅ |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.3.0 |
-| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.3.0 |
+| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.4.0 |
+| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.4.0 |
 | TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC Systems, including a refused certificate of another CA |
 | UDP, both roles | ✅ against stepfunc, opendnp3 and DSC Systems; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC Systems over a pseudo-terminal bridged to TCP |
@@ -246,6 +244,17 @@ images offer.
 | File transfer: delete | | | M O | |
 | Secure Authentication: key change, challenges, re-key, wrong key | | | M O | |
 | Security statistics, reads and g122 events | | | M O | |
+| Device attributes, other sets, read and write (contract 1.3) | M O | | M O | |
+| Several controls in one request, the limit per request (TOO_MANY_OPS) | M O | M O | M O | O |
+| FREEZE AT TIME, scheduled | M O | | M O | O |
+| Analog freeze into frozen analog inputs | O | O | M O | O |
+| Deadbands (g34): write; read back | M O | | M O (write) | |
+| File append, AUTHENTICATE_FILE | O | | M O | |
+| Event buffer overflow (IIN2.3) | M O | M O | M O | M O |
+| Link confirms; keep-alive | O (keep-alive) | O (keep-alive) | M O | |
+| Broadcast | M | M | M O | |
+| Management functions (INITIALIZE, START, STOP, SAVE) | | O | M | |
+| Several outstations behind one port | | M | M | |
 | Dual end point, TCP | M O | M O | M O | |
 | Dual end point, TLS | M | M O | M O | |
 | Frozen analog inputs (g31) | O | | M O | |
@@ -304,4 +313,7 @@ The gaps, and what closing them would be worth:
 - **Virtual terminal and data sets.** Rarely used; the codec carries them,
   so an application can still exchange them with the generic request
   methods.
+- **Several outstations behind one channel.** go-dnp3 serves one
+  outstation per `Server`; several need a port each (opendnp3 and DSC
+  Systems serve them on one). Its master reaches each of theirs.
 - **Multi-fragment requests** are not a gap: requests are one fragment.

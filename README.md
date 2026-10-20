@@ -45,7 +45,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against Step Function I/O's dnp3, opendnp3, DSC Systems' go-dnp3 and
   dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.3.0,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.4.0,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -314,7 +314,7 @@ many masters and concurrent requests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.3.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.3.0),
+of [otfabric/dnp3-interop v0.4.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.0),
 pinned by digest:
 
 | Reference | Version | Licence | Roles tested |
@@ -338,7 +338,11 @@ Authentication with session key changes and the security statistics; also
 the requests without a response (DIRECT OPERATE NO ACK, the `_NR`
 freezes), reads of all objects of a group, and contract 1.2: the dual end
 point over TCP and TLS, frozen analog inputs, command events, time and
-interval, security statistic events, and the dnp3py fixture. The
+interval, security statistic events, and the dnp3py fixture; and contract
+1.3: device attribute sets, several controls in one request, scheduled
+freezes and analog freeze, deadbands, file append and authentication, event
+buffer overflow, link confirms and keep-alive, broadcast, the management
+functions and several outstations behind one port. The
 [coverage matrix](INTEROPERABILITY.md#interop-coverage) shows each feature
 per reference and direction. Deviations a reference has from the
 fixture are those dnp3-interop records as known bugs. Docker is needed; the
@@ -358,8 +362,8 @@ linked into go-dnp3.
 - **Data sets, private registration objects and the virtual terminal**
   (groups 83, 85..88, 90, 91 raw; 112, 113 decoded) have no procedures:
   exchange them with the generic request methods.
-- **FREEZE_AT_TIME** is executed only for a time that has passed with no
-  interval; scheduled freezes are refused.
+- **Several outstations behind one port**: a `Server` is one outstation;
+  serve several on their own ports.
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation: a

@@ -119,10 +119,12 @@ one.
 | `Freeze(ctx, clear, noAck, headers...)` | IMMED_FREEZE, FREEZE_CLEAR and their `_NR` forms |
 | `FreezeAtTime(ctx, at, interval, headers...)` | FREEZE_AT_TIME |
 | `ClearRestart(ctx)` | WRITE g80v1 index 7 |
-| `ReadAttributes(ctx, variation)`, `WriteAttribute(ctx, variation, a)` | READ / WRITE g0 |
+| `ReadAttributes(ctx, variation)`, `WriteAttribute(ctx, variation, a)` | READ / WRITE g0, set 0 |
+| `ReadAttributeSet(ctx, set, variation)`, `WriteAttributeSet(ctx, set, variation, a)` | The same for another set |
 | `Write(ctx, headers...)` | WRITE |
 | `Request(ctx, fc, headers...)` | Any function code |
-| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70) with `FileOptions` |
+| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70) with `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`) |
+| `Broadcast(ctx, dest, fc, headers...)` | A request to a broadcast address (`link.BroadcastNoConfirm`, `BroadcastConfirm`, `BroadcastOptionalConfirm`); no answer, IIN1.0 in the next response |
 
 Commands: `Command{Index, Value, GV}`, built with `CROB(index, op, on, off)`
 and `SetPoint(index, value)`; `CommandMode`: `SelectBeforeOperate`,
@@ -178,11 +180,13 @@ The outstation.
 | `WithEventLimits(map[PointType]int)` | 100 each | Events buffered per type and master |
 | `WithTimeSync(interval)` | never | NEED_TIME at start and after the interval |
 | `WithAttributes(map[uint8]app.Attribute)` | none | Device attributes of set 0 |
+| `WithAttributeSet(set, attrs, writable...)` | none | Device attributes of another set; the writable variations take a value of the same type |
 | `WithFileServer(FileServer)` | none | File transfer |
 | `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 10 s), `StatisticsClass` (default 1), `StatisticsThreshold` (default 10) |
 
 Constants: `DefaultPort` (20000), `DefaultEventLimit` (100),
-`DefaultReplyTimeout`; the variable `DefaultCritical`.
+`DefaultReplyTimeout`, `MaxScheduledFreezes` (16 FREEZE_AT_TIME requests
+waiting); the variable `DefaultCritical`.
 
 ### Database
 
@@ -203,7 +207,8 @@ Constants: `DefaultPort` (20000), `DefaultEventLimit` (100),
 | `RestartHandler` | COLD_RESTART, WARM_RESTART |
 | `TimeHandler` | Every time synchronization |
 | `ApplicationHandler` | INITIALIZE_DATA, the application functions, SAVE_CONFIG, ACTIVATE_CONFIG |
-| `WriteHandler` | WRITE of device attributes and octet strings |
+| `WriteHandler` | WRITE of device attributes of set 0 and octet strings |
+| `AttributeSetWriteHandler` | WRITE of a writable attribute of a `WithAttributeSet` set, before it is stored |
 
 `NopHandler`, `HandlerFunc`; `Command{GV, Index, Value, Master}`;
 `OperateType`: `SelectBeforeOperate`, `DirectOperate`, `DirectOperateNoAck`.
