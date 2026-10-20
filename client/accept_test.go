@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -66,8 +68,46 @@ func TestAcceptOverTLS(t *testing.T) {
 	if _, _, err := Accept(idle)(ctx); err == nil {
 		t.Fatal("Accept returned without a connection")
 	}
+	// The connection that the abandoned Accept takes later is closed, not
+	// leaked: its peer reads the end of the stream.
+	late, err := net.Dial("tcp", idle.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = late.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := late.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Fatalf("connection taken by an abandoned Accept: %v", err)
+	}
+	_ = late.Close()
 	_ = idle.Close()
 	if _, _, err := Accept(idle)(context.Background()); err == nil {
 		t.Fatal("Accept on a closed listener")
+	}
+}
+
+func TestUDPStream(t *testing.T) {
+	srv, err := server.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = srv.Database().AddBinaryInput(0, server.PointConfig{}, app.Binary{Value: true, Flags: app.FlagOnline})
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.ServeUDP(pc) }()
+	defer func() { _ = srv.Close() }()
+	addr := pc.LocalAddr().String()
+	c, err := Dial(testCtx(t), addr, WithStream(UDP(addr)), WithAutoIntegrity(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if res, err := c.Read(testCtx(t), app.AllObjects(app.G1V0)); err != nil || len(res.Measurements()) != 1 {
+		t.Fatalf("read over UDP: %v %v", res, err)
+	}
+	// An address that does not resolve fails to open.
+	if _, _, err := UDP("no-such-host.invalid:20000")(testCtx(t)); err == nil {
+		t.Fatal("UDP to an address that does not resolve")
 	}
 }
