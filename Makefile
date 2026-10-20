@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop generate generate-check upstream-watch
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -22,7 +22,7 @@ BIN_DIR := bin
 # Library packages: tests and coverage (exclude examples)
 TEST_PKGS := $(shell go list ./... | grep -v '/examples')
 # Packages whose coverage counts, including what the e2e suite exercises.
-COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e' | paste -sd, -)
+COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/internal/cmd' | grep -v '/e2e' | paste -sd, -)
 
 # Build tag of the interop package (excluded from default ./... builds).
 INTEROP_TAGS := interop
@@ -124,7 +124,18 @@ test-interop: ## Run the interop suite against the stepfunc, opendnp3, dscsystem
 
 interop: test-interop ## Alias for test-interop
 
-check: fmt fmt-check lint lint-ci vet vuln test coverage examples ## Run format + lint + vet + vuln + test
+generate: ## Generate the object table, Measurements' points and OBJECTS.md from app/catalog.json
+	@echo "Generating from app/catalog.json"
+	@go generate ./...
+
+generate-check: ## Fail when the generated files differ from what app/catalog.json generates
+	@echo "Checking the generated files against app/catalog.json"
+	@go run ./internal/cmd/gencatalog -check
+
+upstream-watch: ## Compare app/catalog.json with the upstream object definitions (stepfunc dnp3, DSC go-dnp3)
+	@go run ./internal/cmd/upstreamwatch
+
+check: generate-check fmt fmt-check lint lint-ci vet vuln test coverage examples ## Run generate-check + format + lint + vet + vuln + test
 
 clean: ## Remove generated binaries and coverage artifacts
 	@echo "Cleaning up"

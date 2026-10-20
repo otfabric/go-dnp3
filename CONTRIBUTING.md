@@ -39,6 +39,12 @@ make fuzz
 # Run the codec benchmarks
 make bench
 
+# Regenerate the object table, Measurements' points and OBJECTS.md from app/catalog.json
+make generate
+
+# Compare the catalog with stepfunc dnp3 and DSC go-dnp3, and look for a new dnp3-interop release
+make upstream-watch
+
 # Run the interop tests against the dnp3-interop reference images (needs Docker)
 make interop
 
@@ -57,6 +63,17 @@ make build
 - **Concurrency**: say in the comment which goroutine owns a field. Prefer one goroutine owning state over locks around it, as the channel, the association and the client do
 - **Logging** goes through `internal/logx` with a constant message and fields; see [OBSERVABILITY.md](OBSERVABILITY.md)
 - Format with `make fmt`: the gofmt of the Go version in go.mod, which CI uses
+- **The objects are a catalog**: `app/catalog.json` names every group and variation with its codec family, numeric type, flags, time, event, size and whether it is a point. `app/registry_table.go`, `client/points_table.go` and `OBJECTS.md` are generated from it (`internal/cmd/gencatalog`): change the catalog and run `make generate`, never the generated files. `make check` and CI fail when they are out of date. `TestCatalog` checks each entry against the codec, so a new family still needs its code in `app/registry.go`
+
+### Upstream watch
+
+A weekly workflow (`.github/workflows/upstream-watch.yml`) runs `internal/cmd/upstreamwatch`. It reports, in one issue labelled `upstream-watch`:
+
+- commits to the object definitions of stepfunc dnp3 or DSC go-dnp3 since the commit recorded as reviewed in `.github/upstream.json`;
+- an object they define with a fixed layout whose size differs from `app/catalog.json`, or that the catalog lacks;
+- a dnp3-interop release newer than the one the interop harness pins.
+
+The comparison is of facts only (group, variation, size); nothing of those projects is copied. After a review, update the catalog if the standard's objects are concerned and set `reviewed` to the commit the report names; the issue closes on the next run with nothing to report.
 
 ### Tests
 

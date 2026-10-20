@@ -1,5 +1,17 @@
 # go-dnp3 Releases
 
+## Unreleased
+
+### Changed
+
+- **The objects come from one catalog.** `app/catalog.json` lists every group and variation; the codec's table, the variations `client.Measurements` reports and the new [OBJECTS.md](OBJECTS.md) are generated from it (`make generate`), and CI fails when they drift. The table is the same as before: no change of behaviour.
+
+### Added
+
+- **An upstream watch**: a weekly workflow that opens or updates an issue when the object definitions of stepfunc dnp3 or DSC go-dnp3 change, when the sizes they define differ from the catalog, or when dnp3-interop has a new release (`make upstream-watch` runs it locally).
+
+---
+
 ## v1.2.0
 
 **Date:** 2026-10-20

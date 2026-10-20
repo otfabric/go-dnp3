@@ -1,0 +1,19 @@
+{
+  "_comment": "The upstream object definitions go-dnp3 follows, and the commit of each last reviewed against app/catalog.json. The upstream watch (internal/cmd/upstreamwatch, .github/workflows/upstream-watch.yml) reports commits after it. After a review, set reviewed to the commit the report names.",
+  "sources": [
+    {
+      "name": "stepfunc dnp3",
+      "repo": "stepfunc/dnp3",
+      "path": "dnp3/codegen/src/main/scala/dev/gridio/dnp3/codegen/model",
+      "format": "stepfunc",
+      "reviewed": "620da562b99e4ce6b251b3b970484fc2cb927add"
+    },
+    {
+      "name": "DSC go-dnp3",
+      "repo": "dscsystems/go-dnp3",
+      "path": "objects/spec/dnp3_objects.yaml",
+      "format": "dsc",
+      "reviewed": "1e0dcf36d2a520ce9a270f428fb7532767287f14"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 # Codecov configuration for go-dnp3.
-# CI uploads coverage for the library packages; examples/ and test helpers are not tested there.
+# CI uploads coverage for the library packages; examples/, test helpers and the
+# tools under internal/cmd are not tested there.
 coverage:
   status:
     project:
@@ -14,3 +15,4 @@ ignore:
   - "examples/**"
   - "internal/testutil/**"
   - "interop/**"
+  - "internal/cmd/**"

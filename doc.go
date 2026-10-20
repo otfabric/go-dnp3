@@ -29,3 +29,7 @@
 // (conformance and interop coverage), SECURITY.md, CONTRIBUTING.md,
 // RELEASE.md (changelog).
 package dnp3
+
+// The catalog of DNP3 objects, app/catalog.json, generates the app
+// package's table, the objects client.Measurements reports and OBJECTS.md.
+//go:generate go run ./internal/cmd/gencatalog

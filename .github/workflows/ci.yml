@@ -19,6 +19,18 @@ jobs:
       go-versions: '["1.23", "1.24", "1.25", "1.26"]'
     secrets: inherit
 
+  # The generated table, Measurements' points and OBJECTS.md follow
+  # app/catalog.json: a change of either without the other fails.
+  generate:
+    name: Generated code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+      - run: make generate-check
+
   # The self-contained examples must keep running as they are.
   examples:
     name: Examples
