@@ -21,24 +21,24 @@ import (
 )
 
 // adapter is one reference implementation, as a container image that follows
-// the dnp3-interop container contract 1.0.
+// the dnp3-interop container contract 1.1.
 type adapter struct {
 	name  string
 	image string
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.1.0 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
+// otfabric/dnp3-interop v0.2.0 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
 // Systems go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
 // so that a run is reproducible. Moving to another release of
 // dnp3-interop means changing these constants; the Makefile and the
 // interop workflow follow.
 const (
-	interopRelease         = "v0.1.0"
-	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:3ae308559ae9ad423b3e53f5206aa5ccb16ed60c4816fcba8aeff29cb5903f9b"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:461bcec60491d6c94cf51055b75655fd6e8a142c06e73e1eb9e6eca377677ce7"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:bd019730340dc708d45e4e7da6514e551ac8086aace67e5988fec651614c4fe7"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:a8518fa9e98e54ceb82ad67af5d52bed8efb0085c185742dd14c523d7e5f7013"
+	interopRelease         = "v0.2.0"
+	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:ead1ea3c9a0f48ea363f745846ff2d5df8f077f50b6bb7f20914c3207ba5667e"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a69ebb5962b334ff9813a1efbb871ccd5d296fad71bd13feb94bec52ef7ff19a"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:d0576cceabf24cbd072b672069226c30486aa84046dc98d813a5427a32dbae3a"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:14598aebcd5698d8f342d6d9beaa98b8618d724c57fbbe34222737678ceff0ef"
 )
 
 // adapters returns the reference implementations to test against. The image
@@ -132,19 +132,25 @@ func (a adapter) need(t testing.TB, features ...string) {
 	}
 }
 
-var fixtureCache sync.Map // image -> []byte
+var fixtureCache sync.Map // image and fixture name -> []byte
 
 // fixture returns the baseline fixture baked into the image.
 func (a adapter) fixture(t testing.TB) *fixture {
 	t.Helper()
-	raw, ok := fixtureCache.Load(a.image)
+	return a.fixtureNamed(t, "baseline")
+}
+
+// fixtureNamed returns the named fixture baked into the image.
+func (a adapter) fixtureNamed(t testing.TB, name string) *fixture {
+	t.Helper()
+	raw, ok := fixtureCache.Load(a.image + " " + name)
 	if !ok {
-		out, stderr, err := docker("run", "--rm", a.image, "print-fixture", "baseline")
+		out, stderr, err := docker("run", "--rm", a.image, "print-fixture", name)
 		if err != nil {
 			t.Fatalf("print-fixture of %s: %v\n%s", a.image, err, stderr)
 		}
 		raw = []byte(out)
-		fixtureCache.Store(a.image, raw)
+		fixtureCache.Store(a.image+" "+name, raw)
 	}
 	f, err := parseFixture(raw.([]byte))
 	if err != nil {
@@ -174,15 +180,48 @@ type refServer struct {
 // and waits until it is ready.
 func startServer(t testing.TB, a adapter, extra ...string) *refServer {
 	t.Helper()
+	return startServerSpec(t, a, serverSpec{args: extra})
+}
+
+// serverSpec says how to run a reference outstation.
+type serverSpec struct {
+	// args follow the server command.
+	args []string
+	// docker are extra options of docker run: volumes, a network, a name.
+	docker []string
+	// port is the container port published on loopback: "20000" when
+	// empty, "-" for none (a test on a docker network).
+	port string
+	// script, when set, runs instead of the server command with /bin/sh;
+	// it ends by exec'ing the server (the serial bridge).
+	script string
+}
+
+// startServerSpec runs a reference outstation as spec says and waits until
+// it is ready.
+func startServerSpec(t testing.TB, a adapter, spec serverSpec) *refServer {
+	t.Helper()
 	a.needRole(t, "server")
-	port := freePort(t)
 	name := fmt.Sprintf("go-dnp3-interop-%s-%d-%d", a.name, os.Getpid(), containerSeq.Add(1))
-	args := append([]string{"run", "-d", "--name", name,
-		"-p", fmt.Sprintf("127.0.0.1:%d:20000", port), a.image, "server"}, extra...)
+	args := append([]string{"run", "-d", "--name", name}, spec.docker...)
+	s := &refServer{adapter: a, name: name}
+	if spec.port != "-" {
+		cport := spec.port
+		if cport == "" {
+			cport = "20000"
+		}
+		port := freePort(t)
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%s", port, cport))
+		s.addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	}
+	if spec.script != "" {
+		args = append(args, "--entrypoint", "/bin/sh", a.image, "-c", spec.script)
+	} else {
+		args = append(append(args, a.image, "server"), spec.args...)
+	}
 	if _, stderr, err := docker(args...); err != nil {
 		t.Fatalf("start %s server: %v\n%s", a.name, err, stderr)
 	}
-	s := &refServer{adapter: a, name: name, addr: net.JoinHostPort("127.0.0.1", strconv.Itoa(port))}
 	t.Cleanup(func() {
 		if t.Failed() {
 			out, errOut, _ := docker("logs", "--tail", "80", name)
@@ -267,6 +306,9 @@ type result struct {
 	Objects        []resultObj `json:"objects"`
 	CommandStatus  *string     `json:"commandStatus"`
 	RestartDelayMs *float64    `json:"restartDelayMs"`
+	File           *fileEntry  `json:"file"`
+	Files          []fileEntry `json:"files"`
+	FileStatus     *string     `json:"fileStatus"`
 
 	exit int
 }
@@ -281,6 +323,15 @@ type resultObj struct {
 	Unsolicited bool     `json:"unsolicited"`
 }
 
+// fileEntry is a file of a file operation's result.
+type fileEntry struct {
+	Name        string  `json:"name"`
+	Type        string  `json:"type"`
+	Size        float64 `json:"size"`
+	Permissions string  `json:"permissions"`
+	Content     string  `json:"content"`
+}
+
 func (r *result) errorCode() string {
 	if r.Error == nil {
 		return ""
@@ -293,10 +344,34 @@ func (r *result) errorCode() string {
 // host.docker.internal.
 func runClient(t testing.TB, a adapter, port int, op string, args ...string) *result {
 	t.Helper()
+	return runClientSpec(t, a, nil, append([]string{op, "--host", "host.docker.internal", "--port", strconv.Itoa(port)}, args...))
+}
+
+// clientArgs are the arguments of every client run: the baseline fixture's
+// addresses.
+var clientArgs = []string{"--local-addr", "1", "--remote-addr", "1024"}
+
+// runClientSpec runs the reference master with argv after the client
+// command (the operation first) and extra docker run options.
+func runClientSpec(t testing.TB, a adapter, dockerArgs []string, argv []string) *result {
+	t.Helper()
 	a.needRole(t, "client")
-	cmd := append([]string{"run", "--rm", "--add-host=host.docker.internal:host-gateway", a.image,
-		"client", op, "--host", "host.docker.internal", "--port", strconv.Itoa(port),
-		"--local-addr", "1", "--remote-addr", "1024"}, args...)
+	cmd := append(append([]string{"run", "--rm", "--add-host=host.docker.internal:host-gateway"}, dockerArgs...), a.image, "client")
+	return runClientCmd(t, a, argv[0], append(append(cmd, argv...), clientArgs...))
+}
+
+// runClientScript runs the reference master from a /bin/sh script that
+// ends by exec'ing "dnp3-interop client" with argv (the serial bridge).
+func runClientScript(t testing.TB, a adapter, script string, argv []string) *result {
+	t.Helper()
+	a.needRole(t, "client")
+	script += "\nexec dnp3-interop client " + shellJoin(append(argv, clientArgs...))
+	return runClientCmd(t, a, argv[0], []string{"run", "--rm", "--add-host=host.docker.internal:host-gateway",
+		"--entrypoint", "/bin/sh", a.image, "-c", script})
+}
+
+func runClientCmd(t testing.TB, a adapter, op string, cmd []string) *result {
+	t.Helper()
 	out, stderr, err := docker(cmd...)
 	r := &result{}
 	var ee *exec.ExitError
@@ -320,6 +395,27 @@ func runClient(t testing.TB, a adapter, port int, op string, args ...string) *re
 		t.Logf("%s client %s: exit=%d error=%s %q; stderr:\n%s", a.name, op, r.exit, r.errorCode(), msg, lastLines(stderr, 15))
 	}
 	return r
+}
+
+// shellJoin quotes args for /bin/sh.
+func shellJoin(args []string) string {
+	q := make([]string, len(args))
+	for i, a := range args {
+		q[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+	}
+	return strings.Join(q, " ")
+}
+
+// dockerNetwork creates a network for the duration of the test, for
+// containers that must see each other's addresses as they are.
+func dockerNetwork(t testing.TB) string {
+	t.Helper()
+	name := fmt.Sprintf("go-dnp3-interop-%d-%d", os.Getpid(), containerSeq.Add(1))
+	if _, stderr, err := docker("network", "create", name); err != nil {
+		t.Fatalf("create network: %v\n%s", err, stderr)
+	}
+	t.Cleanup(func() { _, _, _ = docker("network", "rm", name) })
+	return name
 }
 
 func lastLines(s string, n int) string {
