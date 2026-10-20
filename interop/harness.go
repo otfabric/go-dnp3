@@ -21,24 +21,24 @@ import (
 )
 
 // adapter is one reference implementation, as a container image that follows
-// the dnp3-interop container contract 1.2.
+// the dnp3-interop container contract 1.3.
 type adapter struct {
 	name  string
 	image string
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.3.0 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
+// otfabric/dnp3-interop v0.4.0 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
 // Systems go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
 // so that a run is reproducible. Moving to another release of
 // dnp3-interop means changing these constants; the Makefile and the
 // interop workflow follow.
 const (
-	interopRelease         = "v0.3.0"
-	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:36bf0a983ce9d1d16f1a290cc6afba191406afb2f51119e21f80121e581bb9f3"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:6c03763221722c7af1a38af475189e98e1d57cc10ae90220f31376fde6343944"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:12af7a377323926ff8f6de9c95d9a1c89fab479c5a84831a144abadd10e7e01a"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6584d9d00a4c91ef67c710025bda288e2b4611decc9908008721594b31ec7db8"
+	interopRelease         = "v0.4.0"
+	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:cd78c25082643d9855b9280c9c673bac7703083908a5e56cd59f82013a4d994e"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:bc290f9839308eed12149dc338f5ea5d591ae85c01fdd60c192d0c12dfcd46b2"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:059ba86fcbb9a636c933c7cf38ef69cbfd00442133763209824f6809527aee02"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:1fa24c721d86aabcd0ab2a0786cce2e9fa4aa3602fff235a780d6f2659e142d0"
 )
 
 // adapters returns the reference implementations to test against. The image
@@ -353,13 +353,15 @@ type result struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
-	IIN            []string    `json:"iin"`
-	Objects        []resultObj `json:"objects"`
-	CommandStatus  *string     `json:"commandStatus"`
-	RestartDelayMs *float64    `json:"restartDelayMs"`
-	File           *fileEntry  `json:"file"`
-	Files          []fileEntry `json:"files"`
-	FileStatus     *string     `json:"fileStatus"`
+	IIN             []string     `json:"iin"`
+	Objects         []resultObj  `json:"objects"`
+	CommandStatus   *string      `json:"commandStatus"`
+	RestartDelayMs  *float64     `json:"restartDelayMs"`
+	CommandStatuses []*string    `json:"commandStatuses"`
+	Attributes      []resultAttr `json:"attributes"`
+	File            *fileEntry   `json:"file"`
+	Files           []fileEntry  `json:"files"`
+	FileStatus      *string      `json:"fileStatus"`
 
 	exit int
 }
@@ -376,6 +378,14 @@ type resultObj struct {
 	Status      string   `json:"status"`
 	Units       *float64 `json:"units"`
 	Association *float64 `json:"association"`
+}
+
+// resultAttr is a device attribute of attribute-read (contract 1.3).
+type resultAttr struct {
+	Set       int    `json:"set"`
+	Variation int    `json:"variation"`
+	Type      string `json:"type"`
+	Value     any    `json:"value"`
 }
 
 // fileEntry is a file of a file operation's result.
@@ -506,6 +516,7 @@ func requireDocker(t testing.TB) {
 var knownBugs = map[string]map[string]string{
 	"dscsystems": {
 		"freeze-clear-without-frozen": "v0.8.1: FREEZE AND CLEAR leaves a counter that has no frozen counter of the same index uncleared",
+		"multidrop-lost-request":      "v0.8.1 (intermittent): serving several outstations on one port, a request on a new connection that arrives before the station's session re-attached is lost",
 	},
 }
 

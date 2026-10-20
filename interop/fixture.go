@@ -33,6 +33,9 @@ type fixture struct {
 		NeedTime           bool   `json:"needTime"`
 		ColdRestartDelayMs *int   `json:"coldRestartDelayMs"`
 		WarmRestartDelayMs *int   `json:"warmRestartDelayMs"`
+		// Contract 1.3.
+		MaxControlsPerRequest int `json:"maxControlsPerRequest"`
+		EventBufferSize       int `json:"eventBufferSize"`
 	} `json:"outstation"`
 	BinaryInputs    []fixturePoint `json:"binaryInputs"`
 	DoubleBitInputs []fixturePoint `json:"doubleBitInputs"`
@@ -47,6 +50,34 @@ type fixture struct {
 	// Contract 1.2, the extended fixture.
 	FrozenAnalogInputs []fixturePoint    `json:"frozenAnalogInputs"`
 	TimeAndIntervals   []fixtureInterval `json:"timeAndIntervals"`
+	// Contract 1.3, the attributes fixture.
+	DeviceAttributes []fixtureAttribute `json:"deviceAttributes"`
+}
+
+// fixtureAttribute is a device attribute (group 0).
+type fixtureAttribute struct {
+	Set       uint16          `json:"set"`
+	Variation uint8           `json:"variation"`
+	Type      string          `json:"type"`
+	Value     json.RawMessage `json:"value"`
+	Writable  bool            `json:"writable"`
+}
+
+func (a fixtureAttribute) attribute() app.Attribute {
+	switch a.Type {
+	case "unsignedInt":
+		var v uint32
+		_ = json.Unmarshal(a.Value, &v)
+		return app.UintAttribute(v)
+	case "signedInt":
+		var v int32
+		_ = json.Unmarshal(a.Value, &v)
+		return app.IntAttribute(v)
+	default:
+		var v string
+		_ = json.Unmarshal(a.Value, &v)
+		return app.StringAttribute(v)
+	}
 }
 
 // fixtureInterval is a time and interval (g50v4).
@@ -182,6 +213,7 @@ type station struct {
 	mu      sync.Mutex
 	times   []time.Time
 	restart []bool
+	managed []app.FunctionCode
 }
 
 func newStation(f *fixture, opts ...server.Option) (*station, error) {
@@ -200,6 +232,31 @@ func newStation(f *fixture, opts ...server.Option) (*station, error) {
 	if len(f.Files) > 0 || len(f.Directories) > 0 {
 		st.files = newFileStore(f)
 		o = append(o, server.WithFileServer(st.files))
+	}
+	if n := f.Outstation.MaxControlsPerRequest; n > 0 {
+		o = append(o, server.WithMaxControls(n))
+	}
+	if n := f.Outstation.EventBufferSize; n > 0 {
+		limits := map[server.PointType]int{}
+		for _, t := range []server.PointType{server.BinaryInput, server.DoubleBitInput, server.BinaryOutput, server.Counter,
+			server.FrozenCounter, server.AnalogInput, server.FrozenAnalogInput, server.AnalogOutput, server.OctetString} {
+			limits[t] = n
+		}
+		o = append(o, server.WithEventLimits(limits))
+	}
+	sets := map[uint16]map[uint8]app.Attribute{}
+	writable := map[uint16][]uint8{}
+	for _, a := range f.DeviceAttributes {
+		if sets[a.Set] == nil {
+			sets[a.Set] = map[uint8]app.Attribute{}
+		}
+		sets[a.Set][a.Variation] = a.attribute()
+		if a.Writable {
+			writable[a.Set] = append(writable[a.Set], a.Variation)
+		}
+	}
+	for set, attrs := range sets {
+		o = append(o, server.WithAttributeSet(set, attrs, writable[set]...))
 	}
 	srv, err := server.New(append(o, opts...)...)
 	if err != nil {
@@ -365,6 +422,15 @@ func (st *station) Restart(_ context.Context, cold bool) (time.Duration, error) 
 	return time.Duration(*d) * time.Millisecond, nil
 }
 
+// Application functions (management, contract 1.3): accepted and
+// recorded.
+func (st *station) Application(_ context.Context, fc app.FunctionCode, _ []app.Header) app.IIN {
+	st.mu.Lock()
+	st.managed = append(st.managed, fc)
+	st.mu.Unlock()
+	return 0
+}
+
 func (st *station) SetTime(_ context.Context, t time.Time) {
 	st.mu.Lock()
 	st.times = append(st.times, t)
@@ -406,7 +472,25 @@ type fileStore struct {
 	files   map[string][]byte
 	dirs    map[string]bool
 	created app.Timestamp
+	// user and password, when set, must be authenticated (AUTHENTICATE_FILE)
+	// before an open or delete, with the key it answers.
+	user, password string
 }
+
+// fileKey is the key AUTHENTICATE_FILE answers to the right credentials.
+const fileKey = 0x5EC12E7
+
+func (s *fileStore) requireAuth(user, password string) { s.user, s.password = user, password }
+
+func (s *fileStore) Authenticate(_ context.Context, user, password string) (uint32, bool) {
+	ok := s.user != "" && user == s.user && password == s.password
+	if !ok {
+		return 0, false
+	}
+	return fileKey, true
+}
+
+func (s *fileStore) authorized(key uint32) bool { return s.user == "" || key == fileKey }
 
 func newFileStore(f *fixture) *fileStore {
 	s := &fileStore{files: map[string][]byte{}, dirs: map[string]bool{"/": true}, created: app.TimestampOf(time.Now())}
@@ -442,6 +526,9 @@ func (s *fileStore) descriptor(name string, full bool) app.FileDescriptor {
 func (s *fileStore) Open(_ context.Context, req server.FileRequest) (server.File, app.FileStatus) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.authorized(req.AuthKey) {
+		return nil, app.FilePermissionDenied
+	}
 	name := fileName(req.Name)
 	switch req.Mode {
 	case app.FileModeRead:
@@ -486,9 +573,12 @@ func (s *fileStore) Open(_ context.Context, req server.FileRequest) (server.File
 	}
 }
 
-func (s *fileStore) Delete(_ context.Context, name string, _ uint32) app.FileStatus {
+func (s *fileStore) Delete(_ context.Context, name string, key uint32) app.FileStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.authorized(key) {
+		return app.FilePermissionDenied
+	}
 	name = fileName(name)
 	if _, ok := s.files[name]; !ok {
 		if s.dirs[name] {
