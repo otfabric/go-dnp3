@@ -201,4 +201,4 @@ and reports one as a g122 event every `StatisticsThreshold` increments.
 | Outstation fuzzing | arbitrary request fragments into an outstation with secure authentication, file transfer and every point type (`FuzzOutstation`) | `server` |
 | End to end | master against outstation for every function; the dual end point; concurrency, many masters, parallel masters with secure authentication and files, reconnects, rapid open and close, cancellation | `e2e` |
 | Chaos | a proxy corrupting, splitting and delaying octets and killing connections while every kind of request runs, with and without secure authentication: no data that was not sent, no control executed more often than sent, recovery, no goroutine left | `e2e/chaos_test.go` |
-| Interop | both roles against stepfunc dnp3, opendnp3 and DSC Systems go-dnp3, and as outstation against dnp3py | `interop` (build tag) |
+| Interop | both roles against stepfunc dnp3, opendnp3 and DSC go-dnp3, and as outstation against dnp3py | `interop` (build tag) |

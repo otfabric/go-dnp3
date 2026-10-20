@@ -43,7 +43,7 @@ The library provides:
   overflow), periodic polls, structured logging, metrics hooks, TCP, TLS,
   UDP and serial (any byte stream)
 - **Verified against third-party stacks**: as master and as outstation
-  against Step Function I/O's dnp3, opendnp3, DSC Systems' go-dnp3 and
+  against Step Function I/O's dnp3, opendnp3, DSC go-dnp3 and
   dnp3py, in the containers of
   [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.4.1,
   over TCP, TLS, UDP and serial, with file transfer and Secure
@@ -53,7 +53,7 @@ The library provides:
 
 ## Table of contents
 
-- [go-dnp3 vs stepfunc dnp3, opendnp3 and DSC Systems go-dnp3](#go-dnp3-vs-stepfunc-dnp3-opendnp3-and-dsc-systems-go-dnp3)
+- [go-dnp3 vs stepfunc dnp3, opendnp3 and DSC go-dnp3](#go-dnp3-vs-stepfunc-dnp3-opendnp3-and-dsc-go-dnp3)
 - [Install](#install)
 - [Project structure](#project-structure)
 - [Client quickstart](#client-quickstart)
@@ -68,13 +68,13 @@ The library provides:
 - [Limitations](#limitations)
 - [License](#license)
 
-## go-dnp3 vs stepfunc dnp3, opendnp3 and DSC Systems go-dnp3
+## go-dnp3 vs stepfunc dnp3, opendnp3 and DSC go-dnp3
 
 go-dnp3 is tested against three other implementations (see
 [Interop tests](#interop-tests)). All are good libraries; this table shows
 where they differ so you can pick the right one for your project.
 
-| Capability | otfabric/go-dnp3 | stepfunc dnp3 | opendnp3 | DSC Systems go-dnp3 |
+| Capability | otfabric/go-dnp3 | stepfunc dnp3 | opendnp3 | DSC go-dnp3 |
 |---|:---:|:---:|:---:|:---:|
 | Language | Go | Rust (C, C++, .NET, Java bindings) | C++ (Java, .NET bindings) | Go |
 | License | MIT | non-commercial; commercial licence available | Apache-2.0 | GPL-3.0 |
@@ -103,7 +103,7 @@ where they differ so you can pick the right one for your project.
 not exercise it, which may be the adapter's limit rather than the library's.
 
 ✅ = available · — = not available or not documented. For stepfunc dnp3
-1.7.0, opendnp3 3.1.2 and DSC Systems go-dnp3 v0.8.1, the versions go-dnp3
+1.7.0, opendnp3 3.1.2 and DSC go-dnp3 v0.8.1, the versions go-dnp3
 is tested against, from their public sources, their documentation and the
 [dnp3-interop capability records](https://github.com/otfabric/dnp3-interop),
 as of October 2026. If you spot an inaccuracy, please
@@ -321,7 +321,7 @@ pinned by digest:
 |-----------|---------|---------|--------------|
 | Step Function I/O dnp3 | 1.7.0 | non-commercial | master and outstation |
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
-| DSC Systems go-dnp3 | v0.8.1 | GPL-3.0 | master and outstation |
+| DSC go-dnp3 | v0.8.1 | GPL-3.0 | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
 
 Both directions cover the integrity poll against the fixture's values and

@@ -81,7 +81,7 @@ func TestClientSecureAuth(t *testing.T) {
 			}
 			operate(c, app.OpLatchOff)
 			// The outstation's security statistics (g121): what it counted
-			// of this session. DSC Systems' outstation answers variation 1
+			// of this session. DSC go-dnp3's outstation answers variation 1
 			// only, not variation 0.
 			res, err := c.Read(tctx(t), app.AllObjects(app.G121V1))
 			if err != nil {
