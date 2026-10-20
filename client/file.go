@@ -24,6 +24,9 @@ type FileOptions struct {
 	AuthKey uint32
 	// Permissions of a file created by WriteFile.
 	Permissions app.Permissions
+	// Append makes WriteFile add to the end of the file (mode APPEND)
+	// instead of replacing it.
+	Append bool
 }
 
 const fileRequestID = 1
@@ -140,10 +143,15 @@ func (c *Client) abortQuietly(handle uint32) {
 	}
 }
 
-// WriteFile writes size octets from r to the file name on the outstation
-// and returns the number of octets written.
+// WriteFile writes size octets from r to the file name on the outstation,
+// or appends them with FileOptions.Append, and returns the number of
+// octets written.
 func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size uint32, o FileOptions) (int64, error) {
-	st, err := c.openFile(ctx, name, app.FileModeWrite, size, o)
+	mode := app.FileModeWrite
+	if o.Append {
+		mode = app.FileModeAppend
+	}
+	st, err := c.openFile(ctx, name, mode, size, o)
 	if err != nil {
 		return 0, err
 	}

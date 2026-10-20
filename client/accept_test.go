@@ -9,11 +9,13 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/link"
 	"github.com/otfabric/go-dnp3/server"
 )
 
@@ -109,5 +111,75 @@ func TestUDPStream(t *testing.T) {
 	// An address that does not resolve fails to open.
 	if _, _, err := UDP("no-such-host.invalid:20000")(testCtx(t)); err == nil {
 		t.Fatal("UDP to an address that does not resolve")
+	}
+}
+
+func TestBroadcast(t *testing.T) {
+	var executed atomic.Int64
+	accept := server.HandlerFunc(func(_ context.Context, _ server.Command, op server.OperateType) app.CommandStatus {
+		if op == server.DirectOperateNoAck {
+			executed.Add(1)
+		}
+		return app.StatusSuccess
+	})
+	_, addr := outstation(t, server.WithHandler(accept))
+	c, err := Dial(testCtx(t), addr, WithAutoIntegrity(false), WithMetrics(&authResponses{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	crob := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})
+	if err := c.Broadcast(testCtx(t), link.BroadcastNoConfirm, app.FuncDirectOperateNoAck, crob); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the broadcast control", func() bool { return executed.Load() == 1 })
+	// The outstation reports the broadcast in its next response.
+	res, err := c.Read(testCtx(t), app.ClassHeaders(0)...)
+	if err != nil || !res.IIN.Has(app.IINBroadcast) {
+		t.Fatalf("IIN after the broadcast: %v %v", res, err)
+	}
+	if err := c.Broadcast(testCtx(t), 10, app.FuncDirectOperateNoAck, crob); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatalf("broadcast to a station address: %v", err)
+	}
+	if err := c.Broadcast(testCtx(t), link.BroadcastNoConfirm, app.FuncRead, app.ClassHeaders(0)...); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatalf("broadcast READ: %v", err)
+	}
+	if err := c.Broadcast(testCtx(t), link.BroadcastNoConfirm, app.FuncWrite, app.Header{GV: app.G12V1, Qualifier: app.Qual1ByteStartStop,
+		Objects: []app.Object{{Value: app.Binary{}}}}); err == nil {
+		t.Fatal("broadcast of a request that does not encode")
+	}
+	n, err := New("127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = n.Close() }()
+	if err := n.Broadcast(testCtx(t), link.BroadcastNoConfirm, app.FuncDirectOperateNoAck, crob); !errors.Is(err, dnp3.ErrNotConnected) {
+		t.Fatalf("broadcast without a connection: %v", err)
+	}
+}
+
+func TestAttributeSetsClient(t *testing.T) {
+	_, addr := outstation(t,
+		server.WithAttributes(map[uint8]app.Attribute{app.AttrManufacturerName: app.StringAttribute("zero")}),
+		server.WithAttributeSet(3, map[uint8]app.Attribute{10: app.StringAttribute("three")}, 10))
+	c, err := Dial(testCtx(t), addr, WithAutoIntegrity(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if got, err := c.ReadAttributes(testCtx(t), app.AttrManufacturerName); err != nil || string(got[app.AttrManufacturerName].Data) != "zero" {
+		t.Fatalf("set 0: %v %v", got, err)
+	}
+	if err := c.WriteAttributeSet(testCtx(t), 3, 10, app.StringAttribute("changed")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := c.ReadAttributeSet(testCtx(t), 3, 10); err != nil || string(got[10].Data) != "changed" {
+		t.Fatalf("set 3 after the write: %v %v", got, err)
+	}
+	if _, err := c.ReadAttributeSet(testCtx(t), 4, 10); err == nil {
+		t.Fatal("read of a set that does not exist")
+	}
+	if err := c.WriteAttribute(testCtx(t), app.AttrManufacturerName, app.StringAttribute("x")); err == nil {
+		t.Fatal("set 0 written without a WriteHandler")
 	}
 }

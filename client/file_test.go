@@ -48,11 +48,15 @@ func (s *files) Open(_ context.Context, req server.FileRequest) (server.File, ap
 			return nil, app.FileNotFound
 		}
 		return &file{r: bytes.NewReader(data), size: len(data)}, app.FileSuccess
-	case app.FileModeWrite:
+	case app.FileModeWrite, app.FileModeAppend:
 		if req.AuthKey != 0 && req.AuthKey != 42 {
 			return nil, app.FilePermissionDenied
 		}
-		return &file{s: s, name: req.Name}, app.FileSuccess
+		f := &file{s: s, name: req.Name}
+		if req.Mode == app.FileModeAppend {
+			f.w.Write(s.m[req.Name])
+		}
+		return f, app.FileSuccess
 	default:
 		return nil, app.FileInvalidMode
 	}
@@ -137,6 +141,15 @@ func TestFileTransfer(t *testing.T) {
 	payload := bytes.Repeat([]byte("payload "), 300)
 	if n, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(payload), uint32(len(payload)), FileOptions{AuthKey: key, MaxBlockSize: 256}); err != nil || n != int64(len(payload)) || !bytes.Equal(fs.get("/up.bin"), payload) {
 		t.Fatalf("write: %d %v", n, err)
+	}
+	tail := []byte(" and more")
+	if _, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(tail), uint32(len(tail)), FileOptions{AuthKey: key, Append: true}); err != nil ||
+		!bytes.Equal(fs.get("/up.bin"), append(append([]byte(nil), payload...), tail...)) {
+		t.Fatalf("append: %v, %d octets", err, len(fs.get("/up.bin")))
+	}
+	_ = fs.Delete(ctx, "/up.bin", 0)
+	if _, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(payload), uint32(len(payload)), FileOptions{AuthKey: key}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := c.WriteFile(ctx, "/x", bytes.NewReader([]byte{1}), 1, FileOptions{AuthKey: 7}); !errors.As(err, &fe) || fe.Status != app.FilePermissionDenied {
 		t.Fatalf("write with a wrong key: %v", err)

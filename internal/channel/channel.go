@@ -219,7 +219,14 @@ func (c *Channel) readLoop() {
 		}
 		switch {
 		case f.Dest.Broadcast() || f.Dest == link.SelfAddress:
-			for _, s := range c.broadcastTargets(f.Src) {
+			targets := c.broadcastTargets(f.Src)
+			if len(targets) == 0 && c.cfg.Accept != nil {
+				// The first frame of a master may be a broadcast.
+				if s := c.cfg.Accept(f.Dest, f.Src); s != nil {
+					targets = append(targets, s)
+				}
+			}
+			for _, s := range targets {
 				s.handleFrame(f)
 			}
 		default:

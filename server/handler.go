@@ -118,6 +118,14 @@ type ApplicationHandler interface {
 	Application(ctx context.Context, fc app.FunctionCode, headers []app.Header) app.IIN
 }
 
+// AttributeSetWriteHandler is an optional interface of the [Handler]: it is
+// told of a write of a writable device attribute of a set of
+// WithAttributeSet before the outstation stores it, and refuses it with an
+// error (answered with PARAMETER_ERROR).
+type AttributeSetWriteHandler interface {
+	WriteAttributeSet(ctx context.Context, set uint16, variation uint8, a app.Attribute) error
+}
+
 // WriteHandler is an optional interface of the [Handler] for WRITE
 // requests on objects the outstation does not handle itself: device
 // attributes (group 0) and octet strings (group 110). The outstation
