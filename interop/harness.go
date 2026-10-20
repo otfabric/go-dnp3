@@ -28,17 +28,17 @@ type adapter struct {
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.4.0 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
+// otfabric/dnp3-interop v0.4.1 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
 // Systems go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
 // so that a run is reproducible. Moving to another release of
 // dnp3-interop means changing these constants; the Makefile and the
 // interop workflow follow.
 const (
-	interopRelease         = "v0.4.0"
-	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:cd78c25082643d9855b9280c9c673bac7703083908a5e56cd59f82013a4d994e"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:bc290f9839308eed12149dc338f5ea5d591ae85c01fdd60c192d0c12dfcd46b2"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:059ba86fcbb9a636c933c7cf38ef69cbfd00442133763209824f6809527aee02"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:1fa24c721d86aabcd0ab2a0786cce2e9fa4aa3602fff235a780d6f2659e142d0"
+	interopRelease         = "v0.4.1"
+	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:84f32f97a35df004e6585d2a874e213d5c0a638e7e557da250fe6e7f5cc4bf9b"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a706e024958394b53f1df449ea669c0a4020e4779888db18a7e2b8abd1e1e74e"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:fc0796b9ab72efbf966dfbf1d78e1cb09730d5e2860c679d335df68e3f367eee"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:d79d17d50ffeeb8595d304a76dc739a0a1fa915e88874cca53319002dbca6dc4"
 )
 
 // adapters returns the reference implementations to test against. The image
@@ -516,7 +516,6 @@ func requireDocker(t testing.TB) {
 var knownBugs = map[string]map[string]string{
 	"dscsystems": {
 		"freeze-clear-without-frozen": "v0.8.1: FREEZE AND CLEAR leaves a counter that has no frozen counter of the same index uncleared",
-		"multidrop-lost-request":      "v0.8.1 (intermittent): serving several outstations on one port, a request on a new connection that arrives before the station's session re-attached is lost",
 	},
 }
 

@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"slices"
@@ -640,9 +639,6 @@ func TestClientSeveralOutstations(t *testing.T) {
 					t.Fatalf("outstation %d: %v", base+i, err)
 				}
 				res, err := c.IntegrityPoll(ctx)
-				if errors.Is(err, dnp3.ErrTimeout) && knownBug(t, a, "multidrop-lost-request") {
-					res, err = c.IntegrityPoll(ctx)
-				}
 				if err != nil {
 					t.Errorf("outstation %d: %v", base+i, err)
 				} else {

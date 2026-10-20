@@ -25,7 +25,7 @@ What dnp3-interop's contract 1.3 tests, in both roles. No breaking change.
 
 ### Tests
 
-- Interop against dnp3-interop v0.4.0 (contract 1.3), both directions where a reference has the feature: device attributes, several controls in one request, freeze at time and analog freeze, deadbands, file append and authentication, event buffer overflow, link confirms and keep-alive, broadcast, the management functions, several outstations behind one port.
+- Interop against dnp3-interop v0.4.1 (contract 1.3), both directions where a reference has the feature: device attributes, several controls in one request, freeze at time and analog freeze, deadbands, file append and authentication, event buffer overflow, link confirms and keep-alive, broadcast, the management functions, several outstations behind one port.
 
 ### Fixed
 
