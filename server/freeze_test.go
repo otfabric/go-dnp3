@@ -338,3 +338,34 @@ func TestFreezeKinds(t *testing.T) {
 		t.Fatalf("octet string after the write: %v", v)
 	}
 }
+
+// TestFittingSmallRoom: when not even the header fits the room left in a
+// fragment, no object fits; pack then starts a new fragment instead of
+// slicing out of range (a panic seen once in CI).
+func TestFittingSmallRoom(t *testing.T) {
+	h := app.Ranged(app.G30V5, 300, app.Analog{Value: 1}, app.Analog{Value: 2})
+	for room := 1; room < 12; room++ {
+		if k := fitting(h, room); k < 0 || k > 2 {
+			t.Fatalf("room %d: %d objects fit", room, k)
+		}
+	}
+	// A fragment left with a few octets of room: pack does not panic and
+	// keeps every object.
+	items := []item{
+		{h: app.Ranged(app.G30V5, 0, app.Analog{Value: 1}, app.Analog{Value: 2}, app.Analog{Value: 3})},
+		{h: app.Ranged(app.G30V5, 300, app.Analog{Value: 4}, app.Analog{Value: 5})},
+	}
+	first, _ := items[0].h.EncodedLen()
+	for slack := 0; slack < 12; slack++ {
+		plans, dropped := pack(items, responseHeaderLen+first+slack)
+		n := 0
+		for _, p := range plans {
+			for _, h := range p.headers {
+				n += len(h.Objects)
+			}
+		}
+		if dropped != 0 || n != 5 {
+			t.Fatalf("slack %d: %d objects in %d fragments, %d dropped", slack, n, len(plans), dropped)
+		}
+	}
+}

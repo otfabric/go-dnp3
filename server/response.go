@@ -120,8 +120,9 @@ func fitting(h app.Header, room int) int {
 	if sized(n) <= room {
 		return n
 	}
-	// sized is monotonic in k: the largest k with sized(k) <= room.
-	return sort.Search(n+1, func(k int) bool { return sized(k) > room }) - 1
+	// sized is monotonic in k: the largest k with sized(k) <= room. When
+	// not even the header without objects fits, that is none: 0, not -1.
+	return max(0, sort.Search(n+1, func(k int) bool { return sized(k) > room })-1)
 }
 
 // normalize sets the range and count fields of h from its objects and
