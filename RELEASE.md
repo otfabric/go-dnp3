@@ -1,8 +1,8 @@
 # go-dnp3 Releases
 
-## Unreleased (v0.1.0)
+## v0.1.0
 
-**Date:** not released
+**Date:** 2026-10-20
 **Previous release:** none
 
 ## Summary
