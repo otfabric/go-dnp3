@@ -62,9 +62,9 @@ func (c *Client) Request(ctx context.Context, fc app.FunctionCode, headers ...ap
 }
 
 // Broadcast sends a request to every outstation on the channel, at the
-// broadcast address dest: link.BroadcastNoConfirm (0xFFFF),
-// link.BroadcastConfirm (0xFFFE, the outstations confirm the fragment as
-// requested) or link.BroadcastOptionalConfirm (0xFFFD). Nobody answers;
+// broadcast address dest: link.BroadcastNoConfirm (0xFFFD),
+// link.BroadcastConfirm (0xFFFE, confirmation mandatory) or
+// link.BroadcastOptionalConfirm (0xFFFF, confirmation optional). Nobody answers;
 // each outstation executes the request and sets IIN1.0 BROADCAST in its
 // next response. Requests that need an answer (READ, SELECT, OPERATE, the
 // file and authentication functions) cannot be broadcast.

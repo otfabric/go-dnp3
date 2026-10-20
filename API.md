@@ -124,7 +124,7 @@ one.
 | `Write(ctx, headers...)` | WRITE |
 | `Request(ctx, fc, headers...)` | Any function code |
 | `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70) with `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`) |
-| `Broadcast(ctx, dest, fc, headers...)` | A request to a broadcast address (`link.BroadcastNoConfirm`, `BroadcastConfirm`, `BroadcastOptionalConfirm`); no answer, IIN1.0 in the next response |
+| `Broadcast(ctx, dest, fc, headers...)` | A request to a broadcast address (`link.BroadcastNoConfirm` 0xFFFD, `BroadcastConfirm` 0xFFFE, `BroadcastOptionalConfirm` 0xFFFF); no answer, IIN1.0 in the next response |
 
 Commands: `Command{Index, Value, GV}`, built with `CROB(index, op, on, off)`
 and `SetPoint(index, value)`; `CommandMode`: `SelectBeforeOperate`,

@@ -29,6 +29,7 @@ What dnp3-interop's contract 1.3 tests, in both roles. No breaking change.
 
 ### Fixed
 
+- **The values of `link.BroadcastConfirm` and `link.BroadcastOptionalConfirm` were swapped.** IEEE 1815 has 0xFFFE for a broadcast whose confirmation is mandatory and 0xFFFF for one where it is optional, as opendnp3 and DSC go-dnp3 do; go-dnp3 had them the other way round. `BroadcastNoConfirm` (0xFFFD) was right. go-dnp3 treats the three alike, so only code that compared against the values sees a difference.
 - **With secure authentication, a critical broadcast was carried out unauthenticated.** A broadcast cannot be challenged, so the outstation executed a critical request sent to a broadcast address (a control, a freeze, a write) without any MAC; v1.0.0 has this too. Such a request is now carried out only in aggressive mode with a valid MAC; otherwise it is discarded, counted as a discarded message and not answered.
 - **An outstation ignored a broadcast that was the master's first frame**: it had no association for the master yet. It now accepts the master on a broadcast frame as on any other.
 
