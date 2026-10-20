@@ -67,7 +67,7 @@ The master for one outstation.
 |--------|---------|
 | `New(addr, opts...)` | A client; not connected yet. The port defaults to 20000 |
 | `Dial(ctx, addr, opts...)` | `New` and `Connect` |
-| `(*Client).Connect(ctx)` | Open the channel and run the startup sequence |
+| `(*Client).Connect(ctx)` | Open the channel and run the startup sequence; when the sequence fails, the channel is closed and the client is disconnected |
 | `(*Client).Close()` | Close, stop reconnecting and the tasks; waits for the client's goroutines |
 | `(*Client).State()`, `Addr()`, `Outstation()` | Accessors |
 
@@ -80,7 +80,7 @@ The master for one outstation.
 | `WithStateHandler(func(State, error))` | none | Channel state changes |
 | `WithLogger`, `WithMetrics` | silent | See OBSERVABILITY.md |
 | `WithDialer(Dialer)` | `net.Dialer` | TCP dialer |
-| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`), a pipe |
+| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`), an outstation that connects (`Accept(net.Listener)`, the dual end point), a pipe |
 | `WithTLS(*tls.Config)` | off | TLS |
 | `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`) |
 | `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`) |
@@ -94,8 +94,9 @@ The master for one outstation.
 | `WithAutoEventPoll(bool)` | off | Poll the classes the IIN reports events for |
 | `WithPoll(Poll)` | none | A periodic READ (`Interval`, `Headers`); repeatable |
 | `WithQueueLimit(n)` | 64 | Requests that may wait for their turn |
-| `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key, challenge replies |
+| `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key (on connect, at the interval, and again soon after an authentication failure, with a backoff from 1 s while there are no keys), challenge replies |
 | `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed |
+| `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, after the first challenge; `New` refuses it without `WithSecureAuthentication` |
 
 ### Requests
 
@@ -148,6 +149,8 @@ The outstation.
 | `(*Server).ServeConn(io.ReadWriteCloser, net.Addr)` | Serve one stream: serial, a pipe |
 | `(*Server).ServeUDP(net.PacketConn)` | DNP3 over UDP; answers the address that sent last |
 | `(*Server).ServeUDPTo(net.PacketConn, net.Addr)` | The same, with the master's address known from the start |
+| `(*Server).DialAndServe(ctx, addr, Redial)` | The dual end point: connect to the master, serve, reconnect (`Redial{MinDelay, MaxDelay}`, 1 s and 1 min); `ctx.Err()` when ctx ends, `nil` after `Close` |
+| `(*Server).Address()` | The outstation's link address |
 | `(*Server).Database()` | The points |
 | `(*Server).SetIndications(bits, on)` | LOCAL_CONTROL, DEVICE_TROUBLE, CONFIG_CORRUPT |
 | `(*Server).Restart()` | Behave as after a restart |
@@ -164,7 +167,7 @@ The outstation.
 | `WithSelfAddress(bool)` | off | Accept the self address 0xFFFC |
 | `WithHandler(Handler)` | `NopHandler` | Controls, and the optional handler interfaces |
 | `WithLogger`, `WithMetrics` | silent | See OBSERVABILITY.md |
-| `WithTLS(*tls.Config)` | off | TLS for `ListenAndServe` |
+| `WithTLS(*tls.Config)` | off | TLS for `ListenAndServe`, and the TLS client configuration of `DialAndServe` |
 | `WithMaxConnections(n)` | 16 | Concurrent connections |
 | `WithMaxFragment(tx, rx)` | 2048, 2048 | Largest response sent, request reassembled |
 | `WithConfirmTimeout(d)` | 5 s | Wait for an application confirmation |
@@ -176,14 +179,17 @@ The outstation.
 | `WithTimeSync(interval)` | never | NEED_TIME at start and after the interval |
 | `WithAttributes(map[uint8]app.Attribute)` | none | Device attributes of set 0 |
 | `WithFileServer(FileServer)` | none | File transfer |
-| `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests (`User`, `Critical`, default `DefaultCritical`) |
+| `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 10 s), `StatisticsClass` (default 1), `StatisticsThreshold` (default 10) |
+
+Constants: `DefaultPort` (20000), `DefaultEventLimit` (100),
+`DefaultReplyTimeout`; the variable `DefaultCritical`.
 
 ### Database
 
 | Symbol | Meaning |
 |--------|---------|
-| `PointType` | `BinaryInput`, `DoubleBitInput`, `BinaryOutput`, `Counter`, `FrozenCounter`, `AnalogInput`, `FrozenAnalogInput`, `AnalogOutput`, `OctetString` |
-| `PointConfig` | `Class`, `StaticVariation`, `EventVariation`, `Deadband`, `ExcludeFromClass0` |
+| `PointType` | `BinaryInput`, `DoubleBitInput`, `BinaryOutput`, `Counter`, `FrozenCounter`, `AnalogInput`, `FrozenAnalogInput`, `AnalogOutput`, `OctetString`; and, kept by the outstation and refused by `Add`, `SecurityStatistic` (per master, with secure authentication), `BinaryOutputCommand`, `AnalogOutputCommand` (command events) |
+| `PointConfig` | `Class`, `StaticVariation`, `EventVariation`, `Deadband`, `ExcludeFromClass0`; for outputs `CommandEventClass`, `CommandEventVariation` (g13v2, g43v3) |
 | `(*Database).Add`, `Remove`, `Get`, `Len` | Points |
 | `(*Database).Update(t, index, value, mode)` | `EventOnChange`, `EventForce`, `EventSuppress` |
 | `(*Database).Batch(func(*Batch) error)` | Updates whose events are reported together |
@@ -253,6 +259,9 @@ directories.
 `KeyWrap(kek, plaintext)`, `KeyUnwrap(kek, wrapped)` (RFC 3394, `ErrKeyWrap`),
 `KeyChangeData(control, monitoring, keyStatus)`, `ParseKeyChangeData(plain, keyStatus...)`,
 `User{Number, UpdateKey, Key, MAC}` (`Algorithm`, `KeyWrapAlgorithm`, `SessionKeyLen`, `Validate`).
+`Statistic` (`StatUnexpectedMessages` ... `StatRekeysDueToRestarts`, `NumStatistics`, `String`): the
+security statistics as g121 indexes. `DefaultCritical`: the function codes challenged by default
+and sent in aggressive mode. `AggressiveOverhead`: what aggressive mode adds to a request.
 
 `app.AppendObjectValue(b, gv, v)` encodes one object without header, as a
 free-format object carries it.

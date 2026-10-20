@@ -33,8 +33,10 @@ The library provides:
   included
 - **Secure Authentication v5** (IEEE 1815-2012 clause 7): the session key
   change with AES key wrap under a pre-shared update key, on every
-  connection and at an interval; the outstation challenges critical
-  requests, the master answers with an HMAC
+  connection, at an interval and after an authentication failure; the
+  outstation challenges critical requests, the master answers with an
+  HMAC or sends them in aggressive mode; the outstation keeps the
+  security statistics (g121, g122)
 - What production use needs: `context.Context` on every call, automatic
   reconnect with backoff, retries for the requests that are safe to repeat,
   automatic handling of the internal indications (restart, time, events,
@@ -84,16 +86,18 @@ where they differ so you can pick the right one for your project.
 | LAN and non-LAN time synchronization | ✅ | ✅ | ✅ | ✅ |
 | Assign class, as outstation | ✅ | — ¹ | ✅ | ✅ |
 | File transfer (g70) | ✅ both roles | master | — | ✅ |
-| Secure Authentication v5 | ✅ session key change, challenges | — | — | symmetric subset |
+| Secure Authentication v5 | ✅ session key change, challenges, aggressive mode, statistics | — | — | symmetric subset with statistics |
+| Dual end point (outstation dials) | ✅ | not documented | — | not documented |
 | Device attributes (g0) | ✅ both roles | ✅ | not documented | not documented |
-| TLS | ✅ `crypto/tls` | ✅ | ✅ | not documented |
-| Serial | ✅ any byte stream | ✅ | ✅ | not documented |
+| TLS | ✅ `crypto/tls` | ✅ | ✅ | ✅ |
+| UDP | ✅ | ✅ | ✅ | ✅ |
+| Serial | ✅ any byte stream | ✅ | ✅ | ✅ |
 | Blocking request methods returning the response | ✅ | — async | — callbacks | not documented |
 | Cancellation and deadlines per call | ✅ `context.Context` | futures | — | not documented |
 | Structured logging | ✅ `log/slog` | ✅ `tracing` | — own logger | not documented |
 | Metrics hooks | ✅ | not documented | — | not documented |
 | Dependencies | none | Tokio and others | ASIO | not documented |
-| Cross-tested against other stacks in CI | ✅ against all three | not documented | not documented | ✅ opendnp3 (its notes) |
+| Cross-tested against other stacks in CI | ✅ against all three and dnp3py, every feature they share ([coverage](INTEROPERABILITY.md#interop-coverage)) | not documented | not documented | ✅ opendnp3 (its notes) |
 
 ¹ As declared by its adapter in dnp3-interop: the reference container does
 not exercise it, which may be the adapter's limit rather than the library's.
@@ -112,7 +116,8 @@ correct it.
 go get github.com/otfabric/go-dnp3
 ```
 
-Requires Go 1.23 or later.
+Requires Go 1.23 or later. From v1.0.0 the API follows semantic
+versioning: a breaking change comes only with a new major version.
 
 ## Project structure
 
@@ -186,7 +191,7 @@ c, err := client.Dial(ctx, addr,
 ```go
 breaker := server.HandlerFunc(func(ctx context.Context, c server.Command, op server.OperateType) app.CommandStatus {
     crob, ok := c.Value.(app.CROB)
-    if !ok || c.Index != 0 {
+    if !ok || c.Index != 0 || (crob.Op != app.OpLatchOn && crob.Op != app.OpLatchOff) {
         return app.StatusNotSupported
     }
     // ... operate the device ...
@@ -223,7 +228,7 @@ log.Fatal(srv.ListenAndServe(":20000"))
 | Internal indications | clears DEVICE_RESTART, integrity poll on restart and overflow, time sync on NEED_TIME, event poll on class bits | DEVICE_RESTART, NEED_TIME, class events, overflow, broadcast and the request errors maintained; `SetIndications` for local control, device trouble |
 | Flow control | one request at a time, as DNP3 requires; `WithQueueLimit` bounds the waiting ones | per-type event limits with oldest-first discard; bounded receive queues |
 | Observability | `Logger`, `FieldLogger`, `ContextLogger`, `log/slog`; `Metrics`, `RequestMetrics`; state handler | `Logger`; `Metrics`, `ServerMetrics` |
-| Security | TLS, Secure Authentication v5 | TLS, Secure Authentication v5, master address filter |
+| Security | TLS, Secure Authentication v5 with aggressive mode and re-keying after a failure | TLS, Secure Authentication v5 with a reply timeout and security statistics, master address filter |
 
 ## Transports
 
@@ -233,6 +238,7 @@ log.Fatal(srv.ListenAndServe(":20000"))
 | TLS | `WithTLS` | `WithTLS` with `ListenAndServe`, or a TLS listener with `Serve` |
 | UDP | `WithStream(client.UDP(addr))` | `ServeUDP`, or `ServeUDPTo` with the master's address |
 | Serial, or any byte stream | `WithStream` with an opener that returns the port | `ServeConn` |
+| Dual end point (the outstation connects) | `WithStream(client.Accept(l))` | `DialAndServe(ctx, masterAddr, server.Redial{})` |
 
 Serial ports are not opened by this module, so that it has no
 dependencies: open the port with a serial library, for example
@@ -279,8 +285,9 @@ outstation did report is not lost. See [ERRORS.md](ERRORS.md).
 
 ## Examples
 
-Runnable programs under [examples/](examples/): six self-contained ones
-(`quickstart`, `commands`, `events`, `files`, `secure`, `observability`)
+Runnable programs under [examples/](examples/): seven self-contained ones
+(`quickstart`, `commands`, `events`, `files`, `secure`, `observability`,
+`dialout`)
 that start both sides in one process, and a standalone `server` and
 `client` for trying the library against other implementations. See
 [examples/README.md](examples/README.md).
@@ -294,7 +301,7 @@ go run ./examples/quickstart
 ```sh
 make check   # format, lint, vet, vulnerability scan, race tests, coverage, examples
 make test    # the tests with the race detector
-make fuzz    # the codec fuzz targets (FUZZTIME=30s each by default)
+make fuzz    # the codec and outstation fuzz targets (FUZZTIME=30s each by default)
 make bench   # the codec benchmarks
 ```
 
@@ -315,7 +322,7 @@ pinned by digest:
 | Step Function I/O dnp3 | 1.7.0 | non-commercial | master and outstation |
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
 | DSC Systems go-dnp3 | v0.8.1 | GPL-3.0 | master and outstation |
-| dnp3py | 0.6.0 | MIT | master (it has no outstation) |
+| dnp3py | 0.6.0 | MIT | master (its outstation is not in the images yet) |
 
 Both directions cover the integrity poll against the fixture's values and
 flags, reads of ranges and variations, every control case of the fixture
@@ -327,7 +334,11 @@ dnp3-interop's contract 1.1 are tested in both directions with every
 reference that has them: TLS with mutual authentication (a test PKI is
 generated per run), UDP, serial lines (a pseudo-terminal in the container
 bridged to TCP), file transfer against the files fixture, and Secure
-Authentication with session key changes. Deviations a reference has from the
+Authentication with session key changes and the security statistics; also
+the requests without a response (DIRECT OPERATE NO ACK, the `_NR`
+freezes) and reads of all objects of a group. The
+[coverage matrix](INTEROPERABILITY.md#interop-coverage) shows each feature
+per reference and direction. Deviations a reference has from the
 fixture are those dnp3-interop records as known bugs. Docker is needed; the
 images are consumed as published, nothing of dnp3-interop is built here.
 
@@ -337,16 +348,20 @@ linked into go-dnp3.
 ## Limitations
 
 - **Secure Authentication**: update keys are configured out of band. The
-  update key change, user management (certificates, user status change) and
-  aggressive mode are not implemented. See [SECURITY.md](SECURITY.md).
-- **Data sets and private registration objects** (groups 83 to 91) are
-  carried as raw payload, not decoded.
+  remote update key change, user management (certificates, user status
+  change) and AES-GMAC are not implemented; aggressive mode is verified
+  between go-dnp3's ends only, as no reference stack in the interop suite
+  has it. See [SECURITY.md](SECURITY.md) and
+  [the gaps](INTEROPERABILITY.md#feature-completeness-and-the-remaining-gaps).
+- **Data sets, private registration objects and the virtual terminal**
+  (groups 83, 85..88, 90, 91 raw; 112, 113 decoded) have no procedures:
+  exchange them with the generic request methods.
 - **FREEZE_AT_TIME** is executed only for a time that has passed with no
   interval; scheduled freezes are refused.
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends.
-- **Multi-fragment requests** are not reassembled by the outstation (no
-  master sends them in practice).
+- **Multi-fragment requests** are not reassembled by the outstation: a
+  request is one fragment.
 
 ## License
 

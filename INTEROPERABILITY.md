@@ -15,6 +15,8 @@ of a device profile, and how it has been verified.
 - [Secure Authentication](#secure-authentication)
 - [Deviations and choices](#deviations-and-choices)
 - [Verification status](#verification-status)
+- [Interop coverage](#interop-coverage)
+- [Feature completeness and the remaining gaps](#feature-completeness-and-the-remaining-gaps)
 
 ## Physical and network
 
@@ -24,7 +26,7 @@ of a device profile, and how it has been verified.
 | TLS | ✅ `crypto/tls` | ✅ |
 | UDP | ✅ connected socket | ✅ one master per socket; `ServeUDPTo` names the master for unsolicited responses before it sends |
 | Serial, any byte stream | ✅ `WithStream` | ✅ `ServeConn` |
-| Dual end point (outstation dials the master) | — | — |
+| Dual end point (outstation dials the master, annex A.3) | ✅ `client.Accept`: waits for the outstation's connection, again after each loss with `WithReconnect` | ✅ `DialAndServe`: connects, serves, reconnects with backoff (`Redial`); TLS with the outstation as TLS client |
 
 ## Data link layer
 
@@ -102,7 +104,7 @@ others are used by the procedures.
 | 3, 4 | double-bit binary input, events v1..v3 | ✅ |
 | 10, 11 | binary output status, events | ✅ |
 | 12 | CROB, pattern control block, pattern mask | controls |
-| 13 | binary output command events | codec |
+| 13 | binary output command events | ✅ for outputs with `CommandEventClass`: every executed OPERATE, DIRECT OPERATE (NO ACK) with the commanded state and status |
 | 20, 22 | counters, events, all variations (delta included) | ✅ |
 | 21, 23 | frozen counters, events | ✅ |
 | 30, 32 | analog inputs, events, integer and floating point | ✅ |
@@ -110,7 +112,7 @@ others are used by the procedures.
 | 34 | analog input deadbands | ✅ written by the master |
 | 40, 42 | analog output status, events | ✅ |
 | 41 | analog output blocks | controls |
-| 43 | analog output command events | codec |
+| 43 | analog output command events | ✅ as group 13, with the commanded value |
 | 50 | time and date v1..v4 | time synchronization, freeze at time |
 | 51 | CTO, synchronized and unsynchronized | relative-time events |
 | 52 | time delay, coarse and fine | restart, delay measurement |
@@ -122,12 +124,12 @@ others are used by the procedures.
 | 110, 111 | octet strings, events | ✅ |
 | 112, 113 | virtual terminal | codec |
 | 120 | authentication v1..v15 | secure authentication |
-| 121, 122 | security statistics, events | codec |
+| 121, 122 | security statistics, events | ✅ per association with secure authentication |
 | 83, 85..88, 90, 91 | private registration, data sets, application identifier, status of requested operation | raw payload |
 
 Default variations of the outstation (configurable per point): static
 g1v2, g3v2, g10v2, g20v1, g21v1, g30v1, g31v1, g40v1, g110; events g2v2,
-g4v2, g11v2, g22v5, g23v5, g32v3, g33v3, g42v3, g111.
+g4v2, g11v2, g13v2, g22v5, g23v5, g32v3, g33v3, g42v3, g43v3, g111, g122v2.
 
 A read of a packed variation (g1v1, g3v1, g10v1) reports a point whose
 flags are not ONLINE alone in the variation with flags, so that its quality
@@ -161,21 +163,24 @@ a pre-shared session key is used directly.
 | Item | Support |
 |------|---------|
 | Challenge of critical requests (g120v1), reply (g120v2) | ✅ both roles: 32 octets of challenge data; the reply and the response keep the sequence number of the critical request |
-| Critical function codes | `server.DefaultCritical`, configurable |
+| Critical function codes | `secauth.DefaultCritical` (`server.DefaultCritical` is the same slice), configurable; also the default set of `client.WithAggressiveMode` |
 | MAC algorithms | HMAC-SHA-256 truncated to 8 and 16, HMAC-SHA-1 truncated to 4, 8 and 10 |
 | Authentication error (g120v7) | ✅ sent on a wrong MAC, reported as `*dnp3.AuthError` |
 | Session key status request and status (g120v4, v5) | ✅ both roles: fresh challenge data per status, MAC over the last key change with the monitoring key |
 | Session key change (g120v6), AES-128 and AES-256 key wrap (RFC 3394) | ✅ both roles: at every connection and at the key change interval (`client.WithKeyChangeInterval`, default 15 minutes); keys invalid after the connection ends |
 | Key status message in the key change data | the master sends the g120v5 object without its MAC value, the form DSC Systems go-dnp3 requires; the outstation accepts it with or without, as implementations differ |
-| Update key change (g120v11..v15), user status change (g120v10), certificates (g120v8) | — objects only, procedures not implemented |
-| Aggressive mode (g120v3 + g120v9) | — objects only |
-| AES-GMAC | — |
-| Security statistics (g121, g122) | — objects only |
+| Aggressive mode (g120v3 + g120v9) | ✅ both roles: the master (`client.WithAggressiveMode`) puts a MAC over the last challenge and the request into the request; the outstation executes it without a challenge when the CSQ follows the last one. Verified between go-dnp3's ends only: no reference in dnp3-interop implements it |
+| Reply timeout | ✅ `SecureAuth.ReplyTimeout`, default 10 s: a later reply is refused and counted |
+| Security statistics (g121, g122) | ✅ outstation: the 18 statistics of clause 7.6 per association, read as g121v1, reported as g122v2 events every `StatisticsThreshold` increments in `StatisticsClass`; master: read like any object |
+| Update key change (g120v11..v15), user status change (g120v10), certificates (g120v8) | — objects only, procedures not implemented (see [the gaps](#feature-completeness-and-the-remaining-gaps)) |
+| AES-GMAC | — (see [the gaps](#feature-completeness-and-the-remaining-gaps)) |
+| Challenges of critical responses (master challenging the outstation) | — |
 
 ## Deviations and choices
 
 - **Multi-fragment requests** are ignored by the outstation and not sent by
-  the master.
+  the master: a request is one fragment, as the standard's application
+  layer has it (DSC Systems go-dnp3 refuses them as well).
 - **FREEZE_AT_TIME** with a future time or an interval is refused with
   PARAMETER_ERROR.
 - **A read of an index that does not exist** is answered with the indexes
@@ -192,7 +197,8 @@ a pre-shared session key is used directly.
 | Level | Status |
 |-------|--------|
 | Codec unit tests, known vectors, round trip of every variation and qualifier | ✅ |
-| Fuzzing: link frame decoder, stream reader, transport reassembly, application fragment decoder with stable re-encoding | ✅ in CI |
+| Fuzzing: link frame decoder, stream reader, transport reassembly, application fragment decoder with stable re-encoding, the outstation's request handling (`FuzzOutstation`) | ✅ in CI |
+| Chaos: corrupted, split and delayed octets and killed connections under load, with and without secure authentication | ✅ `e2e/chaos_test.go` |
 | Link procedures frame by frame; noisy and duplicating lines | ✅ |
 | Outstation conformance with a scripted master | ✅ |
 | Master against outstation, every function | ✅ |
@@ -204,4 +210,88 @@ a pre-shared session key is used directly.
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC Systems over a pseudo-terminal bridged to TCP |
 | File transfer: master | ✅ against DSC Systems' file server: read, write of several blocks, list, info, delete, missing files |
 | File transfer: outstation | ✅ against the masters of stepfunc (get, put, list, info) and DSC Systems (also delete) |
-| Secure Authentication, both roles | ✅ against DSC Systems (HMAC-SHA-256-16, AES-128 key wrap): key change at connect, challenged controls, periodic key change in a session, a second master run, a wrong update key refused; the other references do not implement it |
+| Secure Authentication, both roles | ✅ against DSC Systems (HMAC-SHA-256-16, AES-128 key wrap): key change at connect, challenged controls, periodic key change in a session, a second connection, a wrong update key refused, security statistics read both ways; the other references do not implement it |
+| Requests without a response | ✅ DIRECT OPERATE NO ACK and FREEZE AND CLEAR NO ACK as master against stepfunc, opendnp3 and DSC Systems; as outstation from DSC Systems' and dnp3py's masters |
+| Aggressive mode, dual end point | ✅ between go-dnp3's own ends; no reference in dnp3-interop has them |
+
+## Interop coverage
+
+What `make interop` exercises against each reference, with go-dnp3 as
+master (**M**, against the reference's outstation) and as outstation
+(**O**, the reference's master against go-dnp3). A blank cell is a feature
+the reference does not have or its dnp3-interop adapter does not expose
+(its capability document says which): the suite covers everything the
+images offer.
+
+| Feature | stepfunc 1.7.0 | opendnp3 3.1.2 | DSC Systems v0.8.1 | dnp3py 0.6.0 |
+|---|:---:|:---:|:---:|:---:|
+| Integrity poll: values and flags of every point type of the fixture | M O | M O | M O | O |
+| Reads of ranges and variations | M O | M O | M O | O |
+| Read of all objects of a group | O | O | M | O |
+| Direct operate, select-before-operate, set-points, ranges, refused codes and points | M O | M O | M O | O |
+| Direct operate no ack | M | M | M O | O |
+| Events, their confirmation, event polls | M O | M O | M O | O |
+| Unsolicited responses, enable and disable | M O | M O | M O | O |
+| Time synchronization, LAN and non-LAN | M O | M O | M O | O |
+| Cold and warm restart with the delay | M O | M O | M O | O |
+| Freeze and freeze-and-clear | M O | M O | M O | O |
+| Freeze and clear no ack | M | M | M | O |
+| Assign class | O | M O | M | O |
+| TLS with mutual authentication | M O | M O | M O | |
+| UDP | M O | M O | M O | |
+| Serial line | M O | M O | M O | |
+| File transfer: read, write, list, info | O | | M O | |
+| File transfer: delete | | | M O | |
+| Secure Authentication: key change, challenges, re-key, wrong key | | | M O | |
+| Security statistics | | | M O | |
+
+Known bugs of a reference that the fixture shows (dnp3-interop's
+`tests/known-bugs.tsv`) are logged, not failed: DSC Systems v0.8.1 leaves a
+counter without a frozen counter uncleared by FREEZE AND CLEAR. Two
+findings about the references that the suite works with: opendnp3's UDP
+outstation answers only the fixed peer it is given, so go-dnp3's master
+runs in a container on its network for that test; DSC Systems'
+outstation answers g121 reads of variation 1 only, not variation 0.
+
+## Feature completeness and the remaining gaps
+
+go-dnp3 implements the procedures of IEEE 1815-2012 listed above in both
+roles, including file transfer, the dual end point and Secure
+Authentication version 5 with session key change, aggressive mode and
+statistics. Against the references:
+
+| Capability | go-dnp3 | stepfunc dnp3 | opendnp3 | DSC Systems go-dnp3 | Triangle MicroWorks SCL |
+|---|:---:|:---:|:---:|:---:|:---:|
+| File transfer, outstation | ✅ | — | — | ✅ | ✅ |
+| File transfer, master | ✅ | ✅ (no delete) | — | ✅ | ✅ |
+| SAv5 challenge-reply, session key change | ✅ | — | — (removed in 2016) | ✅ | ✅ |
+| SAv5 aggressive mode | ✅ | — | — | — | ✅ |
+| SAv5 security statistics | ✅ | — | — | ✅ | ✅ |
+| SAv5 remote update key change, user management | — | — | — | — | ✅ |
+| AES-GMAC | — | — | — | — | ✅ |
+| Dual end point | ✅ | not documented | — | not documented | ✅ |
+| Command events (g13, g43) from the outstation | ✅ | not documented | not documented | ✅ | ✅ |
+| Virtual terminal (g112, g113), data sets (g85..g88) | — codec | not documented | not documented | not documented | ✅ |
+
+The Triangle MicroWorks column is from its public product descriptions;
+it is not in the interop suite (its adapter is on hold in dnp3-interop),
+so treat it as indicative.
+
+The gaps, and what closing them would be worth:
+
+- **Remote update key change and user management (g120v10..v15).** Lets a
+  central authority distribute update keys and add or revoke users,
+  symmetric or with certificates (IEC 62351-8). Worth it for a utility
+  that runs such an authority; elsewhere update keys are provisioned with
+  the device, which go-dnp3 supports. Only Triangle MicroWorks implements
+  it, so the exact wire formats could not be checked against a second
+  implementation; it waits for that reference.
+- **AES-GMAC.** An optional MAC algorithm; HMAC-SHA-256 is the one every
+  SAv5 implementation has and the default. Low value, and like key
+  management it needs a reference implementation to verify against.
+- **Challenges of critical responses by the master.** SAv5 lets a master
+  challenge an outstation's responses; no reference does it. Low value.
+- **Virtual terminal and data sets.** Rarely used; the codec carries them,
+  so an application can still exchange them with the generic request
+  methods.
+- **Multi-fragment requests** are not a gap: requests are one fragment.
