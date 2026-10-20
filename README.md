@@ -45,7 +45,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against Step Function I/O's dnp3, opendnp3, DSC Systems' go-dnp3 and
   dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.4.0,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.4.1,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -314,7 +314,7 @@ many masters and concurrent requests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.4.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.0),
+of [otfabric/dnp3-interop v0.4.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.1),
 pinned by digest:
 
 | Reference | Version | Licence | Roles tested |

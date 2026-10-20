@@ -201,8 +201,8 @@ a pre-shared session key is used directly.
 | Outstation conformance with a scripted master | ✅ |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.4.0 |
-| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.4.0 |
+| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.4.1 |
+| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.4.1 |
 | TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC Systems, including a refused certificate of another CA |
 | UDP, both roles | ✅ against stepfunc, opendnp3 and DSC Systems; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC Systems over a pseudo-terminal bridged to TCP |
