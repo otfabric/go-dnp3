@@ -332,12 +332,21 @@ func TestEchoMismatch(t *testing.T) {
 func TestMeasurementsHelper(t *testing.T) {
 	f := &app.Fragment{Function: app.FuncResponse, Headers: []app.Header{
 		app.Ranged(app.G30V1, 0, app.Analog{Value: 1}),
-		app.Counted(app.G50V1, app.AbsoluteTime{Time: 5}), // not a measurement
+		app.Counted(app.G50V1, app.AbsoluteTime{Time: 5}), // the time, not a point
 		app.Indexed(app.G2V2, app.Object{Index: 3, Value: app.Binary{Value: true}}),
+		app.Ranged(app.G50V4, 7, app.AbsoluteTime{Time: 9, Interval: 15, Units: app.UnitMinutes}),
+		app.Ranged(app.G101V1, 1, app.BCD{Value: 1234}),
+		app.Ranged(app.G102V1, 2, app.UnsignedInteger{Value: 200}),
 	}}
 	ms := Measurements(f)
-	if len(ms) != 2 || ms[0].Event || !ms[1].Event || ms[1].Index != 3 {
+	if len(ms) != 5 || ms[0].Event || !ms[1].Event || ms[1].Index != 3 {
 		t.Fatalf("%+v", ms)
+	}
+	if ms[2].GV != app.G50V4 || ms[2].Index != 7 || ms[2].Value.(app.AbsoluteTime).Interval != 15 || ms[2].Event {
+		t.Fatalf("time and interval: %+v", ms[2])
+	}
+	if ms[3].Value.(app.BCD).Value != 1234 || ms[4].Value.(app.UnsignedInteger).Value != 200 {
+		t.Fatalf("BCD and unsigned integer: %+v %+v", ms[3], ms[4])
 	}
 }
 
