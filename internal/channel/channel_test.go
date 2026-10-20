@@ -502,3 +502,43 @@ func TestBroadcastFromMaster(t *testing.T) {
 	}
 	p.min.none(t, 200*time.Millisecond)
 }
+
+// TestFragmentsBeforeEOFAreDelivered: a peer that sends fragments and
+// closes at once (a master confirming a response and hanging up) must have
+// every fragment delivered, also those still queued when the stream ends.
+func TestFragmentsBeforeEOFAreDelivered(t *testing.T) {
+	for range 20 {
+		a, b := tcpPair(t)
+		release := make(chan struct{})
+		var mu sync.Mutex
+		var got [][]byte
+		ch := New(b, Config{})
+		ch.AddSession(SessionConfig{Local: outstationAddr, Remote: masterAddr,
+			OnFragment: func(frag []byte, _ link.Address) {
+				<-release // hold the first one so that the rest wait in the queue
+				mu.Lock()
+				got = append(got, frag)
+				mu.Unlock()
+			}})
+		ch.Start()
+		m := newRaw(t, a)
+		for i := range 3 {
+			m.write(link.Frame{Dir: true, Function: link.PrimaryUnconfirmedUserData, Dest: outstationAddr, Src: masterAddr,
+				Data: segmentOf([]byte{byte(i)})})
+		}
+		_ = a.Close()
+		select {
+		case <-ch.Closing():
+		case <-time.After(3 * time.Second):
+			t.Fatal("channel not closed on EOF")
+		}
+		close(release)
+		<-ch.Done()
+		mu.Lock()
+		n := len(got)
+		mu.Unlock()
+		if n != 3 {
+			t.Fatalf("%d of 3 fragments delivered after the peer closed", n)
+		}
+	}
+}

@@ -1,5 +1,23 @@
 # go-dnp3 Releases
 
+## v0.1.1
+
+**Date:** 2026-10-20
+**Previous release:** v0.1.0
+
+## Summary
+
+A fix for confirmations lost when the peer closes the connection right
+after sending them. No API change.
+
+## Changes
+
+### Fixed
+
+- **Fragments received just before the peer closed were dropped.** When a connection ended, a session could stop before handing over fragments it had already received and queued. An outstation could then miss the confirmation of a response from a master that confirms and hangs up at once, and report the same events again on the next connection. The interop suite caught it intermittently against the stepfunc master. Queued fragments are now delivered before the session ends.
+
+---
+
 ## v0.1.0
 
 **Date:** 2026-10-20

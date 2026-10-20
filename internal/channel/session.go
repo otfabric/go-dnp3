@@ -140,6 +140,10 @@ func (s *Session) run() {
 	for {
 		select {
 		case <-s.ch.closing:
+			// Fragments that arrived before the stream ended are delivered:
+			// a peer may confirm a response and hang up at once, and that
+			// confirmation counts.
+			s.drain()
 			return
 		case <-s.removed:
 			return
@@ -164,6 +168,22 @@ func (s *Session) run() {
 				s.ch.Close(fmt.Errorf("%w: no answer to REQUEST_LINK_STATUS: %w", dnp3.ErrTimeout, err))
 				return
 			}
+		}
+	}
+}
+
+// drain delivers the fragments still queued. The reader has stopped by
+// the time the stream is closed by the peer, so nothing is added while it
+// runs.
+func (s *Session) drain() {
+	for {
+		select {
+		case d := <-s.queue:
+			if s.cfg.OnFragment != nil {
+				s.cfg.OnFragment(d.frag, d.dest)
+			}
+		default:
+			return
 		}
 	}
 }
