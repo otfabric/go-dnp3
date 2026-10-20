@@ -16,6 +16,11 @@ jobs:
     uses: otfabric/.github/.github/workflows/go-ci.yml@v2
     with:
       codecov-name: go-dnp3
+      # Coverage across the library packages, as make check measures it:
+      # the e2e suite and the client and server tests exercise each other's
+      # packages. make coverpkg-check keeps it equal to COVER_PKGS.
+      coverpkg: >-
+        github.com/otfabric/go-dnp3,github.com/otfabric/go-dnp3/app,github.com/otfabric/go-dnp3/client,github.com/otfabric/go-dnp3/internal/channel,github.com/otfabric/go-dnp3/internal/logx,github.com/otfabric/go-dnp3/link,github.com/otfabric/go-dnp3/secauth,github.com/otfabric/go-dnp3/server,github.com/otfabric/go-dnp3/transport
       go-versions: '["1.23", "1.24", "1.25", "1.26"]'
     secrets: inherit
 

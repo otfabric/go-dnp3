@@ -168,7 +168,7 @@ func (a *association) file(req *app.Fragment) *response {
 		}
 		return ff(info)
 
-	case app.FuncAuthenticateFile:
+	default: // AUTHENTICATE_FILE, the last function the dispatcher routes here
 		c, ok := v.(app.FileAuthentication)
 		if !ok {
 			return &response{iin: app.IINParameterError}
@@ -181,36 +181,26 @@ func (a *association) file(req *app.Fragment) *response {
 			}
 		}
 		return ff(app.FileAuthentication{AuthKey: key})
-	default:
 	}
-	return &response{iin: app.IINNoFuncCodeSupport}
 }
 
+// gvOf is the variation of an answer of file(): an authentication (g70v2),
+// a file descriptor (g70v7) or a command status (g70v4).
 func gvOf(v app.Value) uint8 {
 	switch v.(type) {
 	case app.FileAuthentication:
 		return 2
-	case app.FileCommandStatus:
-		return 4
-	case app.FileTransport:
-		return 5
-	case app.FileTransportStatus:
-		return 6
 	case app.FileDescriptor:
 		return 7
 	default:
-		return 0
+		return 4
 	}
 }
 
 // readFile answers a READ of g70v5: the master asks for one block.
 func (a *association) readFile(h *app.Header, p *readPlan) {
 	for _, o := range h.Objects {
-		t, ok := o.Value.(app.FileTransport)
-		if !ok {
-			p.iin |= app.IINParameterError
-			continue
-		}
+		t := o.Value.(app.FileTransport) // the only value g70v5 decodes to
 		of, ok := a.files[t.Handle]
 		if !ok || of.mode != app.FileModeRead {
 			p.items = append(p.items, item{h: app.FreeFormat(app.G70V6,
