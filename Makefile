@@ -48,7 +48,7 @@ build: ## Build the examples into ./bin
 	done
 
 # The self-contained examples: each starts both sides and exits by itself.
-RUN_EXAMPLES := quickstart commands events files secure observability
+RUN_EXAMPLES := quickstart commands events files secure observability dialout
 
 examples: ## Run the self-contained examples (each must exit successfully)
 	@for e in $(RUN_EXAMPLES); do \
@@ -105,12 +105,13 @@ bench: ## Run the codec benchmarks
 
 # Duration each fuzz target runs. Override with FUZZTIME=... (e.g. FUZZTIME=5m).
 FUZZTIME ?= 30s
-fuzz: ## Run the codec fuzz targets for FUZZTIME each (default 30s)
+fuzz: ## Run the codec and outstation fuzz targets for FUZZTIME each (default 30s)
 	@echo "Fuzzing (FUZZTIME=$(FUZZTIME))"
 	@go test -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZTIME) ./link
 	@go test -run='^$$' -fuzz='^FuzzReader$$' -fuzztime=$(FUZZTIME) ./link
 	@go test -run='^$$' -fuzz='^FuzzReassembler$$' -fuzztime=$(FUZZTIME) ./transport
 	@go test -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZTIME) ./app
+	@go test -run='^$$' -fuzz='^FuzzOutstation$$' -fuzztime=$(FUZZTIME) ./server
 
 test-interop: ## Run the interop suite against the stepfunc, opendnp3, dscsystems and dnp3py reference images (needs Docker)
 	@echo "Running interop tests against dnp3-interop v0.2.0: stepfunc, opendnp3, dscsystems, dnp3py"
