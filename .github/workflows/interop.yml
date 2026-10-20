@@ -1,0 +1,63 @@
+name: Interop
+run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
+
+# Runs go-dnp3 against the reference implementations published by
+# otfabric/dnp3-interop, as master and as outstation. The images are consumed
+# as published: nothing of dnp3-interop is cloned or built here.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+    inputs:
+      stepfunc_image:
+        description: "stepfunc dnp3 reference image (default: the pinned release)"
+        required: false
+      opendnp3_image:
+        description: "opendnp3 reference image (default: the pinned release)"
+        required: false
+      dscsystems_image:
+        description: "DSC Systems go-dnp3 reference image (default: the pinned release)"
+        required: false
+      dnp3py_image:
+        description: "dnp3py reference image (default: the pinned release)"
+        required: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  # otfabric/dnp3-interop v0.1.0: stepfunc dnp3 1.7.0, opendnp3 3.1.2,
+  # DSC Systems go-dnp3 v0.8.1, dnp3py 0.6.0.
+  # Keep in step with the Makefile and interop/harness.go.
+  DNP3_INTEROP_STEPFUNC_IMAGE: ${{ inputs.stepfunc_image || 'ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:3ae308559ae9ad423b3e53f5206aa5ccb16ed60c4816fcba8aeff29cb5903f9b' }}
+  DNP3_INTEROP_OPENDNP3_IMAGE: ${{ inputs.opendnp3_image || 'ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:461bcec60491d6c94cf51055b75655fd6e8a142c06e73e1eb9e6eca377677ce7' }}
+  DNP3_INTEROP_DSCSYSTEMS_IMAGE: ${{ inputs.dscsystems_image || 'ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:bd019730340dc708d45e4e7da6514e551ac8086aace67e5988fec651614c4fe7' }}
+  DNP3_INTEROP_DNP3PY_IMAGE: ${{ inputs.dnp3py_image || 'ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:a8518fa9e98e54ceb82ad67af5d52bed8efb0085c185742dd14c523d7e5f7013' }}
+
+jobs:
+  interop:
+    name: stepfunc + opendnp3 + dscsystems + dnp3py, master and outstation
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
+      - name: Pull reference images
+        run: |
+          docker pull "$DNP3_INTEROP_STEPFUNC_IMAGE"
+          docker pull "$DNP3_INTEROP_OPENDNP3_IMAGE"
+          docker pull "$DNP3_INTEROP_DSCSYSTEMS_IMAGE"
+          docker pull "$DNP3_INTEROP_DNP3PY_IMAGE"
+
+      - name: Interop tests
+        run: make test-interop

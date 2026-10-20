@@ -1,0 +1,136 @@
+# Errors: otfabric/go-dnp3
+
+How failures are reported, and how to tell them apart.
+
+## Table of contents
+
+- [Quick reference](#quick-reference)
+- [Sentinels](#sentinels)
+- [Refusals by the outstation](#refusals-by-the-outstation)
+- [Connection errors](#connection-errors)
+- [Codec errors](#codec-errors)
+- [Context and timeouts](#context-and-timeouts)
+- [Retries](#retries)
+- [What the outstation reports instead of an error](#what-the-outstation-reports-instead-of-an-error)
+- [Detection patterns](#detection-patterns)
+
+## Quick reference
+
+| Situation | Error | Test with |
+|-----------|-------|-----------|
+| The outstation did not answer in time | wraps `dnp3.ErrTimeout` | `errors.Is` |
+| The connection ended during the request | wraps `dnp3.ErrConnectionLost` | `errors.Is` |
+| No connection | `dnp3.ErrNotConnected` | `errors.Is` |
+| Dial, TLS or stream opener failed | wraps `dnp3.ErrConnectFailed` and the cause | `errors.Is` |
+| The client or server was closed | `dnp3.ErrClosed` | `errors.Is` |
+| Too many requests waiting; `Connect` while connected | wraps `dnp3.ErrBusy` | `errors.Is` |
+| A response with NO_FUNC_CODE_SUPPORT, OBJECT_UNKNOWN, PARAMETER_ERROR or ALREADY_EXECUTING | `*dnp3.IINError` | `errors.As` |
+| A control echoed with a status other than SUCCESS | `*dnp3.CommandError` | `errors.As` |
+| A file operation refused | `*dnp3.FileError` | `errors.As` |
+| An authentication error from the peer | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
+| A challenge without secure authentication configured | wraps `dnp3.ErrAuthentication` | `errors.Is` |
+| A response that does not fit the request (echo, sequence) | wraps `dnp3.ErrProtocol` | `errors.Is` |
+| An option or argument that cannot be used | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
+| The caller's context ended | `context.Canceled`, `context.DeadlineExceeded` | `errors.Is` |
+
+## Sentinels
+
+The sentinels of package `dnp3` are wrapped with detail, so always test
+with `errors.Is`, never with `==`. The message of a wrapped error is for
+people and may change; the sentinel is the contract.
+
+## Refusals by the outstation
+
+An outstation refuses a request with IIN2 bits. The request methods return
+the response **and** an `*IINError`, so that what the outstation did report
+is still available:
+
+```go
+res, err := c.Read(ctx, app.IndexRange(app.G1V2, 0, 9))
+var ie *dnp3.IINError
+if errors.As(err, &ie) && ie.IIN.Has(app.IINParameterError) {
+    // Some of 0..9 do not exist; res holds the ones that do.
+    use(res.Measurements())
+}
+```
+
+A control the outstation did not execute is a `*CommandError` with the
+status it echoed (NO_SELECT, LOCAL, OUT_OF_RANGE, NOT_SUPPORTED, ...).
+`Operate` returns the statuses of all controls with it, in order; the error
+names the first one that failed. With select-before-operate a failed SELECT
+ends the operation: the OPERATE is not sent.
+
+Some outstations set PARAMETER_ERROR together with a NOT_SUPPORTED echo; the
+response then fails with an `*IINError`. Test for both when the reason does
+not matter.
+
+## Connection errors
+
+`ErrConnectionLost` wraps the stream's error: an end of stream by the peer,
+a failed write, a keep-alive that went unanswered (that one wraps
+`ErrTimeout` too). The request that was waiting fails with it; a client with
+`WithReconnect` reconnects, and the next request can succeed.
+
+## Codec errors
+
+The codecs report what they cannot parse or encode with their own
+sentinels: `app.ErrMalformed`, `app.ErrUnknownObject`,
+`app.ErrInvalidQualifier`, `app.ErrUnknownFunction`, `app.ErrInvalidValue`;
+`transport.ErrSequence` and friends; `link.ErrFraming` and the specific
+framing errors it is wrapped together with. A master or outstation never
+returns them from a request: a fragment it cannot decode is dropped and
+reported to `Metrics.OnDecodeError`, and an outstation answers a request it
+cannot decode with the IIN2 bit the standard prescribes (OBJECT_UNKNOWN for
+`ErrUnknownObject`, NO_FUNC_CODE_SUPPORT for `ErrUnknownFunction`,
+PARAMETER_ERROR otherwise).
+
+## Context and timeouts
+
+Every request is bounded by its context and by the response timeout, per
+fragment. Whichever ends first decides the error: the context's own error,
+or one wrapping `ErrTimeout`. A canceled request does not cancel what the
+outstation already received; a control that timed out may have been
+executed.
+
+## Retries
+
+`WithRetry` repeats a request that failed with `ErrTimeout`,
+`ErrConnectionLost` or `ErrNotConnected`, while its context lives, with
+exponential backoff. Only requests that are safe to repeat are retried:
+READ, time synchronization, delay measurement, unsolicited control, assign
+class, file info and file reads. Controls, freezes, restarts and writes are
+never repeated. An `IINError` is never retried: the outstation answered.
+`RequestMetrics.OnRetry` reports each repeated attempt.
+
+## What the outstation reports instead of an error
+
+The server has no request methods to fail; it answers. What goes wrong in a
+request becomes IIN bits or command statuses in the response, and what goes
+wrong on the connection ends it. The server reports to its application
+through:
+
+| Situation | Where it shows |
+|-----------|----------------|
+| A request it could not decode | IIN2 bits in the response; `Metrics.OnDecodeError` |
+| Events discarded because the buffer was full | EVENT_BUFFER_OVERFLOW; `ServerMetrics.OnEventsDiscarded`; a warning |
+| An unsolicited response that was never confirmed | `ServerMetrics.OnUnsolicited` with an error wrapping `ErrTimeout`; the events are reported later |
+| A failed authentication | an authentication error object to the master; a warning |
+| `Serve`, `ServeConn` | return the listener's or stream's error, `nil` after `Close` |
+
+## Detection patterns
+
+```go
+switch _, err := c.Operate(ctx, client.SelectBeforeOperate, cmd); {
+case err == nil:
+case errors.As(err, &commandErr):
+    // the outstation refused the control: commandErr.Status
+case errors.As(err, &iinErr):
+    // the outstation refused the request: iinErr.IIN
+case errors.Is(err, dnp3.ErrTimeout):
+    // no answer: the control may or may not have been executed
+case errors.Is(err, dnp3.ErrConnectionLost), errors.Is(err, dnp3.ErrNotConnected):
+    // the link is down
+case errors.Is(err, dnp3.ErrAuthentication):
+    // wrong key, or secure authentication not configured
+}
+```

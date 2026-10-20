@@ -1,0 +1,589 @@
+// SPDX-License-Identifier: MIT
+
+package server
+
+import (
+	"context"
+	"errors"
+	"net"
+	"sync"
+	"testing"
+	"testing/fstest"
+	"time"
+
+	dnp3 "github.com/otfabric/go-dnp3"
+	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/internal/channel"
+	"github.com/otfabric/go-dnp3/link"
+)
+
+// master is a scripted master: it sends exact fragments and reads the
+// outstation's answers, without the client's logic in between.
+type master struct {
+	t    *testing.T
+	ch   *channel.Channel
+	sess *channel.Session
+	in   chan *app.Fragment
+	srv  *Server
+}
+
+func newMaster(t *testing.T, opts ...Option) *master {
+	t.Helper()
+	srv, err := New(append([]Option{WithMasters(1), WithConfirmTimeout(300 * time.Millisecond)}, opts...)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := srv.Database()
+	_ = db.AddBinaryInput(0, PointConfig{Class: 1}, app.Binary{Value: true, Flags: app.FlagOnline})
+	_ = db.AddBinaryInput(1, PointConfig{Class: 1}, app.Binary{Flags: app.FlagOnline})
+	_ = db.AddAnalogInput(0, PointConfig{Class: 2}, app.Analog{Value: 5, Flags: app.FlagOnline})
+	_ = db.AddCounter(0, PointConfig{Class: 3}, app.Counter{Value: 1, Flags: app.FlagOnline})
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.Serve(l) }()
+	conn, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &master{t: t, in: make(chan *app.Fragment, 32), srv: srv}
+	m.ch = channel.New(conn, channel.Config{})
+	m.sess = m.ch.AddSession(channel.SessionConfig{Local: 1, Remote: 10, Master: true,
+		OnFragment: func(b []byte, _ link.Address) {
+			if f, err := app.Decode(b); err == nil {
+				m.in <- f
+			}
+		}})
+	m.ch.Start()
+	t.Cleanup(func() {
+		m.ch.Close(nil)
+		<-m.ch.Done()
+		_ = srv.Close()
+	})
+	return m
+}
+
+func (m *master) send(f *app.Fragment) {
+	m.t.Helper()
+	b, err := f.Encode()
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	m.sendRaw(b)
+}
+
+func (m *master) sendRaw(b []byte) {
+	m.t.Helper()
+	if err := m.sess.Send(context.Background(), b); err != nil {
+		m.t.Fatal(err)
+	}
+}
+
+func (m *master) sendBroadcast(f *app.Fragment) {
+	m.t.Helper()
+	b, _ := f.Encode()
+	if err := m.sess.SendBroadcast(context.Background(), b, link.BroadcastNoConfirm); err != nil {
+		m.t.Fatal(err)
+	}
+}
+
+func (m *master) recv() *app.Fragment {
+	m.t.Helper()
+	select {
+	case f := <-m.in:
+		return f
+	case <-time.After(3 * time.Second):
+		m.t.Fatal("no fragment from the outstation")
+		return nil
+	}
+}
+
+// recvFunc skips fragments until one with function fc arrives.
+func (m *master) recvFunc(fc app.FunctionCode) *app.Fragment {
+	m.t.Helper()
+	for {
+		if f := m.recv(); f.Function == fc {
+			return f
+		}
+	}
+}
+
+func (m *master) none(d time.Duration) {
+	m.t.Helper()
+	select {
+	case f := <-m.in:
+		m.t.Fatalf("unexpected fragment %s", f)
+	case <-time.After(d):
+	}
+}
+
+func req(seq uint8, fc app.FunctionCode, hs ...app.Header) *app.Fragment {
+	return &app.Fragment{Control: app.SingleControl(seq), Function: fc, Headers: hs}
+}
+
+func confirm(seq uint8, uns bool) *app.Fragment {
+	return &app.Fragment{Control: app.Control{FIR: true, FIN: true, UNS: uns, Seq: seq}, Function: app.FuncConfirm}
+}
+
+func TestMalformedRequests(t *testing.T) {
+	m := newMaster(t)
+	cases := []struct {
+		name string
+		raw  []byte
+		want app.IIN
+	}{
+		{"unknown function", []byte{0xC1, 0x63}, app.IINNoFuncCodeSupport},
+		{"unknown object", []byte{0xC2, 0x02, 200, 1, 0x06}, app.IINObjectUnknown},
+		{"bad qualifier", []byte{0xC3, 0x01, 1, 2, 0x0C}, app.IINParameterError},
+		{"truncated header", []byte{0xC4, 0x01, 1}, app.IINParameterError},
+	}
+	for _, c := range cases {
+		m.sendRaw(c.raw)
+		f := m.recvFunc(app.FuncResponse)
+		if !f.IIN.Has(c.want) || f.Control.Seq != c.raw[0]&0x0F {
+			t.Errorf("%s: IIN %s seq %d", c.name, f.IIN, f.Control.Seq)
+		}
+	}
+	// A request with an unsupported function code the library knows.
+	m.send(req(5, app.FuncInitializeData))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINNoFuncCodeSupport) {
+		t.Errorf("INITIALIZE_DATA: %s", f.IIN)
+	}
+	// Multi-fragment requests and responses sent to an outstation are
+	// ignored.
+	m.send(&app.Fragment{Control: app.Control{FIR: true, Seq: 6}, Function: app.FuncRead, Headers: app.ClassHeaders(0)})
+	m.send(&app.Fragment{Control: app.SingleControl(7), Function: app.FuncResponse})
+	m.none(200 * time.Millisecond)
+}
+
+func TestRepeatedRequest(t *testing.T) {
+	r := &countingHandler{}
+	m := newMaster(t, WithHandler(r))
+	op := req(3, app.FuncDirectOperate, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}}))
+	m.send(op)
+	first := m.recvFunc(app.FuncResponse)
+	// The same request again (the response was lost): answered with the
+	// same response, not executed twice.
+	m.send(op)
+	second := m.recvFunc(app.FuncResponse)
+	if first.Control.Seq != second.Control.Seq || r.count() != 1 {
+		t.Fatalf("repeat executed: %d operates", r.count())
+	}
+	// A READ is executed again.
+	m.send(req(4, app.FuncRead, app.ClassHeaders(0)...))
+	m.recvFunc(app.FuncResponse)
+	m.send(req(4, app.FuncRead, app.ClassHeaders(0)...))
+	m.recvFunc(app.FuncResponse)
+}
+
+func TestBroadcast(t *testing.T) {
+	r := &countingHandler{}
+	m := newMaster(t, WithHandler(r))
+	m.sendBroadcast(req(1, app.FuncDirectOperateNoAck, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})))
+	m.none(200 * time.Millisecond)
+	if r.count() != 1 {
+		t.Fatal("broadcast control not executed")
+	}
+	// SELECT is never executed from a broadcast.
+	m.sendBroadcast(req(2, app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})))
+	m.none(100 * time.Millisecond)
+	// The next response reports IIN1.0 once.
+	m.send(req(3, app.FuncRead, app.AllObjects(app.G80V1)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) {
+		t.Fatalf("no BROADCAST indication: %s", f.IIN)
+	}
+	m.send(req(4, app.FuncRead, app.AllObjects(app.G80V1)))
+	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINBroadcast) {
+		t.Fatal("BROADCAST indication repeated")
+	}
+}
+
+func TestConfirmTimeoutKeepsEvents(t *testing.T) {
+	m := newMaster(t)
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1)...))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.Control.CON || len(f.Headers) == 0 {
+		t.Fatalf("event response %s", f)
+	}
+	// No confirmation: after the timeout the events are reported again.
+	time.Sleep(500 * time.Millisecond)
+	m.send(req(2, app.FuncRead, app.ClassHeaders(1)...))
+	f = m.recvFunc(app.FuncResponse)
+	if len(f.Headers) == 0 {
+		t.Fatal("unconfirmed events lost")
+	}
+	m.send(confirm(2, false))
+	m.send(req(3, app.FuncRead, app.ClassHeaders(1)...))
+	if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 0 {
+		t.Fatal("confirmed events reported again")
+	}
+	// A confirmation with the wrong sequence number is ignored.
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Flags: app.FlagOnline})
+	m.send(req(4, app.FuncRead, app.ClassHeaders(1)...))
+	m.recvFunc(app.FuncResponse)
+	m.send(confirm(9, false))
+	m.send(confirm(1, true))
+	m.send(req(5, app.FuncRead, app.ClassHeaders(1)...))
+	if f := m.recvFunc(app.FuncResponse); len(f.Headers) == 0 {
+		t.Fatal("events removed by a wrong confirmation")
+	}
+}
+
+func TestUnsolicitedRetries(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1}, Retries: 2, RetryDelay: 300 * time.Millisecond}))
+	// The null unsolicited response is repeated until confirmed.
+	n1 := m.recvFunc(app.FuncUnsolicitedResponse)
+	n2 := m.recvFunc(app.FuncUnsolicitedResponse)
+	if len(n1.Headers) != 0 || n1.Control.Seq != n2.Control.Seq || !n1.Control.UNS || !n1.Control.CON {
+		t.Fatalf("null unsolicited %s / %s", n1, n2)
+	}
+	m.send(confirm(n2.Control.Seq, true))
+	// Events: retried twice with the same sequence number, then given up
+	// for the retry delay, then sent again with the next one.
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	var seqs []uint8
+	for range 3 {
+		f := m.recvFunc(app.FuncUnsolicitedResponse)
+		if len(f.Headers) == 0 {
+			t.Fatal("event unsolicited without events")
+		}
+		seqs = append(seqs, f.Control.Seq)
+	}
+	if seqs[0] != seqs[1] || seqs[1] != seqs[2] {
+		t.Fatalf("retries changed the sequence: %v", seqs)
+	}
+	again := m.recvFunc(app.FuncUnsolicitedResponse)
+	if again.Control.Seq != app.NextSeq(seqs[0]) || len(again.Headers) == 0 {
+		t.Fatalf("after the retry delay: %s", again)
+	}
+	m.send(confirm(again.Control.Seq, true))
+	m.none(400 * time.Millisecond)
+}
+
+func TestUnsolicitedHold(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1, 2}, HoldTime: 300 * time.Millisecond, HoldCount: 3}))
+	n := m.recvFunc(app.FuncUnsolicitedResponse)
+	m.send(confirm(n.Control.Seq, true))
+	db := m.srv.Database()
+	start := time.Now()
+	_ = db.UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	f := m.recvFunc(app.FuncUnsolicitedResponse)
+	if time.Since(start) < 250*time.Millisecond {
+		t.Fatal("hold time not respected")
+	}
+	m.send(confirm(f.Control.Seq, true))
+	// Reaching the count sends at once.
+	start = time.Now()
+	_ = db.Batch(func(b *Batch) error {
+		_ = b.Update(BinaryInput, 0, app.Binary{Flags: app.FlagOnline}, EventOnChange)
+		_ = b.Update(BinaryInput, 1, app.Binary{Flags: app.FlagOnline}, EventOnChange)
+		return b.Update(AnalogInput, 0, app.Analog{Value: 9, Flags: app.FlagOnline}, EventOnChange)
+	})
+	m.recvFunc(app.FuncUnsolicitedResponse)
+	if time.Since(start) > 200*time.Millisecond {
+		t.Fatal("hold count did not send at once")
+	}
+}
+
+func TestSelectTimeoutAndMismatch(t *testing.T) {
+	r := &countingHandler{}
+	m := newMaster(t, WithHandler(r), WithSelectTimeout(150*time.Millisecond))
+	crob := func(op app.OpType) app.Header {
+		return app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: op, Count: 1}})
+	}
+	status := func(f *app.Fragment) app.CommandStatus { return f.Headers[0].Objects[0].Value.(app.CROB).Status }
+
+	m.send(req(1, app.FuncSelect, crob(app.OpLatchOn)))
+	m.recvFunc(app.FuncResponse)
+	time.Sleep(250 * time.Millisecond)
+	m.send(req(2, app.FuncOperate, crob(app.OpLatchOn)))
+	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusNoSelect {
+		t.Fatalf("after select timeout: %s", s)
+	}
+	m.send(req(3, app.FuncSelect, crob(app.OpLatchOn)))
+	m.recvFunc(app.FuncResponse)
+	m.send(req(4, app.FuncOperate, crob(app.OpLatchOff)))
+	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusNoSelect {
+		t.Fatalf("operate differing from select: %s", s)
+	}
+	m.send(req(5, app.FuncSelect, crob(app.OpLatchOn)))
+	m.recvFunc(app.FuncResponse)
+	m.send(req(7, app.FuncOperate, crob(app.OpLatchOn)))
+	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusNoSelect {
+		t.Fatalf("operate with a sequence gap: %s", s)
+	}
+	if r.count() != 0 {
+		t.Fatal("operated without a valid select")
+	}
+	// Unknown control object.
+	m.send(req(8, app.FuncDirectOperate, app.Indexed(app.G41V2, app.Object{Index: 0, Value: app.AnalogOutput{Value: 1}}),
+		app.Header{GV: app.G30V1, Qualifier: app.Qual1ByteStartStop, Objects: []app.Object{{Index: 0, Value: app.Analog{}}}}))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) {
+		t.Fatalf("unknown control object: %s", f.IIN)
+	}
+}
+
+func TestPatternControl(t *testing.T) {
+	r := &countingHandler{}
+	m := newMaster(t, WithHandler(r))
+	mask := app.Ranged(app.G12V3, 4, app.Binary{Value: true}, app.Binary{}, app.Binary{Value: true})
+	pcb := app.Counted(app.G12V2, app.CROB{Op: app.OpPulseOn, Count: 1, OnTime: 10})
+	m.send(req(1, app.FuncDirectOperate, pcb, mask))
+	f := m.recvFunc(app.FuncResponse)
+	if f.IIN&dnp3.IINErrorBits != 0 || f.Headers[0].Objects[0].Value.(app.CROB).Status != app.StatusSuccess {
+		t.Fatalf("pattern control: %s %v", f.IIN, f.Headers)
+	}
+	idx := r.indexes()
+	if len(idx) != 2 || idx[0] != 4 || idx[1] != 6 {
+		t.Fatalf("pattern executed on %v, want [4 6]", idx)
+	}
+	// A pattern control block without its mask.
+	m.send(req(2, app.FuncDirectOperate, pcb))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("pcb without mask: %s", f.IIN)
+	}
+}
+
+func TestIndicationsAndWrites(t *testing.T) {
+	m := newMaster(t)
+	m.srv.SetIndications(app.IINDeviceTrouble|app.IINLocalControl|app.IINNeedTime, true)
+	m.send(req(1, app.FuncRead, app.AllObjects(app.G80V1)))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINDeviceTrouble|app.IINLocalControl) || f.IIN.Has(app.IINNeedTime) {
+		t.Fatalf("indications %s", f.IIN)
+	}
+	// g80v1 read returns the bits as packed objects.
+	got := map[uint32]bool{}
+	for _, o := range f.Headers[0].Objects {
+		got[o.Index] = o.Value.(app.Binary).Value
+	}
+	if !got[6] || !got[5] || !got[7] {
+		t.Fatalf("g80v1 objects %v", got)
+	}
+	m.srv.SetIndications(app.IINDeviceTrouble, false)
+	// Writing anything but a clear of DEVICE_RESTART to g80 is refused.
+	m.send(req(2, app.FuncWrite, app.Ranged(app.G80V1, 6, app.Binary{Value: false})))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("write of IIN bit 6: %s", f.IIN)
+	}
+	// Deadband write.
+	m.send(req(3, app.FuncWrite, app.Indexed(app.G34V3, app.Object{Index: 0, Value: app.AnalogDeadband{Value: 2.5}}),
+		app.Indexed(app.G34V1, app.Object{Index: 9, Value: app.AnalogDeadband{Value: 1}})))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("deadband of missing point: %s", f.IIN)
+	}
+	m.srv.db.mu.RLock()
+	db := m.srv.db.points[AnalogInput][0].cfg.Deadband
+	m.srv.db.mu.RUnlock()
+	if db != 2.5 {
+		t.Fatalf("deadband %v", db)
+	}
+	// g50v3 without RECORD_CURRENT_TIME first.
+	m.send(req(4, app.FuncWrite, app.Counted(app.G50V3, app.AbsoluteTime{Time: 1})))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("g50v3 without recorded time: %s", f.IIN)
+	}
+	// Writing an object the outstation does not take.
+	m.send(req(5, app.FuncWrite, app.Ranged(app.G1V2, 0, app.Binary{})))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) {
+		t.Fatalf("write of g1v2: %s", f.IIN)
+	}
+	// ASSIGN_CLASS without a class header, and with a range of missing points.
+	m.send(req(6, app.FuncAssignClass, app.AllObjects(app.G1V0)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("assign class without class: %s", f.IIN)
+	}
+	m.send(req(7, app.FuncAssignClass, app.AllObjects(app.G60V2), app.IndexRange(app.G1V0, 0, 9)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("assign class of missing points: %s", f.IIN)
+	}
+	// ENABLE_UNSOLICITED with a non-class header.
+	n := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true}))
+	n.recvFunc(app.FuncUnsolicitedResponse)
+	n.send(req(1, app.FuncEnableUnsolicited, app.AllObjects(app.G1V0)))
+	if f := n.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("enable unsolicited with g1: %s", f.IIN)
+	}
+}
+
+func TestFSFileServer(t *testing.T) {
+	fsys := fstest.MapFS{
+		"logs/a.txt": {Data: []byte("alpha"), Mode: 0o644, ModTime: time.Unix(1_700_000_000, 0)},
+		"logs/b.txt": {Data: []byte("bravo!"), Mode: 0o600},
+	}
+	s := FSFileServer{FS: fsys}
+	ctx := context.Background()
+	f, st := s.Open(ctx, FileRequest{Name: "/logs/a.txt", Mode: app.FileModeRead})
+	if st != app.FileSuccess || f.Size() != 5 {
+		t.Fatalf("open: %s", st)
+	}
+	buf := make([]byte, 10)
+	n, _ := f.Read(buf)
+	if string(buf[:n]) != "alpha" {
+		t.Fatalf("read %q", buf[:n])
+	}
+	if _, err := f.Write([]byte("x")); err == nil {
+		t.Fatal("write to read-only file")
+	}
+	_ = f.Close(false)
+	if _, st := s.Open(ctx, FileRequest{Name: "/logs/a.txt", Mode: app.FileModeWrite}); st != app.FilePermissionDenied {
+		t.Fatalf("open for write: %s", st)
+	}
+	if _, st := s.Open(ctx, FileRequest{Name: "/nope", Mode: app.FileModeRead}); st != app.FileNotFound {
+		t.Fatalf("missing: %s", st)
+	}
+	if _, st := s.Open(ctx, FileRequest{Name: "../../etc/passwd", Mode: app.FileModeRead}); st != app.FileNotFound {
+		t.Fatalf("escape: %s", st)
+	}
+	d, st := s.Open(ctx, FileRequest{Name: "\\logs", Mode: app.FileModeRead})
+	if st != app.FileSuccess {
+		t.Fatalf("directory: %s", st)
+	}
+	listing := make([]byte, 512)
+	n, _ = d.Read(listing)
+	entries, err := app.DecodeFileDescriptors(listing[:n])
+	if err != nil || len(entries) != 2 || entries[0].Name != "a.txt" || entries[1].Size != 6 {
+		t.Fatalf("listing %+v %v", entries, err)
+	}
+	if _, err := d.Write(nil); err == nil || d.Close(false) != nil || d.Size() == 0 {
+		t.Fatal("directory file")
+	}
+	info, st := s.Info(ctx, "/logs")
+	if st != app.FileSuccess || info.Type != app.FileTypeDirectory {
+		t.Fatalf("info: %+v %s", info, st)
+	}
+	if info, st := s.Info(ctx, "/logs/a.txt"); st != app.FileSuccess || info.Permissions != 0o644 || info.Size != 5 {
+		t.Fatalf("file info %+v", info)
+	}
+	if _, st := s.Info(ctx, "/x"); st != app.FileNotFound {
+		t.Fatal("info of missing file")
+	}
+	if s.Delete(ctx, "/logs/a.txt", 0) != app.FilePermissionDenied {
+		t.Fatal("delete on read-only server")
+	}
+}
+
+func TestDatabaseAPI(t *testing.T) {
+	srv, _ := New()
+	db := srv.Database()
+	if err := db.Add(OctetString, 0, PointConfig{}, app.OctetString{}); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("empty octet string accepted")
+	}
+	if err := db.Add(AnalogInput, 0, PointConfig{Class: 4}, app.Analog{}); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("class 4 accepted")
+	}
+	if err := db.Add(AnalogInput, 0, PointConfig{StaticVariation: 99}, app.Analog{}); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("bad static variation accepted")
+	}
+	if err := db.Add(AnalogInput, 0, PointConfig{EventVariation: 99}, app.Analog{}); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("bad event variation accepted")
+	}
+	if err := db.Add(numPointTypes, 0, PointConfig{}, app.Analog{}); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("bad type accepted")
+	}
+	if err := db.Add(BinaryInput, 0, PointConfig{}, app.Analog{}); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("wrong value type accepted")
+	}
+	_ = db.AddDoubleBitInput(0, PointConfig{Class: 1}, app.DoubleBitBinary{})
+	_ = db.AddBinaryOutput(0, PointConfig{Class: 1}, app.Binary{})
+	_ = db.AddAnalogOutput(0, PointConfig{Class: 1}, app.Analog{})
+	if db.Len(DoubleBitInput) != 1 || db.Len(numPointTypes) != 0 {
+		t.Fatal("Len")
+	}
+	if db.UpdateDoubleBitInput(0, app.DoubleBitBinary{Value: app.DoubleBitOn}) != nil ||
+		db.UpdateBinaryOutput(0, app.Binary{Value: true}) != nil || db.UpdateAnalogOutput(0, app.Analog{Value: 3}) != nil {
+		t.Fatal("typed updates")
+	}
+	if err := db.Update(AnalogInput, 7, app.Analog{}, EventOnChange); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("update of missing point")
+	}
+	if err := db.Update(numPointTypes, 0, app.Analog{}, EventOnChange); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("update of bad type")
+	}
+	if v, ok := db.Get(BinaryOutput, 0); !ok || !v.(app.Binary).Value {
+		t.Fatal("Get")
+	}
+	if _, ok := db.Get(numPointTypes, 0); ok {
+		t.Fatal("Get bad type")
+	}
+	if !db.Remove(BinaryOutput, 0) || db.Remove(BinaryOutput, 0) || db.Remove(numPointTypes, 0) {
+		t.Fatal("Remove")
+	}
+	for pt := range numPointTypes + 1 {
+		if pt.String() == "" {
+			t.Fatal("PointType.String")
+		}
+	}
+	for _, o := range []OperateType{SelectBeforeOperate, DirectOperate, DirectOperateNoAck} {
+		if o.String() == "" {
+			t.Fatal("OperateType.String")
+		}
+	}
+	if srv.Address() != 10 {
+		t.Fatal("Address")
+	}
+	// Option validation.
+	for _, opt := range []Option{WithAddress(0xFFF0), WithMasters(0xFFFF), WithHandler(nil), WithMaxConnections(0),
+		WithMaxFragment(100, 2048), WithConfirmTimeout(0), WithSelectTimeout(-1), WithMaxControls(0),
+		WithUnsolicited(Unsolicited{Classes: []Class{4}}), WithEventLimits(map[PointType]int{BinaryInput: -1}),
+		WithTimeSync(-1), WithAttributes(map[uint8]app.Attribute{254: {}})} {
+		if _, err := New(opt); !errors.Is(err, dnp3.ErrInvalidOption) {
+			t.Errorf("option accepted: %v", err)
+		}
+	}
+	if _, err := New(WithSecureAuthentication(SecureAuth{})); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Error("secure authentication without a key accepted")
+	}
+	// A closed server refuses to serve.
+	_ = srv.Close()
+	_ = srv.Close()
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	if err := srv.Serve(l); !errors.Is(err, dnp3.ErrClosed) {
+		t.Fatalf("Serve after Close: %v", err)
+	}
+	a, b := net.Pipe()
+	defer func() { _ = b.Close() }()
+	if err := srv.ServeConn(a, nil); !errors.Is(err, dnp3.ErrClosed) {
+		t.Fatalf("ServeConn after Close: %v", err)
+	}
+}
+
+func TestNopAndFuncHandlers(t *testing.T) {
+	ctx := context.Background()
+	if (NopHandler{}).Select(ctx, Command{}) != app.StatusNotSupported || (NopHandler{}).Operate(ctx, Command{}, DirectOperate) != app.StatusNotSupported {
+		t.Fatal("NopHandler")
+	}
+	called := false
+	h := HandlerFunc(func(context.Context, Command, OperateType) app.CommandStatus { called = true; return app.StatusLocal })
+	if h.Select(ctx, Command{}) != app.StatusSuccess || h.Operate(ctx, Command{}, DirectOperate) != app.StatusLocal || !called {
+		t.Fatal("HandlerFunc")
+	}
+}
+
+// countingHandler accepts every control and records the indexes.
+type countingHandler struct {
+	mu  sync.Mutex
+	idx []uint32
+}
+
+func (h *countingHandler) Select(context.Context, Command) app.CommandStatus {
+	return app.StatusSuccess
+}
+
+func (h *countingHandler) Operate(_ context.Context, c Command, _ OperateType) app.CommandStatus {
+	h.mu.Lock()
+	h.idx = append(h.idx, c.Index)
+	h.mu.Unlock()
+	return app.StatusSuccess
+}
+
+func (h *countingHandler) count() int { h.mu.Lock(); defer h.mu.Unlock(); return len(h.idx) }
+
+func (h *countingHandler) indexes() []uint32 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]uint32(nil), h.idx...)
+}
