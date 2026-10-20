@@ -420,6 +420,9 @@ func TestAcceptAndRemove(t *testing.T) {
 	if len(ss) != 1 || ss[0].Remote() != 77 {
 		t.Fatal("session not added")
 	}
+	if och.Session(outstationAddr, 77) != ss[0] || och.Session(outstationAddr, 78) != nil {
+		t.Fatal("Session")
+	}
 	ss[0].Remove()
 	ss[0].Remove()
 	if err := ss[0].Send(context.Background(), []byte{1}); !errors.Is(err, dnp3.ErrClosed) {

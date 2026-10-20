@@ -56,7 +56,10 @@ other side as a peer.
 A `channel.Channel` owns one byte stream and one reader goroutine.
 Frames are routed by their address pair to a `channel.Session`: one
 association of a master and an outstation. Several sessions share a channel
-on a multi-drop serial line; on TCP there is usually one.
+on a multi-drop serial line; on TCP there is usually one. A
+`server.Group` serves several outstations on the same channels: each
+frame goes to the session of its destination address, a broadcast to the
+sessions of every outstation that takes it.
 
 ```text
                          ┌───────────────────────────────────────────┐
