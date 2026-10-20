@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net"
 	"testing"
@@ -253,5 +254,69 @@ func TestGroupServeAndLimits(t *testing.T) {
 	defer func() { _ = s.Close() }()
 	if err := g2.ServeConn(c, nil); !errors.Is(err, dnp3.ErrClosed) {
 		t.Fatalf("ServeConn with a closed server: %v", err)
+	}
+}
+
+// flakyListener fails Accept with a timeout once, then for good.
+type flakyListener struct {
+	net.Listener
+	calls int
+}
+
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "accept timed out" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }
+
+func (l *flakyListener) Accept() (net.Conn, error) {
+	l.calls++
+	if l.calls == 1 {
+		return nil, timeoutErr{}
+	}
+	return nil, errors.New("listener broken")
+}
+
+func TestGroupListeners(t *testing.T) {
+	g, _ := groupOf(t, 50)
+	// A timeout is waited out; another error ends Serve with it.
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = inner.Close() }()
+	fl := &flakyListener{Listener: inner}
+	if err := g.Serve(fl); err == nil || err.Error() != "listener broken" || fl.calls != 2 {
+		t.Fatalf("Serve on a failing listener: %v after %d accepts", err, fl.calls)
+	}
+	// An address that does not parse; the default address, which is free
+	// or not on this host, either way returns once the group is closed.
+	if err := g.ListenAndServe("127.0.0.1:not-a-port"); err == nil {
+		t.Fatal("ListenAndServe on a bad address")
+	}
+	done := make(chan error, 1)
+	go func() { done <- g.ListenAndServe("") }()
+	time.Sleep(50 * time.Millisecond)
+
+	// TLS from the first server's WithTLS.
+	ts, err := New(WithAddress(51), WithTLS(&tls.Config{MinVersion: tls.VersionTLS12}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tg, err := NewGroup(ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tdone := make(chan error, 1)
+	go func() { tdone <- tg.ListenAndServe("127.0.0.1:0") }()
+	time.Sleep(50 * time.Millisecond)
+	_ = tg.Close()
+	_ = g.Close()
+	for _, c := range []chan error{done, tdone} {
+		select {
+		case <-c:
+		case <-time.After(3 * time.Second):
+			t.Fatal("ListenAndServe did not return after Close")
+		}
 	}
 }
