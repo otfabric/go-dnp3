@@ -183,3 +183,36 @@ func TestAttributeSetsClient(t *testing.T) {
 		t.Fatal("set 0 written without a WriteHandler")
 	}
 }
+
+// brokenStream reads nothing until closed and fails every write.
+type brokenStream struct{ closed chan struct{} }
+
+func (s *brokenStream) Read([]byte) (int, error) { <-s.closed; return 0, io.EOF }
+func (s *brokenStream) Write([]byte) (int, error) {
+	return 0, errors.New("line cut")
+}
+func (s *brokenStream) Close() error {
+	select {
+	case <-s.closed:
+	default:
+		close(s.closed)
+	}
+	return nil
+}
+
+// TestBroadcastSendError: a broadcast that cannot be written fails with
+// the connection.
+func TestBroadcastSendError(t *testing.T) {
+	open := func(context.Context) (io.ReadWriteCloser, net.Addr, error) {
+		return &brokenStream{closed: make(chan struct{})}, nil, nil
+	}
+	c, err := Dial(testCtx(t), "line", WithStream(open), WithStartup(Startup{}), WithAutoIntegrity(false), WithAutoClearRestart(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	crob := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})
+	if err := c.Broadcast(testCtx(t), link.BroadcastNoConfirm, app.FuncDirectOperateNoAck, crob); !errors.Is(err, dnp3.ErrConnectionLost) && !errors.Is(err, dnp3.ErrNotConnected) {
+		t.Fatalf("broadcast on a line that fails: %v", err)
+	}
+}

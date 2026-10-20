@@ -276,10 +276,8 @@ func (s *Server) scheduleFreeze(when time.Time, interval time.Duration, hs []app
 		_ = s.freezeNow(hs, false)
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if _, ok := s.freezes[t]; !ok {
-			return // stopped by Close
-		}
-		if interval > 0 {
+		// Close empties the map: a timer it stopped is not set again.
+		if _, waiting := s.freezes[t]; waiting && interval > 0 {
 			t.Reset(interval)
 			return
 		}

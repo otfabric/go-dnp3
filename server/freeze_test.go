@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -255,8 +256,14 @@ func TestBroadcastFirst(t *testing.T) {
 	}
 	ch := channel.New(conn, channel.Config{})
 	sess := ch.AddSession(channel.SessionConfig{Local: 1, Remote: 10, Master: true})
+	other := ch.AddSession(channel.SessionConfig{Local: 1, Remote: 99, Master: true})
 	ch.Start()
 	defer func() { ch.Close(nil); <-ch.Done() }()
+	// A request to an address that is not the outstation's: no session.
+	b0, _ := req(0, app.FuncRead, app.ClassHeaders(0)...).Encode()
+	if err := other.Send(context.Background(), b0); err != nil {
+		t.Fatal(err)
+	}
 	b, _ := req(0, app.FuncDirectOperateNoAck, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})).Encode()
 	if err := sess.SendBroadcast(context.Background(), b, link.BroadcastNoConfirm); err != nil {
 		t.Fatal(err)
@@ -295,5 +302,39 @@ func TestHugeRanges(t *testing.T) {
 		if d := time.Since(start); d > time.Second {
 			t.Errorf("%s over every index took %v", h.GV, d)
 		}
+	}
+}
+
+// TestFreezeKinds: analog freeze, freeze and clear, headers that cannot be
+// frozen, and a WRITE of an octet string, in the outstation's package.
+func TestFreezeKinds(t *testing.T) {
+	m := newMaster(t)
+	db := m.srv.Database()
+	_ = db.AddFrozenCounter(0, PointConfig{}, app.Counter{Flags: app.FlagOnline})
+	_ = db.AddFrozenAnalogInput(0, PointConfig{}, app.Analog{Flags: app.FlagOnline})
+	_ = db.Add(OctetString, 0, PointConfig{}, app.OctetString{Data: []byte{1}})
+	m.send(req(1, app.FuncImmediateFreeze, app.AllObjects(app.G30V0)))
+	m.recvFunc(app.FuncResponse)
+	if v, _ := db.Get(FrozenAnalogInput, 0); v.(app.Analog).Value != 5 {
+		t.Fatalf("analog freeze: %v", v)
+	}
+	m.send(req(2, app.FuncFreezeClear, app.AllObjects(app.G20V0)))
+	m.recvFunc(app.FuncResponse)
+	if c, _ := db.Get(Counter, 0); c.(app.Counter).Value != 0 {
+		t.Fatalf("freeze and clear left the counter at %v", c)
+	}
+	if f, _ := db.Get(FrozenCounter, 0); f.(app.Counter).Value != 1 {
+		t.Fatalf("freeze and clear froze %v", f)
+	}
+	m.send(req(3, app.FuncImmediateFreeze, app.AllObjects(app.G1V0), app.CountOf(app.G20V0, 1)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) || !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("freeze of binary inputs and with a count: %v", f)
+	}
+	m.send(req(4, app.FuncWrite, app.Ranged(app.GV(110, 2), 0, app.OctetString{Data: []byte{7, 8}})))
+	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("octet string write: %v", f)
+	}
+	if v, _ := db.Get(OctetString, 0); !bytes.Equal(v.(app.OctetString).Data, []byte{7, 8}) {
+		t.Fatalf("octet string after the write: %v", v)
 	}
 }
