@@ -8,14 +8,18 @@
 ## Summary
 
 Several outstations behind one port or line (multi-drop), as IEEE 1815
-addresses them and opendnp3, stepfunc dnp3 and DSC go-dnp3 serve them. No
-breaking change.
+addresses them and opendnp3, stepfunc dnp3 and DSC go-dnp3 serve them; and
+`client.Measurements` reports every kind of point data. No breaking change.
 
 ## Changes
 
 ### Added
 
 - **`server.Group`** (`NewGroup(servers...)`): several outstations, each a `Server` with its own link address, database, handler and options, on the same connections, serial lines or UDP sockets: `ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `Close`. A frame goes to the outstation it is addressed to, a broadcast to all of them, also as a master's first frame. The connection limit is the smallest `WithMaxConnections` of the servers.
+
+### Fixed
+
+- **`Measurements` left out the time and interval (g50v4), BCD integers (g101) and unsigned integers (g102).** They are point data like any other: an application had to walk `Result.Headers` to see them, as dnp3ctl did. The other variations of group 50 (the time of time synchronization and freezes) are still not measurements.
 
 ### Tests
 
