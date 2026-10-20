@@ -276,6 +276,10 @@ variation cannot hold is sent as the nearest one with OVER_RANGE set,
 while a set-point that does not fit is refused. See the [`app` package
 documentation](https://pkg.go.dev/github.com/otfabric/go-dnp3/app).
 
+Every group and variation the codec knows is listed in
+[OBJECTS.md](OBJECTS.md), generated like the codec's table from one
+catalog, `app/catalog.json`.
+
 ## Error semantics
 
 Errors are sentinels tested with `errors.Is` (`dnp3.ErrTimeout`,
@@ -306,6 +310,8 @@ make check   # format, lint, vet, vulnerability scan, race tests, coverage, exam
 make test    # the tests with the race detector
 make fuzz    # the codec and outstation fuzz targets (FUZZTIME=30s each by default)
 make bench   # the codec benchmarks
+make generate        # regenerate the code and OBJECTS.md from app/catalog.json
+make upstream-watch  # compare the catalog with stepfunc dnp3, DSC go-dnp3 and dnp3-interop
 ```
 
 Tests need nothing but Go: master and outstation run against each other

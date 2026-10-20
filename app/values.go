@@ -393,6 +393,41 @@ type UnsignedInteger struct {
 	Value uint8
 }
 
+// DataSetCharacteristics is the characteristics octet of a data set
+// descriptor (g86v2, IEEE 1815-2012 A.47.2).
+type DataSetCharacteristics struct {
+	Flags DataSetFlags
+}
+
+// DataSetFlags are the bits of [DataSetCharacteristics].
+type DataSetFlags uint8
+
+// Data set characteristics bits.
+const (
+	// DataSetReadable (RD): the data set can be read.
+	DataSetReadable DataSetFlags = 1 << iota
+	// DataSetWritable (WR): the data set can be written.
+	DataSetWritable
+	// DataSetStatic (ST): the outstation maintains a static data set.
+	DataSetStatic
+	// DataSetEvents (EV): the outstation generates data set events.
+	DataSetEvents
+	// DataSetMasterDefined (DF): the data set was defined by a master.
+	DataSetMasterDefined
+)
+
+// String returns the names of the set bits, joined by "|".
+func (f DataSetFlags) String() string {
+	names := [...]string{"RD", "WR", "ST", "EV", "DF", "BIT5", "BIT6", "BIT7"}
+	var parts []string
+	for b := range 8 {
+		if f&(1<<b) != 0 {
+			parts = append(parts, names[b])
+		}
+	}
+	return strings.Join(parts, "|")
+}
+
 // SecurityStatistic is a secure authentication statistic (group 121) or
 // a statistic event (group 122).
 type SecurityStatistic struct {
@@ -408,26 +443,27 @@ type SecurityStatistic struct {
 
 // Raw is a free-format object that this package carries without
 // decoding: the obsolete g70v1, private registration objects (group 83),
-// data set objects (groups 85..88), the application identifier (g90v1) and
+// the data set objects of groups 85..88 but the characteristics (g86v2), the application identifier (g90v1) and
 // the status of requested operation (g91v1).
 type Raw struct {
 	Data []byte
 }
 
-func (Binary) isValue()             {}
-func (DoubleBitBinary) isValue()    {}
-func (BinaryCommandEvent) isValue() {}
-func (CROB) isValue()               {}
-func (Counter) isValue()            {}
-func (Analog) isValue()             {}
-func (AnalogDeadband) isValue()     {}
-func (AnalogOutput) isValue()       {}
-func (AnalogCommandEvent) isValue() {}
-func (AbsoluteTime) isValue()       {}
-func (CTO) isValue()                {}
-func (TimeDelay) isValue()          {}
-func (OctetString) isValue()        {}
-func (BCD) isValue()                {}
-func (UnsignedInteger) isValue()    {}
-func (SecurityStatistic) isValue()  {}
-func (Raw) isValue()                {}
+func (Binary) isValue()                 {}
+func (DoubleBitBinary) isValue()        {}
+func (BinaryCommandEvent) isValue()     {}
+func (CROB) isValue()                   {}
+func (Counter) isValue()                {}
+func (Analog) isValue()                 {}
+func (AnalogDeadband) isValue()         {}
+func (AnalogOutput) isValue()           {}
+func (AnalogCommandEvent) isValue()     {}
+func (AbsoluteTime) isValue()           {}
+func (CTO) isValue()                    {}
+func (TimeDelay) isValue()              {}
+func (OctetString) isValue()            {}
+func (BCD) isValue()                    {}
+func (UnsignedInteger) isValue()        {}
+func (DataSetCharacteristics) isValue() {}
+func (SecurityStatistic) isValue()      {}
+func (Raw) isValue()                    {}

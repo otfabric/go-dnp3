@@ -51,6 +51,12 @@ dnp3 (root)          errors, State, Logger, Metrics          imports: app, link
 `client` and `server` never import each other; their tests do, to use the
 other side as a peer.
 
+The codec is driven by a table, one entry per group and variation, of its
+family (how it is encoded), numeric type, flags, time and event. The table,
+the variations `client.Measurements` reports and OBJECTS.md are generated
+from `app/catalog.json` by `internal/cmd/gencatalog` (`go generate`); the
+programs under `internal/cmd` are tools, not part of the library.
+
 ## The channel
 
 A `channel.Channel` owns one byte stream and one reader goroutine.

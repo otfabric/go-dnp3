@@ -96,7 +96,10 @@ The codec decodes and encodes every variation below, in every qualifier
 the standard allows for it (start-stop 0x00..0x02, virtual 0x03..0x05, all
 0x06, count 0x07..0x09, index-prefixed 0x17/0x28/0x39, free-format
 0x4B/0x5B/0x6B). The outstation's database serves the point types; the
-others are used by the procedures.
+others are used by the procedures. [OBJECTS.md](OBJECTS.md) lists each
+variation with its size and whether it is point data, generated from the
+catalog `app/catalog.json`, whose sizes are compared weekly with those of
+stepfunc dnp3 and DSC go-dnp3.
 
 | Groups | Objects | Outstation database |
 |--------|---------|---------------------|

@@ -82,6 +82,7 @@ const (
 	fOctets
 	fBCD
 	fUint8
+	fDataSetChars
 	fSecStat
 	fAttribute
 	fRaw
@@ -221,7 +222,7 @@ func (d *desc) size(gv GroupVariation) int {
 		return int(gv.Variation())
 	case fBCD:
 		return 2 << (gv.Variation() - 1) // 2, 4, 8
-	case fUint8:
+	case fUint8, fDataSetChars:
 		return 1
 	case fSecStat:
 		return 7 + d.time.size()
@@ -358,6 +359,8 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		return decodeBCD(b)
 	case fUint8:
 		return UnsignedInteger{Value: r.u8()}, r.done()
+	case fDataSetChars:
+		return DataSetCharacteristics{Flags: DataSetFlags(r.u8())}, r.done()
 	case fSecStat:
 		v := SecurityStatistic{Flags: Flags(r.u8()), Association: r.u16(), Value: r.u32()}
 		v.Time, _ = d.readTime(&r, c)
@@ -572,6 +575,12 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 			return mismatch()
 		}
 		return append(b, o.Value), nil
+	case fDataSetChars:
+		o, ok := v.(DataSetCharacteristics)
+		if !ok {
+			return mismatch()
+		}
+		return append(b, byte(o.Flags)), nil
 	case fSecStat:
 		o, ok := v.(SecurityStatistic)
 		if !ok {

@@ -77,6 +77,33 @@ func TestResponseVector(t *testing.T) {
 	}
 }
 
+// TestDataSetCharacteristicsVector: g86v2 is one octet per data set
+// (IEEE 1815-2012 A.47.2), sent with a range, not free-format.
+func TestDataSetCharacteristicsVector(t *testing.T) {
+	// Response, g86v2 data sets 1..2: RD|ST|EV, then RD|WR|DF.
+	b := unhex(t, "C1 81 00 00  56 02 00 01 02 0D 13")
+	f, err := Decode(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Header{{GV: G86V2, Qualifier: Qual1ByteStartStop, Start: 1, Stop: 2, Objects: []Object{
+		{1, DataSetCharacteristics{Flags: DataSetReadable | DataSetStatic | DataSetEvents}},
+		{2, DataSetCharacteristics{Flags: DataSetReadable | DataSetWritable | DataSetMasterDefined}},
+	}}}
+	if !reflect.DeepEqual(f.Headers, want) {
+		t.Fatalf("headers\n%#v\nwant\n%#v", f.Headers, want)
+	}
+	if re := mustEncode(t, f); !bytes.Equal(re, b) {
+		t.Fatalf("re-encode % X", re)
+	}
+	if n, ok := G86V2.Size(); !ok || n != 1 {
+		t.Fatalf("size %d, %v", n, ok)
+	}
+	if s := (DataSetReadable | DataSetMasterDefined | 1<<7).String(); s != "RD|DF|BIT7" {
+		t.Fatalf("String %q", s)
+	}
+}
+
 func TestDirectOperateCROBVector(t *testing.T) {
 	// DIRECT_OPERATE, g12v1 qualifier 0x28 count 1 index 3, LATCH_ON count 1 on 100 off 0.
 	want := unhex(t, "C5 05 0C 01 28 01 00 03 00 03 01 64 00 00 00 00 00 00 00 00")
@@ -169,6 +196,8 @@ func sample(gv GroupVariation, d *desc, i int) Value {
 		return BCD{Value: 1234}
 	case fUint8:
 		return UnsignedInteger{Value: 200}
+	case fDataSetChars:
+		return DataSetCharacteristics{Flags: DataSetReadable | DataSetStatic | DataSetEvents}
 	case fSecStat:
 		return SecurityStatistic{Flags: FlagOnline, Association: 1, Value: 99, Time: ts}
 	case fAttribute:
@@ -421,6 +450,7 @@ func TestDecodeErrors(t *testing.T) {
 		{"short free-format size", "C0 81 00 00 46 05 5B 01 10 00 01", ErrMalformed},
 		{"free-format wrong fixed size", "C0 20 78 04 5B 01 03 00 01 00 00", ErrMalformed},
 		{"bad BCD", "C0 81 00 00 65 01 07 01 AB 00", ErrMalformed},
+		{"short data set characteristics", "C0 81 00 00 56 02 00 01 02 0D", ErrMalformed},
 		{"bad file offset", "C0 81 00 00 46 07 5B 01 14 00 13 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", ErrMalformed},
 		{"short index list", "C0 01 1E 01 17 03 01 02", ErrMalformed},
 		{"attribute too short", "C0 81 00 00 00 FC 00 00 00 01 05 41", ErrMalformed},
@@ -457,6 +487,7 @@ func TestEncodeErrors(t *testing.T) {
 		{"unknown with objects", Header{GV: GV(200, 1), Qualifier: Qual1ByteCount, Objects: []Object{{0, Raw{}}}}, ErrUnknownObject},
 		{"octet string length", Ranged(GV(110, 4), 0, OctetString{Data: []byte{1}}), ErrInvalidValue},
 		{"bcd digits", Counted(G101V1, BCD{Value: 123456}), ErrInvalidValue},
+		{"data set characteristics wrong type", Ranged(G86V2, 1, UnsignedInteger{Value: 1}), ErrInvalidValue},
 		{"delay range", Counted(G52V2, TimeDelay{Delay: time.Hour}), ErrInvalidValue},
 		{"block number", FreeFormat(G70V5, FileTransport{Block: lastBlockBit}), ErrInvalidValue},
 		{"auth variation", FreeFormat(G120V1, AuthReply{}), ErrInvalidValue},

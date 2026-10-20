@@ -9,7 +9,11 @@ import (
 	"github.com/otfabric/go-dnp3/app"
 )
 
-// Measurement is one point value or event of a response.
+// Measurement is one point value or event of a response: indexed point
+// data, the value of one of the point types of IEEE 1815-2012 clause 11.
+// Objects without an index that describe the device or a procedure, such
+// as the time and date of time synchronization (g50v1..g50v3), are not
+// measurements. OBJECTS.md lists which objects are.
 type Measurement struct {
 	// GV is the object the value was sent as, for example app.G30V5.
 	GV app.GroupVariation
@@ -50,21 +54,6 @@ type HandlerFunc func(info ResponseInfo, ms []Measurement)
 
 // HandleMeasurements calls f.
 func (f HandlerFunc) HandleMeasurements(info ResponseInfo, ms []Measurement) { f(info, ms) }
-
-// isMeasurement reports whether objects of group g are point values: not
-// commands, time, file, authentication or attribute objects.
-func isMeasurement(gv app.GroupVariation) bool {
-	switch gv.Group() {
-	case 1, 2, 3, 4, 10, 11, 13, 20, 21, 22, 23, 30, 31, 32, 33, 34, 40, 42, 43, 101, 102, 110, 111, 121, 122:
-		return true
-	case 50:
-		// The indexed time and interval is a point; the other variations
-		// are the time of time synchronization and freezes.
-		return gv == app.G50V4
-	default:
-		return false
-	}
-}
 
 // Measurements returns the measurements of a fragment, in the order of
 // its headers.

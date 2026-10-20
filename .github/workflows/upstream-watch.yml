@@ -1,0 +1,55 @@
+name: Upstream watch
+run-name: "Upstream watch (${{ github.event_name }}) by @${{ github.actor }}"
+
+# Weekly: have the object definitions of stepfunc dnp3 or DSC go-dnp3 moved
+# since their reviewed commit (.github/upstream.json), do they still agree
+# with app/catalog.json, and is there a dnp3-interop release newer than the
+# one the interop harness pins? When something needs attention the report
+# goes to one open issue, labelled upstream-watch, created or updated; when
+# nothing does, that issue is closed.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Upstream watch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+      - id: watch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: go run ./internal/cmd/upstreamwatch -out "$RUNNER_TEMP/report.md" -github-output "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTENTION: ${{ steps.watch.outputs.attention }}
+        run: |
+          gh label create upstream-watch --color c5def5 --description "Reported by the upstream watch" 2>/dev/null || true
+          issue=$(gh issue list --label upstream-watch --state open --json number --jq '.[0].number')
+          run="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ "$ATTENTION" = "true" ]; then
+            printf '\n---\nFrom [this run](%s).\n' "$run" >> "$RUNNER_TEMP/report.md"
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --body-file "$RUNNER_TEMP/report.md"
+            else
+              gh issue create --title "Upstream watch: DNP3 object definitions or dnp3-interop changed" \
+                --label upstream-watch --body-file "$RUNNER_TEMP/report.md"
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue close "$issue" --comment "Nothing needs attention any more, as of [this run]($run)."
+          fi
