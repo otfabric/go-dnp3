@@ -43,9 +43,9 @@ The library provides:
   overflow), periodic polls, structured logging, metrics hooks, TCP, TLS,
   UDP and serial (any byte stream)
 - **Verified against third-party stacks**: as master and as outstation
-  against Step Function I/O's dnp3, opendnp3 and DSC Systems' go-dnp3, and
-  as outstation against dnp3py's master, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.2.0,
+  against Step Function I/O's dnp3, opendnp3, DSC Systems' go-dnp3 and
+  dnp3py, in the containers of
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.3.0,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -314,7 +314,7 @@ many masters and concurrent requests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.2.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.2.0),
+of [otfabric/dnp3-interop v0.3.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.3.0),
 pinned by digest:
 
 | Reference | Version | Licence | Roles tested |
@@ -322,7 +322,7 @@ pinned by digest:
 | Step Function I/O dnp3 | 1.7.0 | non-commercial | master and outstation |
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
 | DSC Systems go-dnp3 | v0.8.1 | GPL-3.0 | master and outstation |
-| dnp3py | 0.6.0 | MIT | master (its outstation is not in the images yet) |
+| dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
 
 Both directions cover the integrity poll against the fixture's values and
 flags, reads of ranges and variations, every control case of the fixture
@@ -336,7 +336,9 @@ generated per run), UDP, serial lines (a pseudo-terminal in the container
 bridged to TCP), file transfer against the files fixture, and Secure
 Authentication with session key changes and the security statistics; also
 the requests without a response (DIRECT OPERATE NO ACK, the `_NR`
-freezes) and reads of all objects of a group. The
+freezes), reads of all objects of a group, and contract 1.2: the dual end
+point over TCP and TLS, frozen analog inputs, command events, time and
+interval, security statistic events, and the dnp3py fixture. The
 [coverage matrix](INTEROPERABILITY.md#interop-coverage) shows each feature
 per reference and direction. Deviations a reference has from the
 fixture are those dnp3-interop records as known bugs. Docker is needed; the

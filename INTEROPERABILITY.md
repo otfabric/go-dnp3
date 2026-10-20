@@ -113,7 +113,7 @@ others are used by the procedures.
 | 40, 42 | analog output status, events | ✅ |
 | 41 | analog output blocks | controls |
 | 43 | analog output command events | ✅ as group 13, with the commanded value |
-| 50 | time and date v1..v4 | time synchronization, freeze at time |
+| 50 | time and date v1..v4 | time synchronization, freeze at time; v4 ✅ (`TimeAndInterval`, read by group and variation, not in class 0) |
 | 51 | CTO, synchronized and unsynchronized | relative-time events |
 | 52 | time delay, coarse and fine | restart, delay measurement |
 | 60 | class objects | polls, unsolicited control, assign class |
@@ -203,8 +203,8 @@ a pre-shared session key is used directly.
 | Outstation conformance with a scripted master | ✅ |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1 outstations | ✅ `make interop`, dnp3-interop v0.2.0 |
-| As outstation against the same masters and dnp3py 0.6.0 | ✅ `make interop`, dnp3-interop v0.2.0 |
+| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.3.0 |
+| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.3.0 |
 | TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC Systems, including a refused certificate of another CA |
 | UDP, both roles | ✅ against stepfunc, opendnp3 and DSC Systems; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC Systems over a pseudo-terminal bridged to TCP |
@@ -212,7 +212,9 @@ a pre-shared session key is used directly.
 | File transfer: outstation | ✅ against the masters of stepfunc (get, put, list, info) and DSC Systems (also delete) |
 | Secure Authentication, both roles | ✅ against DSC Systems (HMAC-SHA-256-16, AES-128 key wrap): key change at connect, challenged controls, periodic key change in a session, a second connection, a wrong update key refused, security statistics read both ways; the other references do not implement it |
 | Requests without a response | ✅ DIRECT OPERATE NO ACK and FREEZE AND CLEAR NO ACK as master against stepfunc, opendnp3 and DSC Systems; as outstation from DSC Systems' and dnp3py's masters |
-| Aggressive mode, dual end point | ✅ between go-dnp3's own ends; no reference in dnp3-interop has them |
+| Dual end point, both roles, TCP and TLS | ✅ against stepfunc, opendnp3 and DSC Systems (stepfunc's master listens over TCP only) |
+| Frozen analog inputs, command events, time and interval | ✅ as master against DSC Systems' outstation; as outstation against the masters that decode them (stepfunc, opendnp3, DSC Systems) |
+| Aggressive mode | ✅ between go-dnp3's own ends; no reference in dnp3-interop has it |
 
 ## Interop coverage
 
@@ -225,7 +227,7 @@ images offer.
 
 | Feature | stepfunc 1.7.0 | opendnp3 3.1.2 | DSC Systems v0.8.1 | dnp3py 0.6.0 |
 |---|:---:|:---:|:---:|:---:|
-| Integrity poll: values and flags of every point type of the fixture | M O | M O | M O | O |
+| Integrity poll: values and flags of every point type of the baseline fixture | M O | M O | M O | O |
 | Reads of ranges and variations | M O | M O | M O | O |
 | Read of all objects of a group | O | O | M | O |
 | Direct operate, select-before-operate, set-points, ranges, refused codes and points | M O | M O | M O | O |
@@ -243,7 +245,13 @@ images offer.
 | File transfer: read, write, list, info | O | | M O | |
 | File transfer: delete | | | M O | |
 | Secure Authentication: key change, challenges, re-key, wrong key | | | M O | |
-| Security statistics | | | M O | |
+| Security statistics, reads and g122 events | | | M O | |
+| Dual end point, TCP | M O | M O | M O | |
+| Dual end point, TLS | M | M O | M O | |
+| Frozen analog inputs (g31) | O | | M O | |
+| Command events (g13, g43) | O | O | M O | |
+| Time and interval (g50v4) | | O | M | |
+| The dnp3py fixture (integrity poll, a control and its target) | M | M | M | M |
 
 Known bugs of a reference that the fixture shows (dnp3-interop's
 `tests/known-bugs.tsv`) are logged, not failed: DSC Systems v0.8.1 leaves a
@@ -251,7 +259,8 @@ counter without a frozen counter uncleared by FREEZE AND CLEAR. Two
 findings about the references that the suite works with: opendnp3's UDP
 outstation answers only the fixed peer it is given, so go-dnp3's master
 runs in a container on its network for that test; DSC Systems'
-outstation answers g121 reads of variation 1 only, not variation 0.
+outstation answers g121 reads of variation 1 only, not variation 0; and
+it, like go-dnp3, leaves g50v4 out of class 0.
 
 ## Feature completeness and the remaining gaps
 
@@ -263,14 +272,15 @@ statistics. Against the references:
 | Capability | go-dnp3 | stepfunc dnp3 | opendnp3 | DSC Systems go-dnp3 | Triangle MicroWorks SCL |
 |---|:---:|:---:|:---:|:---:|:---:|
 | File transfer, outstation | ✅ | — | — | ✅ | ✅ |
+| Time and interval (g50v4) from the outstation | ✅ | — | ✅ | ✅ | ✅ |
 | File transfer, master | ✅ | ✅ (no delete) | — | ✅ | ✅ |
 | SAv5 challenge-reply, session key change | ✅ | — | — (removed in 2016) | ✅ | ✅ |
 | SAv5 aggressive mode | ✅ | — | — | — | ✅ |
 | SAv5 security statistics | ✅ | — | — | ✅ | ✅ |
 | SAv5 remote update key change, user management | — | — | — | — | ✅ |
 | AES-GMAC | — | — | — | — | ✅ |
-| Dual end point | ✅ | not documented | — | not documented | ✅ |
-| Command events (g13, g43) from the outstation | ✅ | not documented | not documented | ✅ | ✅ |
+| Dual end point | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Command events (g13, g43) from the outstation | ✅ | — | — | ✅ | ✅ |
 | Virtual terminal (g112, g113), data sets (g85..g88) | — codec | not documented | not documented | not documented | ✅ |
 
 The Triangle MicroWorks column is from its public product descriptions;

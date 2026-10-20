@@ -188,7 +188,7 @@ Constants: `DefaultPort` (20000), `DefaultEventLimit` (100),
 
 | Symbol | Meaning |
 |--------|---------|
-| `PointType` | `BinaryInput`, `DoubleBitInput`, `BinaryOutput`, `Counter`, `FrozenCounter`, `AnalogInput`, `FrozenAnalogInput`, `AnalogOutput`, `OctetString`; and, kept by the outstation and refused by `Add`, `SecurityStatistic` (per master, with secure authentication), `BinaryOutputCommand`, `AnalogOutputCommand` (command events) |
+| `PointType` | `BinaryInput`, `DoubleBitInput`, `BinaryOutput`, `Counter`, `FrozenCounter`, `AnalogInput`, `FrozenAnalogInput`, `AnalogOutput`, `OctetString`, `TimeAndInterval` (g50v4, no class); and, kept by the outstation and refused by `Add`, `SecurityStatistic` (per master, with secure authentication), `BinaryOutputCommand`, `AnalogOutputCommand` (command events) |
 | `PointConfig` | `Class`, `StaticVariation`, `EventVariation`, `Deadband`, `ExcludeFromClass0`; for outputs `CommandEventClass`, `CommandEventVariation` (g13v2, g43v3) |
 | `(*Database).Add`, `Remove`, `Get`, `Len` | Points |
 | `(*Database).Update(t, index, value, mode)` | `EventOnChange`, `EventForce`, `EventSuppress` |
