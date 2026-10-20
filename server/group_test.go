@@ -314,7 +314,8 @@ func TestGroupListeners(t *testing.T) {
 	_ = g.Close()
 	for _, c := range []chan error{done, tdone} {
 		select {
-		case <-c:
+		case err := <-c:
+			t.Logf("ListenAndServe ended: %v", err)
 		case <-time.After(3 * time.Second):
 			t.Fatal("ListenAndServe did not return after Close")
 		}
