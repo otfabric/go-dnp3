@@ -1,18 +1,37 @@
 # go-dnp3 Releases
 
-## Unreleased
+## v1.3.0
 
-### Changed
+**Date:** 2026-10-20
+**Previous release:** v1.2.0
 
-- **The objects come from one catalog.** `app/catalog.json` lists every group and variation; the codec's table, the variations `client.Measurements` reports and the new [OBJECTS.md](OBJECTS.md) are generated from it (`make generate`), and CI fails when they drift. The table is the same as before: no change of behaviour.
+## Summary
 
-### Fixed
+The objects come from one catalog that generates the codec's table, the
+points `client.Measurements` reports and OBJECTS.md; a weekly upstream
+watch compares it with stepfunc dnp3, DSC go-dnp3 and dnp3-interop. g86v2
+is now decoded as the one octet IEEE 1815-2012 defines: code that read it
+as `app.Raw` must switch to `app.DataSetCharacteristics`.
 
-- **g86v2 (Data Set Descriptor - Characteristics) is one octet, as IEEE 1815-2012 A.47.2 defines it.** It was carried as a free-format `app.Raw`; it now decodes to the new `app.DataSetCharacteristics`, whose `DataSetFlags` name the RD, WR, ST, EV and DF bits, and is sent with a range or index prefix like other fixed-size objects. Code that decoded g86v2 as `app.Raw` needs to switch to the new type. The upstream watch found it: DSC go-dnp3 defines it as one octet too.
+## Changes
 
 ### Added
 
 - **An upstream watch**: a weekly workflow that opens or updates an issue when the object definitions of stepfunc dnp3 or DSC go-dnp3 change, when the sizes they define differ from the catalog, or when dnp3-interop has a new release (`make upstream-watch` runs it locally).
+- **OBJECTS.md**: every group and variation with its kind, size and whether it is point data.
+- **`app.DataSetCharacteristics`** and **`app.DataSetFlags`**: the g86v2 object and its RD, WR, ST, EV and DF bits.
+
+### Changed
+
+- **The objects come from one catalog.** `app/catalog.json` lists every group and variation; the codec's table, the variations `client.Measurements` reports and OBJECTS.md are generated from it (`make generate`), and CI fails when they drift. The table is the same as before for every other object.
+
+### Fixed
+
+- **g86v2 (Data Set Descriptor - Characteristics) is one octet, as IEEE 1815-2012 A.47.2 defines it.** It was carried as a free-format `app.Raw`; it now decodes to `app.DataSetCharacteristics` and is sent with a range or index prefix like other fixed-size objects. Code that decoded g86v2 as `app.Raw` needs to switch to the new type. The upstream watch found it: DSC go-dnp3 defines it as one octet too.
+
+### Tests
+
+- `TestCatalog` checks every catalog entry against the codec; a wire vector and error cases cover g86v2; the upstream parsers have unit tests.
 
 ---
 
