@@ -184,6 +184,12 @@ func TestChallengeBeforeKeyChange(t *testing.T) {
 	if _, err := New("127.0.0.1", WithAggressiveMode()); !errors.Is(err, dnp3.ErrInvalidOption) {
 		t.Fatal("aggressive mode without secure authentication accepted")
 	}
+	// Asking twice for a key change while one is pending asks once.
+	c.rekeySoon()
+	c.rekeySoon()
+	if len(c.rekey) != 1 {
+		t.Fatalf("%d key changes pending", len(c.rekey))
+	}
 }
 
 func TestPreSharedSessionKey(t *testing.T) {
@@ -329,10 +335,36 @@ func TestAggressiveMode(t *testing.T) {
 	if n := m.n.Load(); n != 1 {
 		t.Fatalf("%d challenges for 4 controls in aggressive mode, want 1", n)
 	}
+	// A request that does not encode fails before anything is sent.
+	if _, err := c.Write(testCtx(t), app.Header{GV: app.GV(12, 1), Qualifier: app.Qual1ByteStartStop,
+		Objects: []app.Object{{Index: 0, Value: app.Binary{}}}}); err == nil {
+		t.Fatal("WRITE of a header that does not encode succeeded")
+	}
 	after := stats()
 	for _, s := range []secauth.Statistic{secauth.StatSuccessfulAuthentications, secauth.StatCriticalMessagesReceived} {
 		if d := after[uint32(s)] - before[uint32(s)]; d != 4 {
 			t.Errorf("%s grew by %d over 4 authenticated controls", s, d)
 		}
+	}
+}
+
+// TestRekeyOnAuthError: an authentication error in answer to a request
+// asks for a key change; the request fails with it.
+func TestRekeyOnAuthError(t *testing.T) {
+	addr := fakeAuthOutstation(t, func(*app.Fragment) []app.Header {
+		return []app.Header{app.FreeFormat(app.G120V7, app.AuthError{User: 1, Code: app.AuthErrAuthenticationFailed})}
+	})
+	c, err := Dial(testCtx(t), addr, WithSecureAuthentication(secauth.User{Number: 1, Key: []byte("pre-shared session key 32 octets")}),
+		WithStartup(Startup{}), WithAutoIntegrity(false), WithAutoClearRestart(false), WithResponseTimeout(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	var ae *dnp3.AuthError
+	if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); !errors.As(err, &ae) {
+		t.Fatalf("control refused with an authentication error: %v", err)
+	}
+	if len(c.rekey) != 1 {
+		t.Fatal("no key change asked for after the authentication error")
 	}
 }

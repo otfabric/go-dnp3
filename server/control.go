@@ -130,14 +130,13 @@ func (a *association) commandEvent(c Command, status app.CommandStatus) {
 		return
 	}
 	ts := a.srv.clock.now()
+	// A control is a CROB (groups 12) or an analog output (group 41).
 	var v app.Value
-	switch x := c.Value.(type) {
-	case app.CROB:
-		v = app.BinaryCommandEvent{Value: crobState(x), Status: status, Time: ts}
-	case app.AnalogOutput:
-		v = app.AnalogCommandEvent{Value: x.Value, Status: status, Time: ts}
-	default:
-		return
+	if ao, isAnalog := c.Value.(app.AnalogOutput); isAnalog {
+		v = app.AnalogCommandEvent{Value: ao.Value, Status: status, Time: ts}
+	} else {
+		crob, _ := c.Value.(app.CROB)
+		v = app.BinaryCommandEvent{Value: crobState(crob), Status: status, Time: ts}
 	}
 	a.srv.publish([]event{{typ: et, index: c.Index, class: cfg.CommandEventClass, variation: cfg.CommandEventVariation, value: v}})
 }

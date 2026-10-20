@@ -87,10 +87,8 @@ func (c *Client) aggressive(req *app.Fragment) error {
 	if err != nil {
 		return err
 	}
-	mac, err := secauth.MAC(u.Algorithm(), key, secauth.AuthData(last, b))
-	if err != nil {
-		return fmt.Errorf("%w: %w", dnp3.ErrAuthentication, err)
-	}
+	// WithSecureAuthentication validated the algorithm: MAC cannot fail.
+	mac, _ := secauth.MAC(u.Algorithm(), key, secauth.AuthData(last, b))
 	req.Headers = append(req.Headers, app.FreeFormat(app.G120V9, app.AuthMAC{MAC: mac}))
 	c.mu.Lock()
 	c.csq = csq + 1

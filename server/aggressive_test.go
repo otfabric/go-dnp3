@@ -141,6 +141,18 @@ func TestSecurityStatistics(t *testing.T) {
 	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
 		t.Fatalf("read past the table without PARAMETER_ERROR: %v", f)
 	}
+	m.send(req(6, app.FuncRead, app.IndexList(app.G121V1, 2, 12)))
+	if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 1 || len(f.Headers[0].Objects) != 2 ||
+		f.Headers[0].Objects[0].Index != 2 || f.Headers[0].Objects[1].Index != 12 {
+		t.Fatalf("index list read: %v", f)
+	}
+	m.send(req(6, app.FuncRead, app.IndexRange(app.G121V1, 30, 40)))
+	if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 0 || !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("read of no statistic: %v", f)
+	}
+	if _, err := New(WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: testSessionKey}, StatisticsClass: 4})); err == nil {
+		t.Fatal("statistics class 4 accepted")
+	}
 	// Every second increment of a statistic is a class 2 event (g122v2).
 	m.send(req(7, app.FuncRead, app.AllObjects(app.G60V3)))
 	f = m.recvFunc(app.FuncResponse)

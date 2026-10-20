@@ -207,12 +207,7 @@ func (c *Client) keyChangeLoop(stop <-chan struct{}) {
 		} else {
 			retry = keyRetryDelay
 		}
-		if !t.Stop() {
-			select {
-			case <-t.C:
-			default:
-			}
-		}
+		// Since Go 1.23 Reset discards a value the timer may have sent.
 		t.Reset(wait)
 	}
 }

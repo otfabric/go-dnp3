@@ -47,9 +47,9 @@ func TestAcceptOverTLS(t *testing.T) {
 	if err != nil || len(res.Measurements()) != 1 {
 		t.Fatalf("read over the outstation's TLS connection: %v %v", res, err)
 	}
-	// The connection is lost and the client waits for the next one: Close
-	// ends that wait at once.
-	srv.CloseConnections()
+	// Without the outstation, the client waits for its next connection:
+	// Close ends that wait at once.
+	_ = srv.Close()
 	waitFor(t, "the lost connection", func() bool { return c.State() != dnp3.StateConnected })
 	start := time.Now()
 	_ = c.Close()

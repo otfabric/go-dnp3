@@ -25,6 +25,15 @@ func TestCommandEvents(t *testing.T) {
 		m.send(req(seq, app.FuncDirectOperate, app.Indexed(app.G12V1, app.Object{Index: 0, Value: c})))
 		m.recvFunc(app.FuncResponse)
 	}
+	// Select-before-operate: the OPERATE raises the event, not the SELECT.
+	sbo := app.Indexed(app.G12V1, app.Object{Index: 0, Value: crobs[0]})
+	seq = app.NextSeq(seq)
+	m.send(req(seq, app.FuncSelect, sbo))
+	m.recvFunc(app.FuncResponse)
+	seq = app.NextSeq(seq)
+	m.send(req(seq, app.FuncOperate, sbo))
+	m.recvFunc(app.FuncResponse)
+	crobs, want = append(crobs, crobs[0]), append(want, true)
 	seq = app.NextSeq(seq)
 	m.send(req(seq, app.FuncDirectOperateNoAck, app.Indexed(app.G41V3, app.Object{Index: 0, Value: app.AnalogOutput{Value: 3.5}})))
 	// A control of an output that does not exist raises no event.

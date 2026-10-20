@@ -33,6 +33,7 @@ func FuzzOutstation(f *testing.F) {
 		req(11, app.FuncImmediateFreeze, app.AllObjects(app.G20V0)),
 		req(12, app.FuncAssignClass, app.AllObjects(app.G60V2), app.AllObjects(app.G1V0)),
 		req(13, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})),
+		req(14, app.FuncRead, app.AllObjects(app.GV(0, 254))),
 	}
 	for _, s := range seeds {
 		b, err := s.Encode()
