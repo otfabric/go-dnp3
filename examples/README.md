@@ -15,7 +15,7 @@ exchange and there is nothing to set up.
 | [files](files/main.go) | File transfer: `FSFileServer` over an `fs.FS`; `ListDirectory`, `ReadFile`, `FileInfo` | `go run ./examples/files` |
 | [secure](secure/main.go) | Secure Authentication v5: the session key change under an update key, challenged controls, aggressive mode, the outstation's security statistics, and a master with the wrong update key refused | `go run ./examples/secure` |
 | [dialout](dialout/main.go) | The dual end point: the outstation connects out to its master (`DialAndServe`), which waits for it (`client.Accept`), and reconnects after a loss | `go run ./examples/dialout` |
-| [observability](observability/main.go) | `slog` logging and metrics on both sides, a state handler, retries, reconnect and a periodic poll | `go run ./examples/observability` |
+| [observability](observability/main.go) | `slog` logging and metrics on both sides (`client.WithMetrics`, `server.WithMetrics`), a state handler, retries, reconnect and a periodic poll | `go run ./examples/observability` |
 
 The last two are an outstation and a master as separate programs, for
 trying the library against something else: another implementation, a
@@ -24,7 +24,7 @@ simulator, a device.
 | Example | Shows | Run |
 |---------|-------|-----|
 | [server](server/main.go) | An outstation with binary and analog inputs, a counter with its frozen counter, a controllable breaker, periodic updates and unsolicited responses | `go run ./examples/server -addr :20000 -address 10` |
-| [client](client/main.go) | Connect, the startup sequence, time synchronization on demand, optionally latch a binary output, then print everything the outstation reports | `go run ./examples/client -addr 127.0.0.1:20000 -operate 0` |
+| [client](client/main.go) | Connect, the startup sequence, time synchronization when the outstation asks for it (NEED_TIME), optionally latch a binary output, then print everything the outstation reports | `go run ./examples/client -addr 127.0.0.1:20000 -operate 0` |
 
 Both take `-debug` to log every frame and fragment.
 

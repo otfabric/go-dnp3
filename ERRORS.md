@@ -28,9 +28,10 @@ How failures are reported, and how to tell them apart.
 | A control echoed with a status other than SUCCESS | `*dnp3.CommandError` | `errors.As` |
 | A file operation refused | `*dnp3.FileError` | `errors.As` |
 | An authentication error from the peer | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
-| A challenge without secure authentication configured, or before the session keys were changed | wraps `dnp3.ErrAuthentication` (the client then changes the keys) | `errors.Is` |
+| A challenge without secure authentication configured, for another MAC algorithm, or before the session keys were changed | wraps `dnp3.ErrAuthentication` (with an update key, the client then changes the keys at once) | `errors.Is` |
 | An aggressive mode request, or a challenge reply that came too late, refused | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
-| A response that does not fit the request (echo, sequence) | wraps `dnp3.ErrProtocol` | `errors.Is` |
+| A response that does not fit the request (a control echo that differs, a missing or unexpected object, a wrong file block) | wraps `dnp3.ErrProtocol`; a fragment with an unexpected sequence number is ignored, so the request times out | `errors.Is` |
+| Headers of a request that do not encode | the `app` codec error (for example `app.ErrInvalidValue`) | `errors.Is` |
 | An option or argument that cannot be used | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
 | `Client.Broadcast` | only local errors: `ErrInvalidOption` (not a broadcast address, a function that needs an answer), `ErrNotConnected`, send errors; the outstations answer nothing, IIN1.0 shows in their next response | `errors.Is` |
 | The caller's context ended | `context.Canceled`, `context.DeadlineExceeded` | `errors.Is` |
@@ -43,9 +44,10 @@ people and may change; the sentinel is the contract.
 
 ## Refusals by the outstation
 
-An outstation refuses a request with IIN2 bits. The request methods return
-the response **and** an `*IINError`, so that what the outstation did report
-is still available:
+An outstation refuses a request with IIN2 bits. The methods that return a
+`*Result` (`Read`, `IntegrityPoll`, `EventPoll`, `Write`, `Request`) return
+it **and** an `*IINError`, so that what the outstation did report is still
+available; the other methods return only the error:
 
 ```go
 res, err := c.Read(ctx, app.IndexRange(app.G1V2, 0, 9))
@@ -58,8 +60,8 @@ if errors.As(err, &ie) && ie.IIN.Has(app.IINParameterError) {
 
 A control the outstation did not execute is a `*CommandError` with the
 status it echoed (NO_SELECT, LOCAL, OUT_OF_RANGE, NOT_SUPPORTED, ...).
-`Operate` returns the statuses of all controls with it, in order; the error
-names the first one that failed. With select-before-operate a failed SELECT
+`Operate` returns the statuses of all controls with a `*CommandError`, in
+order; the error names the first one that failed. With select-before-operate a failed SELECT
 ends the operation: the OPERATE is not sent.
 
 Some outstations set PARAMETER_ERROR together with a NOT_SUPPORTED echo; the
@@ -84,10 +86,12 @@ The codecs report what they cannot parse or encode with their own
 sentinels: `app.ErrMalformed`, `app.ErrUnknownObject`,
 `app.ErrInvalidQualifier`, `app.ErrUnknownFunction`, `app.ErrInvalidValue`;
 `transport.ErrSequence` and friends; `link.ErrFraming` and the specific
-framing errors it is wrapped together with. A master or outstation never
-returns them from a request: a fragment it cannot decode is dropped and
-reported to `Metrics.OnDecodeError`, and an outstation answers a request it
-cannot decode with the IIN2 bit the standard prescribes (OBJECT_UNKNOWN for
+framing errors it is wrapped together with. A master never returns them
+for what it receives: a fragment it cannot decode is dropped and reported
+to `Metrics.OnDecodeError` (`ListDirectory` wraps the codec error of a
+listing that does not decode together with `ErrProtocol`). A request whose
+own headers do not encode fails with the codec error itself. An outstation
+answers a request it cannot decode with the IIN2 bit the standard prescribes (OBJECT_UNKNOWN for
 `ErrUnknownObject`, NO_FUNC_CODE_SUPPORT for `ErrUnknownFunction`,
 PARAMETER_ERROR otherwise).
 
@@ -105,7 +109,8 @@ executed.
 `ErrConnectionLost` or `ErrNotConnected`, while its context lives, with
 exponential backoff. Only requests that are safe to repeat are retried:
 READ, time synchronization, delay measurement, unsolicited control, assign
-class, file info and file reads. Controls, freezes, restarts and writes are
+class, the session key change, file info and the block reads of a file
+transfer (not OPEN_FILE or CLOSE_FILE). Controls, freezes, restarts and writes are
 never repeated. An `IINError` is never retried: the outstation answered.
 `RequestMetrics.OnRetry` reports each repeated attempt.
 
@@ -122,12 +127,14 @@ through:
 | Events discarded because the buffer was full | EVENT_BUFFER_OVERFLOW; `ServerMetrics.OnEventsDiscarded`; a warning |
 | An unsolicited response that was never confirmed | `ServerMetrics.OnUnsolicited` with an error wrapping `ErrTimeout`; the events are reported later |
 | A failed authentication, a late reply, a refused key change or aggressive mode request | an authentication error object to the master; a warning; the security statistics (g121, g122 events) |
-| `ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `ServeUDPTo` | return the listener's or stream's error, `nil` after `Close` |
+| `ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `ServeUDPTo` | return the listener's or stream's error; `nil` when `Close` ends them, `dnp3.ErrClosed` when called after `Close` |
 | `DialAndServe` | returns `ctx.Err()` when ctx ends and `nil` after `Close`; failed dials, TLS handshakes and lost connections are retried, not returned |
 
 ## Detection patterns
 
 ```go
+var commandErr *dnp3.CommandError
+var iinErr *dnp3.IINError
 switch _, err := c.Operate(ctx, client.SelectBeforeOperate, cmd); {
 case err == nil:
 case errors.As(err, &commandErr):

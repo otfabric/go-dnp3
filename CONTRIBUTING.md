@@ -23,11 +23,13 @@ Thank you for your interest in contributing to `go-dnp3`! This document covers t
 - [staticcheck](https://staticcheck.dev/), [golangci-lint](https://golangci-lint.run/) and [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for the checks
 - No hardware and no external simulator: tests run master and outstation against each other and against scripted peers over loopback
 - Docker, for the interop tests only
+- Network access for `make upstream-watch`; set `GITHUB_TOKEN` to raise GitHub's rate limit
+- `make fmt` and `make fmt-check` run the gofmt of the Go version in go.mod, which Go downloads (`GOTOOLCHAIN`) on first use
 
 ### Build & Test
 
 ```sh
-# Run all checks (format, lint, vet, vulnerability scan, race tests, coverage, examples)
+# Run all checks (generated files, format, lint, vet, vulnerability scan, race tests, coverage, examples)
 make check
 
 # Run the tests with the race detector
@@ -73,7 +75,7 @@ A weekly workflow (`.github/workflows/upstream-watch.yml`) runs `internal/cmd/up
 - an object they define with a fixed layout whose size differs from `app/catalog.json`, or that the catalog lacks;
 - a dnp3-interop release newer than the one the interop harness pins.
 
-The comparison is of facts only (group, variation, size); nothing of those projects is copied. After a review, update the catalog if the standard's objects are concerned and set `reviewed` to the commit the report names; the issue closes on the next run with nothing to report.
+The comparison is of facts only (group, variation, size); nothing of those projects is copied. After a review, update the catalog if the standard's objects are concerned and set `reviewed` to the commit the report names. For a new dnp3-interop release, pin its image digests in `interop/harness.go`, the Makefile and `.github/workflows/interop.yml` and run `make interop`. The issue closes on the next run with nothing to report.
 
 ### Tests
 
@@ -105,7 +107,7 @@ the behaviour and logs the deviation.
 
 - One logical change per pull request, with a description of what and why
 - `make check` passes; `make interop` passes for changes to procedures
-- Update [RELEASE.md](RELEASE.md) under the unreleased version, and the docs the change affects ([API.md](API.md), [INTEROPERABILITY.md](INTEROPERABILITY.md), ...)
+- Add the change to [RELEASE.md](RELEASE.md) in the section of the next version, `## vX.Y.Z`, with the layout of the others (Date, Previous release, Summary, Changes, ending with `---`, the part the Release workflow publishes; never an "Unreleased" section), and update the docs the change affects ([API.md](API.md), [INTEROPERABILITY.md](INTEROPERABILITY.md), ...)
 
 ## License
 

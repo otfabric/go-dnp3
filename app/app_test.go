@@ -78,7 +78,7 @@ func TestResponseVector(t *testing.T) {
 }
 
 // TestDataSetCharacteristicsVector: g86v2 is one octet per data set
-// (IEEE 1815-2012 A.47.2), sent with a range, not free-format.
+// (IEEE 1815-2012 Annex A), sent with a range, not free-format.
 func TestDataSetCharacteristicsVector(t *testing.T) {
 	// Response, g86v2 data sets 1..2: RD|ST|EV, then RD|WR|DF.
 	b := unhex(t, "C1 81 00 00  56 02 00 01 02 0D 13")

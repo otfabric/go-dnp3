@@ -35,8 +35,10 @@ var (
 	ErrTimeout = errors.New("dnp3: timeout")
 
 	// ErrProtocol reports a peer that violated the protocol: a response
-	// with an unexpected sequence number or function, objects that do not
-	// match the request, or a fragment that could not be decoded.
+	// whose objects do not match the request (a control echo that differs,
+	// a missing or unexpected object, a wrong file block), or a link layer
+	// answer that does not fit. A fragment with an unexpected sequence
+	// number is ignored instead.
 	ErrProtocol = errors.New("dnp3: protocol violation")
 
 	// ErrBusy reports a request that cannot be issued because the

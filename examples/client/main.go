@@ -2,7 +2,7 @@
 
 // Command client is a standalone master for trying the library against an
 // outstation: it connects, runs the usual startup (disable unsolicited,
-// integrity poll, enable unsolicited), synchronizes time when asked to,
+// integrity poll, enable unsolicited), synchronizes time when the outstation asks for it (NEED_TIME),
 // optionally operates a binary output, and prints everything the
 // outstation reports until interrupted.
 //

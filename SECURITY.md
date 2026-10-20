@@ -19,8 +19,9 @@ We will acknowledge your report within 48 hours and aim to provide a fix or miti
 
 | Version | Supported |
 |---------|-----------|
-| Latest release | Yes |
-| Older releases | Best effort |
+| 1.3.x | Yes |
+| 1.0.x – 1.2.x | Best effort; upgrade to the latest 1.x, which has no breaking change |
+| 0.x | No |
 
 ## Security Considerations
 
@@ -44,7 +45,7 @@ Plain DNP3 carries no authentication and no encryption: anyone who can reach an 
 
 - **Use an update key.** With `secauth.User.UpdateKey` (16 or 32 random octets) the master generates fresh session keys on every connection and at the key change interval, and sends them wrapped with the update key (AES key wrap, RFC 3394); the outstation drops them when the connection ends. The pre-shared session key mode (`secauth.User.Key` without an update key) never changes its key and is meant for testing
 - **Update keys are configured out of band.** The update key change procedures (symmetric and asymmetric) and user management are not implemented, nor is AES-GMAC: keep update keys out of source control and rotate them by reconfiguring both ends
-- **Aggressive mode** (`client.WithAggressiveMode`) saves the challenge round trip: the MAC is bound to the last challenge and the outstation checks that the challenge sequence numbers follow each other, so a request cannot be replayed. It still trusts one challenge for several requests; enable it only where the latency matters
+- **Aggressive mode** (`client.WithAggressiveMode`) saves the challenge round trip: the MAC is bound to the last challenge and the outstation checks that the challenge sequence numbers follow each other, so a request cannot be replayed. It still trusts one challenge for several requests; enable it only where the latency matters. An outstation with secure authentication always accepts aggressive mode requests from its master: it cannot be turned off on the outstation's side
 - **A critical broadcast is carried out only in aggressive mode.** A broadcast cannot be challenged: with secure authentication the outstation discards a critical one without a valid aggressive mode MAC, counts it as discarded and answers nothing
 - **A held critical request expires.** `SecureAuth.ReplyTimeout` (10 s by default) bounds how long the outstation waits for the reply to its challenge
 - **Watch the security statistics.** The outstation counts authentication failures, refused key changes, reply timeouts and more per master (g121, readable by any master); `StatisticsThreshold` and `StatisticsClass` make them events (g122) a SCADA system can alarm on

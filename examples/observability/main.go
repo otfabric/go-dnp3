@@ -43,7 +43,8 @@ func (m *counters) OnRetry(net.Addr, uint16, app.FunctionCode, int, error) {}
 
 func main() {
 	logger := dnp3.NewSlogLogger(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	srv, err := server.New(server.WithLogger(logger))
+	sm := &counters{} // the outstation's frames
+	srv, err := server.New(server.WithLogger(logger), server.WithMetrics(sm))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -75,5 +76,6 @@ func main() {
 	}
 	time.Sleep(500 * time.Millisecond) // a few periodic event polls
 	_ = c.Close()
-	fmt.Printf("frames sent %d, received %d, requests %d\n", m.framesSent.Load(), m.framesReceived.Load(), m.requests.Load())
+	fmt.Printf("master: frames sent %d, received %d, requests %d\n", m.framesSent.Load(), m.framesReceived.Load(), m.requests.Load())
+	fmt.Printf("outstation: frames sent %d, received %d\n", sm.framesSent.Load(), sm.framesReceived.Load())
 }

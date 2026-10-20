@@ -51,7 +51,7 @@ func (s stdLogger) Errorf(f string, a ...any) { s.l.Printf("ERROR "+f, a...) }
 // FieldLogger extends [Logger] with structured key-value logging. When the
 // Logger given to a client or server also implements FieldLogger, the library
 // logs through it: every entry is a constant message plus fields such as
-// "component", "remote", "state", "type", "cause" and "error", instead of one
+// "component", "remote", "outstation", "master" and "error", instead of one
 // formatted string. [NewSlogLogger] returns such a logger.
 //
 // keysAndValues alternate string keys and values, as in log/slog.

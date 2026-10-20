@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// Command dialout shows the dual end point of IEEE 1815-2012 annex A.3:
+// Command dialout shows the dual end point of IEEE 1815-2012:
 // the outstation, behind a firewall that only lets it connect out,
 // establishes the TCP connection to its master and re-establishes it when
 // it is lost. The master waits for it with client.Accept.

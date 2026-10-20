@@ -72,41 +72,40 @@ The library provides:
 
 ## go-dnp3 vs stepfunc dnp3, opendnp3 and DSC go-dnp3
 
-go-dnp3 is tested against four other implementations, three of which this table compares (see
-[Interop tests](#interop-tests)). All are good libraries; this table shows
-where they differ so you can pick the right one for your project.
+go-dnp3 is tested against four other implementations, three of which this
+table compares (see [Interop tests](#interop-tests)). Each suits different
+needs; the table shows where they differ, from their public sources, so
+you can pick the right one for your project.
 
 | Capability | otfabric/go-dnp3 | stepfunc dnp3 | opendnp3 | DSC go-dnp3 |
 |---|:---:|:---:|:---:|:---:|
 | Language | Go | Rust (C, C++, .NET, Java bindings) | C++ (Java, .NET bindings) | Go |
-| License | MIT | non-commercial; commercial licence available | Apache-2.0 | GPL-3.0 |
-| Maintained | ✅ | ✅ | — archived 2022 | ✅ young (v0.8) |
+| Licence | MIT | proprietary: non-commercial, non-production use; commercial licence otherwise | Apache-2.0 | GPL-3.0-or-later (copyleft: a program linking it is GPL) |
+| Status | maintained, v1 (semantic versioning) | maintained, v1, commercial support | end of life: archived 2022, 3.1.2 final | maintained, pre-1.0 ("API not yet stable") |
 | Master and outstation | ✅ | ✅ | ✅ | ✅ |
 | Unsolicited responses, both roles | ✅ | ✅ | ✅ | ✅ |
 | Select-before-operate, direct operate | ✅ | ✅ | ✅ | ✅ |
-| Direct operate no-ack, as master | ✅ | — ¹ | — ¹ | ✅ |
+| Direct operate no-ack, as master | ✅ | — in 1.7.0 (added in 1.8.0-M1) | — | ✅ |
 | LAN and non-LAN time synchronization | ✅ | ✅ | ✅ | ✅ |
-| Assign class, as outstation | ✅ | — ¹ | ✅ | ✅ |
-| File transfer (g70) | ✅ both roles | master | — | ✅ |
-| Secure Authentication v5 | ✅ session key change, challenges, aggressive mode, statistics | — | — | symmetric subset with statistics |
-| Dual end point (outstation dials) | ✅ | not documented | — | not documented |
+| Assign class, as outstation | ✅ | — | ✅ | ✅ |
+| File transfer (g70) | ✅ both roles | master | — (codec only) | ✅ both roles |
+| Secure Authentication v5 | ✅ session key change, challenges, aggressive mode, statistics | — | — | symmetric subset with statistics, no aggressive mode |
+| Outstation that dials the master | ✅ dual end point (`DialAndServe`) | ✅ TCP and TLS client | ✅ on a TCP or TLS client channel | ✅ over a TCP client channel |
+| Several outstations behind one port or line | ✅ by link address (`server.Group`) | several outstations per TCP server, chosen by the master's IP address | ✅ several stacks per channel | ✅ `multidrop` package |
 | Device attributes (g0) | ✅ both roles, any set | ✅ | — | ✅ |
-| TLS | ✅ `crypto/tls` | ✅ | ✅ | ✅ |
-| UDP | ✅ | ✅ | ✅ | ✅ |
-| Serial | ✅ any byte stream | ✅ | ✅ | ✅ |
-| Blocking request methods returning the response | ✅ | — async | — callbacks | not documented |
-| Cancellation and deadlines per call | ✅ `context.Context` | futures | — | not documented |
-| Structured logging | ✅ `log/slog` | ✅ `tracing` | — own logger | not documented |
-| Metrics hooks | ✅ | not documented | — | not documented |
-| Dependencies | none | Tokio and others | ASIO | not documented |
-| Cross-tested against other stacks in CI | ✅ against all three and dnp3py, every feature they share ([coverage](INTEROPERABILITY.md#interop-coverage)) | not documented | not documented | ✅ opendnp3 (its notes) |
+| Data sets (g85..g88) | — (generic requests) | — | — | ✅ outstation backend, master handler |
+| TLS, UDP, serial | ✅ (`crypto/tls`; serial as any byte stream) | ✅ | ✅ | ✅ |
+| Request methods that return the response | ✅ | — async (futures) | — callbacks | ✅ controls, attributes, files; polls to a handler |
+| Cancellation and deadlines per call | ✅ `context.Context` | futures | — | ✅ `context.Context` |
+| Structured logging | ✅ `log/slog` | ✅ `tracing` | own logger | ✅ `log/slog` |
+| Metrics | ✅ callbacks (`dnp3.Metrics`) | not documented | — | `Stats()` counters |
+| Dependencies | none (standard library) | Tokio, tracing; rustls for TLS, tokio-serial for serial | ASIO, exe4cpp, ser4cpp; OpenSSL for TLS | standard library; go.bug.st/serial for serial |
+| Tested against other stacks in CI | ✅ the three and dnp3py, the features of the [coverage matrix](INTEROPERABILITY.md#interop-coverage) | not documented | not documented | ✅ opendnp3 |
+| DNP Users Group IED conformance procedures (dnp3c) in CI | — (outstation conformance tests with a scripted master) | ✅ 3.1r1 subset level 3, 2.7 level 2 | not documented | ✅ 3.1r1 subset level 3, 2.7 level 2 (not a certification) |
 
-¹ As declared by its adapter in dnp3-interop: the reference container does
-not exercise it, which may be the adapter's limit rather than the library's.
-
-✅ = available · — = not available or not documented. For stepfunc dnp3
-1.7.0, opendnp3 3.1.2 and DSC go-dnp3 v0.8.1, the versions go-dnp3
-is tested against, from their public sources, their documentation and the
+✅ = available · — = not available. For stepfunc dnp3 1.7.0, opendnp3
+3.1.2 and DSC go-dnp3 v0.8.1, the versions go-dnp3 is tested against,
+from their source, documentation and licences and the
 [dnp3-interop capability records](https://github.com/otfabric/dnp3-interop),
 as of October 2026. If you spot an inaccuracy, please
 [open an issue](https://github.com/otfabric/go-dnp3/issues) and we will
@@ -328,9 +327,9 @@ pinned by digest:
 
 | Reference | Version | Licence | Roles tested |
 |-----------|---------|---------|--------------|
-| Step Function I/O dnp3 | 1.7.0 | non-commercial | master and outstation |
+| Step Function I/O dnp3 | 1.7.0 | non-commercial, non-production | master and outstation |
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
-| DSC go-dnp3 | v0.8.1 | GPL-3.0 | master and outstation |
+| DSC go-dnp3 | v0.8.1 | GPL-3.0-or-later | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
 
 Both directions cover the integrity poll against the fixture's values and
@@ -369,8 +368,13 @@ linked into go-dnp3.
   has it. See [SECURITY.md](SECURITY.md) and
   [the gaps](INTEROPERABILITY.md#feature-completeness-and-the-remaining-gaps).
 - **Data sets, private registration objects and the virtual terminal**
-  (groups 83, 85..88, 90, 91 raw; 112, 113 decoded) have no procedures:
-  exchange them with the generic request methods.
+  (groups 83, 85..88, 90, 91 carried raw, except the one-octet data set
+  characteristics g86v2; 112, 113 decoded) have no procedures: exchange
+  them with the generic request methods.
+- **Conformance**: the outstation is tested against IEEE 1815 with a
+  scripted master and against four other stacks, but not with the DNP
+  Users Group's IED conformance procedures, and go-dnp3 declares no
+  subset level.
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation: a

@@ -8,13 +8,16 @@ constants and table of the `app` package and the objects `client.Measurements`
 reports are generated from it.
 
 **Size** is the octets of one object; "—" when it is not fixed (packed bits,
-free-format and variable-length objects). **Point** marks indexed point
-data: the value or event of a point, one of the point types of IEEE
-1815-2012 clause 11, sent with its index. These are the objects
-`client.Measurements` reports. Objects about the device or a procedure
-are not points, even in a group that has one: the time and date of time
-synchronization (g50v1, g50v3) and the freeze time (g50v2) have no index,
-while g50v4, the time and interval point type, does.
+free-format and variable-length objects). **Point** marks the indexed data
+`client.Measurements` reports: the values and events of the point types,
+their deadbands (g34), BCD and unsigned integers (g101, g102) and the
+security statistics (g121, g122), each sent with the index of its point.
+Objects about the device or a procedure are not points, even in a group
+that has one: the time and date of time synchronization (g50v1, g50v3)
+and the freeze time (g50v2) have no index, while g50v4, the time and
+interval point type, does. **Kind** is "static" for the current value of
+a point, "event" for an event, "any variation" for variation 0 in a
+request, and "other" for commands, procedure objects and the rest.
 
 | Object | Name | Kind | Size | Point |
 |---|---|---|---:|:---:|
@@ -39,9 +42,9 @@ while g50v4, the time and interval point type, does.
 | g11v1 | Binary Output Event - Status Without Time | event | 1 | ✓ |
 | g11v2 | Binary Output Event - Status With Time | event | 7 | ✓ |
 | g12v0 | Binary Output Command - Any Variation | any variation | — |  |
-| g12v1 | Binary Output Command - Control Relay Output Block | static | 11 |  |
-| g12v2 | Binary Output Command - Pattern Control Block | static | 11 |  |
-| g12v3 | Binary Output Command - Pattern Mask | static | — |  |
+| g12v1 | Binary Output Command - Control Relay Output Block | other | 11 |  |
+| g12v2 | Binary Output Command - Pattern Control Block | other | 11 |  |
+| g12v3 | Binary Output Command - Pattern Mask | other | — |  |
 | g13v0 | Binary Output Command Event - Any Variation | any variation | — |  |
 | g13v1 | Binary Output Command Event - Without Time | event | 1 | ✓ |
 | g13v2 | Binary Output Command Event - With Time | event | 7 | ✓ |
@@ -129,10 +132,10 @@ while g50v4, the time and interval point type, does.
 | g40v3 | Analog Output Status - Single-precision With Flag | static | 5 | ✓ |
 | g40v4 | Analog Output Status - Double-precision With Flag | static | 9 | ✓ |
 | g41v0 | Analog Output Block - Any Variation | any variation | — |  |
-| g41v1 | Analog Output Block - 32-bit | static | 5 |  |
-| g41v2 | Analog Output Block - 16-bit | static | 3 |  |
-| g41v3 | Analog Output Block - Single-precision | static | 5 |  |
-| g41v4 | Analog Output Block - Double-precision | static | 9 |  |
+| g41v1 | Analog Output Block - 32-bit | other | 5 |  |
+| g41v2 | Analog Output Block - 16-bit | other | 3 |  |
+| g41v3 | Analog Output Block - Single-precision | other | 5 |  |
+| g41v4 | Analog Output Block - Double-precision | other | 9 |  |
 | g42v0 | Analog Output Event - Any Variation | any variation | — |  |
 | g42v1 | Analog Output Event - 32-bit With Flag | event | 5 | ✓ |
 | g42v2 | Analog Output Event - 16-bit With Flag | event | 3 | ✓ |
@@ -151,56 +154,56 @@ while g50v4, the time and interval point type, does.
 | g43v6 | Analog Output Command Event - Double-precision | event | 9 | ✓ |
 | g43v7 | Analog Output Command Event - Single-precision With Time | event | 11 | ✓ |
 | g43v8 | Analog Output Command Event - Double-precision With Time | event | 15 | ✓ |
-| g50v1 | Time and Date - Absolute Time | static | 6 |  |
-| g50v2 | Time and Date - Absolute Time and Interval | static | 10 |  |
-| g50v3 | Time and Date - Absolute Time at Last Recorded Time | static | 6 |  |
+| g50v1 | Time and Date - Absolute Time | other | 6 |  |
+| g50v2 | Time and Date - Absolute Time and Interval | other | 10 |  |
+| g50v3 | Time and Date - Absolute Time at Last Recorded Time | other | 6 |  |
 | g50v4 | Time and Date - Indexed Absolute Time and Long Interval | static | 11 | ✓ |
-| g51v1 | Time and Date CTO - Absolute Time, Synchronized | static | 6 |  |
-| g51v2 | Time and Date CTO - Absolute Time, Unsynchronized | static | 6 |  |
-| g52v1 | Time Delay - Coarse | static | 2 |  |
-| g52v2 | Time Delay - Fine | static | 2 |  |
-| g60v1 | Class Objects - Class 0 Data | static | — |  |
-| g60v2 | Class Objects - Class 1 Data | static | — |  |
-| g60v3 | Class Objects - Class 2 Data | static | — |  |
-| g60v4 | Class Objects - Class 3 Data | static | — |  |
-| g70v1 | File-control - File Identifier | static | — |  |
-| g70v2 | File-control - Authentication | static | — |  |
-| g70v3 | File-control - File Command | static | — |  |
-| g70v4 | File-control - File Command Status | static | — |  |
-| g70v5 | File-control - File Transport | static | — |  |
-| g70v6 | File-control - File Transport Status | static | — |  |
-| g70v7 | File-control - File Descriptor | static | — |  |
-| g70v8 | File-control - File Specification String | static | — |  |
-| g80v1 | Internal Indications - Packed Format | static | — |  |
-| g83v1 | Data Set - Private Registration Object | static | — |  |
-| g83v2 | Data Set - Private Registration Object Descriptor | static | — |  |
-| g85v1 | Data Set Prototype - With UUID | static | — |  |
-| g86v1 | Data Set Descriptor - Data Set Contents | static | — |  |
-| g86v2 | Data Set Descriptor - Characteristics | static | 1 |  |
-| g86v3 | Data Set Descriptor - Point Index Attributes | static | — |  |
-| g87v1 | Data Set - Present Value | static | — |  |
+| g51v1 | Time and Date CTO - Absolute Time, Synchronized | other | 6 |  |
+| g51v2 | Time and Date CTO - Absolute Time, Unsynchronized | other | 6 |  |
+| g52v1 | Time Delay - Coarse | other | 2 |  |
+| g52v2 | Time Delay - Fine | other | 2 |  |
+| g60v1 | Class Objects - Class 0 Data | other | — |  |
+| g60v2 | Class Objects - Class 1 Data | other | — |  |
+| g60v3 | Class Objects - Class 2 Data | other | — |  |
+| g60v4 | Class Objects - Class 3 Data | other | — |  |
+| g70v1 | File-control - File Identifier | other | — |  |
+| g70v2 | File-control - Authentication | other | — |  |
+| g70v3 | File-control - File Command | other | — |  |
+| g70v4 | File-control - File Command Status | other | — |  |
+| g70v5 | File-control - File Transport | other | — |  |
+| g70v6 | File-control - File Transport Status | other | — |  |
+| g70v7 | File-control - File Descriptor | other | — |  |
+| g70v8 | File-control - File Specification String | other | — |  |
+| g80v1 | Internal Indications - Packed Format | other | — |  |
+| g83v1 | Data Set - Private Registration Object | other | — |  |
+| g83v2 | Data Set - Private Registration Object Descriptor | other | — |  |
+| g85v1 | Data Set Prototype - With UUID | other | — |  |
+| g86v1 | Data Set Descriptor - Data Set Contents | other | — |  |
+| g86v2 | Data Set Descriptor - Characteristics | other | 1 |  |
+| g86v3 | Data Set Descriptor - Point Index Attributes | other | — |  |
+| g87v1 | Data Set - Present Value | other | — |  |
 | g88v1 | Data Set Event - Snapshot | event | — |  |
-| g90v1 | Application - Identifier | static | — |  |
-| g91v1 | Status of Requested Operation - Active Configuration | static | — |  |
+| g90v1 | Application - Identifier | other | — |  |
+| g91v1 | Status of Requested Operation - Active Configuration | other | — |  |
 | g101v1 | Binary-Coded Decimal Integer - Small | static | 2 | ✓ |
 | g101v2 | Binary-Coded Decimal Integer - Medium | static | 4 | ✓ |
 | g101v3 | Binary-Coded Decimal Integer - Large | static | 8 | ✓ |
 | g102v1 | Unsigned Integer - 8-bit | static | 1 | ✓ |
-| g120v1 | Authentication - Challenge | static | — |  |
-| g120v2 | Authentication - Reply | static | — |  |
-| g120v3 | Authentication - Aggressive Mode Request | static | 6 |  |
-| g120v4 | Authentication - Session Key Status Request | static | 2 |  |
-| g120v5 | Authentication - Session Key Status | static | — |  |
-| g120v6 | Authentication - Session Key Change | static | — |  |
-| g120v7 | Authentication - Error | static | — |  |
-| g120v8 | Authentication - User Certificate | static | — |  |
-| g120v9 | Authentication - MAC | static | — |  |
-| g120v10 | Authentication - User Status Change | static | — |  |
-| g120v11 | Authentication - Update Key Change Request | static | — |  |
-| g120v12 | Authentication - Update Key Change Reply | static | — |  |
-| g120v13 | Authentication - Update Key Change | static | — |  |
-| g120v14 | Authentication - Update Key Change Signature | static | — |  |
-| g120v15 | Authentication - Update Key Change Confirmation | static | — |  |
+| g120v1 | Authentication - Challenge | other | — |  |
+| g120v2 | Authentication - Reply | other | — |  |
+| g120v3 | Authentication - Aggressive Mode Request | other | 6 |  |
+| g120v4 | Authentication - Session Key Status Request | other | 2 |  |
+| g120v5 | Authentication - Session Key Status | other | — |  |
+| g120v6 | Authentication - Session Key Change | other | — |  |
+| g120v7 | Authentication - Error | other | — |  |
+| g120v8 | Authentication - User Certificate | other | — |  |
+| g120v9 | Authentication - MAC | other | — |  |
+| g120v10 | Authentication - User Status Change | other | — |  |
+| g120v11 | Authentication - Update Key Change Request | other | — |  |
+| g120v12 | Authentication - Update Key Change Reply | other | — |  |
+| g120v13 | Authentication - Update Key Change | other | — |  |
+| g120v14 | Authentication - Update Key Change Signature | other | — |  |
+| g120v15 | Authentication - Update Key Change Confirmation | other | — |  |
 | g121v0 | Security Statistic - Any Variation | any variation | — |  |
 | g121v1 | Security Statistic - 32-bit With Flag | static | 7 | ✓ |
 | g122v0 | Security Statistic Event - Any Variation | any variation | — |  |
@@ -213,8 +216,8 @@ Their variation is not a fixed set; the `app` package handles them in code.
 
 | Group | Name | Variation | Point |
 |---|---|---|:---:|
-| g0 | Device Attributes | the attribute (1..253; 254 all attributes, 255 the list of variations) |  |
-| g110 | Octet String | the length, 1..255 | ✓ |
-| g111 | Octet String Event | the length, 1..255 | ✓ |
-| g112 | Virtual Terminal Output Block | the length, 1..255 |  |
-| g113 | Virtual Terminal Event Data | the length, 1..255 |  |
+| g0 | Device Attributes | the attribute, 1..253; 254 all attributes; 255 the list of variations; 0 any, in a request |  |
+| g110 | Octet String | the length, 1..255; 0 any length, in a request | ✓ |
+| g111 | Octet String Event | the length, 1..255; 0 any length, in a request | ✓ |
+| g112 | Virtual Terminal Output Block | the length, 1..255; 0 any length, in a request |  |
+| g113 | Virtual Terminal Event Data | the length, 1..255; 0 any length, in a request |  |
