@@ -5,10 +5,15 @@
 package interop
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
+	"path"
+	"sort"
 	"sync"
 	"time"
 
@@ -37,6 +42,19 @@ type fixture struct {
 	AnalogInputs    []fixturePoint `json:"analogInputs"`
 	AnalogOutputs   []fixturePoint `json:"analogOutputs"`
 	OctetStrings    []fixturePoint `json:"octetStrings"`
+	Files           []fixtureFile  `json:"files"`
+	Directories     []string       `json:"directories"`
+}
+
+// fixtureFile is a file the outstation serves (fixture format 1.1).
+type fixtureFile struct {
+	Name    string `json:"name"`
+	Content string `json:"content"` // hex
+}
+
+func (f fixtureFile) data() []byte {
+	b, _ := hex.DecodeString(f.Content)
+	return b
 }
 
 type fixturePoint struct {
@@ -115,8 +133,9 @@ func (p fixturePoint) config(staticDefault, eventDefault uint8) server.PointConf
 // station is go-dnp3's outstation serving a fixture, with the control
 // semantics of FIXTURES.md: targets, select-required outputs, ranges.
 type station struct {
-	f   *fixture
-	srv *server.Server
+	f     *fixture
+	srv   *server.Server
+	files *fileStore
 
 	mu      sync.Mutex
 	times   []time.Time
@@ -135,6 +154,10 @@ func newStation(f *fixture, opts ...server.Option) (*station, error) {
 	}
 	if f.Outstation.NeedTime {
 		o = append(o, server.WithTimeSync(24*time.Hour))
+	}
+	if len(f.Files) > 0 || len(f.Directories) > 0 {
+		st.files = newFileStore(f)
+		o = append(o, server.WithFileServer(st.files))
 	}
 	srv, err := server.New(append(o, opts...)...)
 	if err != nil {
@@ -321,4 +344,158 @@ func (f *fixture) expectedStatic() map[string]any {
 	put(40, 1, f.AnalogOutputs, func(p fixturePoint) any { return p.number() })
 	put(110, 0, f.OctetStrings, func(p fixturePoint) any { return hex.EncodeToString(p.octets()) })
 	return out
+}
+
+// fileStore serves the files of a fixture as FIXTURES.md says: masters
+// read, list, describe, write into existing directories and delete. The
+// files live as long as the station.
+type fileStore struct {
+	mu      sync.Mutex
+	files   map[string][]byte
+	dirs    map[string]bool
+	created app.Timestamp
+}
+
+func newFileStore(f *fixture) *fileStore {
+	s := &fileStore{files: map[string][]byte{}, dirs: map[string]bool{"/": true}, created: app.TimestampOf(time.Now())}
+	addDir := func(d string) {
+		for ; d != "/"; d = path.Dir(d) {
+			s.dirs[d] = true
+		}
+	}
+	for _, ff := range f.Files {
+		name := path.Clean(ff.Name)
+		s.files[name] = ff.data()
+		addDir(path.Dir(name))
+	}
+	for _, d := range f.Directories {
+		addDir(path.Clean(d))
+	}
+	return s
+}
+
+func fileName(name string) string { return path.Clean("/" + name) }
+
+func (s *fileStore) descriptor(name string, full bool) app.FileDescriptor {
+	shown := name
+	if !full {
+		shown = path.Base(name)
+	}
+	if s.dirs[name] {
+		return app.FileDescriptor{Name: shown, Type: app.FileTypeDirectory, Created: s.created, Permissions: 0o755}
+	}
+	return app.FileDescriptor{Name: shown, Type: app.FileTypeSimple, Size: uint32(len(s.files[name])), Created: s.created, Permissions: 0o644}
+}
+
+func (s *fileStore) Open(_ context.Context, req server.FileRequest) (server.File, app.FileStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name := fileName(req.Name)
+	switch req.Mode {
+	case app.FileModeRead:
+		if s.dirs[name] {
+			var children []string
+			for n := range s.files {
+				if path.Dir(n) == name {
+					children = append(children, n)
+				}
+			}
+			for d := range s.dirs {
+				if d != "/" && path.Dir(d) == name {
+					children = append(children, d)
+				}
+			}
+			sort.Strings(children)
+			var b []byte
+			for _, c := range children {
+				b, _ = app.AppendFileDescriptor(b, s.descriptor(c, false))
+			}
+			return &storeFile{r: bytes.NewReader(b), size: len(b)}, app.FileSuccess
+		}
+		data, ok := s.files[name]
+		if !ok {
+			return nil, app.FileNotFound
+		}
+		return &storeFile{r: bytes.NewReader(data), size: len(data)}, app.FileSuccess
+	case app.FileModeWrite, app.FileModeAppend:
+		if s.dirs[name] {
+			return nil, app.FilePermissionDenied
+		}
+		if !s.dirs[path.Dir(name)] {
+			return nil, app.FileNotFound
+		}
+		f := &storeFile{store: s, name: name}
+		if req.Mode == app.FileModeAppend {
+			f.w.Write(s.files[name])
+		}
+		return f, app.FileSuccess
+	default:
+		return nil, app.FileInvalidMode
+	}
+}
+
+func (s *fileStore) Delete(_ context.Context, name string, _ uint32) app.FileStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name = fileName(name)
+	if _, ok := s.files[name]; !ok {
+		if s.dirs[name] {
+			return app.FilePermissionDenied
+		}
+		return app.FileNotFound
+	}
+	delete(s.files, name)
+	return app.FileSuccess
+}
+
+func (s *fileStore) Info(_ context.Context, name string) (app.FileDescriptor, app.FileStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name = fileName(name)
+	if _, ok := s.files[name]; !ok && !s.dirs[name] {
+		return app.FileDescriptor{}, app.FileNotFound
+	}
+	return s.descriptor(name, true), app.FileSuccess
+}
+
+// get returns a file's content, for checking what a master wrote.
+func (s *fileStore) get(name string) ([]byte, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.files[fileName(name)]
+	return b, ok
+}
+
+// storeFile is a file of a fileStore being read (r) or written (w).
+type storeFile struct {
+	r     io.Reader
+	size  int
+	store *fileStore
+	name  string
+	w     bytes.Buffer
+}
+
+func (f *storeFile) Read(p []byte) (int, error) {
+	if f.r == nil {
+		return 0, fs.ErrPermission
+	}
+	return f.r.Read(p)
+}
+
+func (f *storeFile) Write(p []byte) (int, error) {
+	if f.store == nil {
+		return 0, fs.ErrPermission
+	}
+	return f.w.Write(p)
+}
+
+func (f *storeFile) Size() uint32 { return uint32(f.size) }
+
+func (f *storeFile) Close(abort bool) error {
+	if f.store != nil && !abort {
+		f.store.mu.Lock()
+		f.store.files[f.name] = bytes.Clone(f.w.Bytes())
+		f.store.mu.Unlock()
+	}
+	return nil
 }

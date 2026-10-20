@@ -160,13 +160,13 @@ a pre-shared session key is used directly.
 
 | Item | Support |
 |------|---------|
-| Challenge of critical requests (g120v1), reply (g120v2) | ✅ both roles |
+| Challenge of critical requests (g120v1), reply (g120v2) | ✅ both roles: 32 octets of challenge data; the reply and the response keep the sequence number of the critical request |
 | Critical function codes | `server.DefaultCritical`, configurable |
 | MAC algorithms | HMAC-SHA-256 truncated to 8 and 16, HMAC-SHA-1 truncated to 4, 8 and 10 |
 | Authentication error (g120v7) | ✅ sent on a wrong MAC, reported as `*dnp3.AuthError` |
 | Session key status request and status (g120v4, v5) | ✅ both roles: fresh challenge data per status, MAC over the last key change with the monitoring key |
 | Session key change (g120v6), AES-128 and AES-256 key wrap (RFC 3394) | ✅ both roles: at every connection and at the key change interval (`client.WithKeyChangeInterval`, default 15 minutes); keys invalid after the connection ends |
-| Key status message in the key change data | the master sends the g120v5 object with its MAC value; the outstation accepts it with or without, as implementations differ |
+| Key status message in the key change data | the master sends the g120v5 object without its MAC value, the form DSC Systems go-dnp3 requires; the outstation accepts it with or without, as implementations differ |
 | Update key change (g120v11..v15), user status change (g120v10), certificates (g120v8) | — objects only, procedures not implemented |
 | Aggressive mode (g120v3 + g120v9) | — objects only |
 | AES-GMAC | — |
@@ -197,8 +197,11 @@ a pre-shared session key is used directly.
 | Outstation conformance with a scripted master | ✅ |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1 outstations | ✅ `make interop`, dnp3-interop v0.1.0 |
-| As outstation against the same masters and dnp3py 0.6.0 | ✅ `make interop`, dnp3-interop v0.1.0 |
-| Secure Authentication against another stack | — none of the references runs it in dnp3-interop's contract 1.0; DSC Systems go-dnp3 implements a symmetric subset, the next candidate |
-| File transfer against another stack | — not in dnp3-interop's contract 1.0 |
-| TLS, UDP, serial against another stack | — not in dnp3-interop's contract 1.0; verified between go-dnp3's own ends |
+| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC Systems go-dnp3 v0.8.1 outstations | ✅ `make interop`, dnp3-interop v0.2.0 |
+| As outstation against the same masters and dnp3py 0.6.0 | ✅ `make interop`, dnp3-interop v0.2.0 |
+| TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC Systems, including a refused certificate of another CA |
+| UDP, both roles | ✅ against stepfunc, opendnp3 and DSC Systems; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
+| Serial, both roles | ✅ against stepfunc, opendnp3 and DSC Systems over a pseudo-terminal bridged to TCP |
+| File transfer: master | ✅ against DSC Systems' file server: read, write of several blocks, list, info, delete, missing files |
+| File transfer: outstation | ✅ against the masters of stepfunc (get, put, list, info) and DSC Systems (also delete) |
+| Secure Authentication, both roles | ✅ against DSC Systems (HMAC-SHA-256-16, AES-128 key wrap): key change at connect, challenged controls, periodic key change in a session, a second master run, a wrong update key refused; the other references do not implement it |

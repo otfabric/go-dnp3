@@ -43,7 +43,9 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against Step Function I/O's dnp3, opendnp3 and DSC Systems' go-dnp3, and
   as outstation against dnp3py's master, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.1.0
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.2.0,
+  over TCP, TLS, UDP and serial, with file transfer and Secure
+  Authentication
 
 **Docs:** [API.md](API.md) (public API) · [ARCHITECTURE.md](ARCHITECTURE.md) (packages, goroutines, protocol machines) · [INTEROPERABILITY.md](INTEROPERABILITY.md) (what is implemented, clause by clause) · [ERRORS.md](ERRORS.md) (error semantics) · [OBSERVABILITY.md](OBSERVABILITY.md) (logging and metrics) · [SECURITY.md](SECURITY.md) · [RELEASE.md](RELEASE.md) (changelog)
 
@@ -305,7 +307,7 @@ many masters and concurrent requests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.1.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.1.0),
+of [otfabric/dnp3-interop v0.2.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.2.0),
 pinned by digest:
 
 | Reference | Version | Licence | Roles tested |
@@ -320,7 +322,12 @@ flags, reads of ranges and variations, every control case of the fixture
 (select-before-operate, select-required outputs, set-point ranges,
 unsupported codes and points), events and their confirmation, unsolicited
 responses, both time synchronization procedures, cold and warm restarts,
-freeze and clear, and assign class. Deviations a reference has from the
+freeze and clear, and assign class. The transports and procedures of
+dnp3-interop's contract 1.1 are tested in both directions with every
+reference that has them: TLS with mutual authentication (a test PKI is
+generated per run), UDP, serial lines (a pseudo-terminal in the container
+bridged to TCP), file transfer against the files fixture, and Secure
+Authentication with session key changes. Deviations a reference has from the
 fixture are those dnp3-interop records as known bugs. Docker is needed; the
 images are consumed as published, nothing of dnp3-interop is built here.
 

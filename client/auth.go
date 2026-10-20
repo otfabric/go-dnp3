@@ -14,7 +14,9 @@ import (
 
 // onAuthResponse handles an AUTHENTICATE_RESP received while a request
 // waits. For a challenge it sends the reply and returns the sequence
-// number the response to the critical request will carry. An
+// number the response to the critical request will carry: the reply keeps
+// the sequence number of the challenge, which is that of the critical
+// request (IEEE 1815-2012 clause 7.4). An
 // authentication error fails the request. For other authentication objects
 // it returns -1: the fragment is the response itself.
 func (c *Client) onAuthResponse(ctx context.Context, sess *channel.Session, f *app.Fragment, raw, critical []byte) (int, error) {
@@ -39,10 +41,7 @@ func (c *Client) onAuthResponse(ctx context.Context, sess *channel.Session, f *a
 				if err != nil {
 					return 0, fmt.Errorf("%w: %w", dnp3.ErrAuthentication, err)
 				}
-				c.mu.Lock()
-				seq := c.seq
-				c.seq = app.NextSeq(seq)
-				c.mu.Unlock()
+				seq := f.Control.Seq
 				reply := &app.Fragment{Control: app.SingleControl(seq), Function: app.FuncAuthRequest,
 					Headers: []app.Header{app.FreeFormat(app.G120V2, app.AuthReply{CSQ: v.CSQ, User: u.Number, MAC: mac})}}
 				data, err := reply.Encode()

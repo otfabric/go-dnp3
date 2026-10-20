@@ -13,10 +13,13 @@ import (
 )
 
 // keyStatusWithMAC selects the form of the key status message in the key
-// change data: the g120v5 object as received, with its MAC value. DSC
-// Systems go-dnp3 leaves the MAC out; outstations of this library accept
-// both forms.
-const keyStatusWithMAC = true
+// change data: the g120v5 object as received, with or without its MAC
+// value. Without it is what every known outstation accepts: DSC Systems
+// go-dnp3 compares the message without the MAC and refuses the other
+// form, which matters from the second key change of a session on (the
+// first key status carries no MAC); opendnp3 and this library's
+// outstation accept both.
+const keyStatusWithMAC = false
 
 // controlKey returns the key challenge replies are computed with.
 func (c *Client) controlKey() []byte {

@@ -64,7 +64,9 @@ func (a *association) critical(fc app.FunctionCode) bool {
 // sendChallenge holds a critical request and challenges the master.
 func (a *association) sendChallenge(req *app.Fragment, in inbound) {
 	sa := a.srv.opts.auth
-	data := make([]byte, 16)
+	// 32 octets: the standard asks for at least 4, and DSC Systems
+	// go-dnp3's master answers only challenges of 32.
+	data := make([]byte, 32)
 	if _, err := rand.Read(data); err != nil {
 		a.log.Error("no random challenge data", "error", err)
 		return
