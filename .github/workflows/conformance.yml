@@ -1,0 +1,63 @@
+name: Conformance
+run-name: "Conformance (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
+
+# Runs the DNP Users Group's DNP3 IED Certification Procedure, 3.1 rev 1 at
+# subset levels 2 and 3 and 2.7 at level 2, as Step Function I/O's dnp3c
+# implements it, against the go-dnp3 conformance outstation (conformance/).
+# dnp3c (GPL-3.0) is downloaded from Maven Central as it is published:
+# nothing of it is built or published here. Not a certification.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: dnp3c ${{ matrix.revision }}, subset level ${{ matrix.level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { revision: "3.1r1", level: 2 }
+          - { revision: "3.1r1", level: 3 }
+          - { revision: "2.7", level: 2 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.23.x"
+          cache-dependency-path: conformance/go.mod
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: conformance/plugin/pom.xml
+
+      - name: Run dnp3c
+        run: conformance/run.sh "${{ matrix.revision }}:${{ matrix.level }}"
+
+      # The report, each procedure's log and the logs of the run, also when
+      # a procedure failed.
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dnp3c-${{ matrix.revision }}-L${{ matrix.level }}
+          path: |
+            conformance/results/
+            conformance/build/*.log
+          if-no-files-found: warn

@@ -1,5 +1,23 @@
 # go-dnp3 Releases
 
+## v1.4.0
+
+**Date:** not yet released
+**Previous release:** v1.3.2
+
+## Summary
+
+Fixes from running the DNP Users Group's IED certification procedures
+(Step Function I/O's dnp3c, 3.1 rev 1) against the outstation.
+
+## Changes
+
+### Tests
+
+- **IED conformance procedures in CI** (`make conformance`, [conformance.yml](.github/workflows/conformance.yml)): Step Function I/O's [dnp3c](https://github.com/stepfunc/dnp3c) 0.2.0 runs the DNP3 IED Certification Procedure, 3.1 rev 1 at subset levels 2 and 3 and 2.7 at level 2, against a test outstation built on the library ([conformance](conformance)), with its Device Profile in `conformance/device.ini`. dnp3c is GPL-3.0 and downloaded from Maven Central. Its integration plugin is GPL-3.0 too, and is kept in `conformance/plugin` with its own licence. `conformance` is a Go module of its own, outside go-dnp3's. Not a certification.
+
+---
+
 ## v1.3.2
 
 **Date:** 2026-10-21

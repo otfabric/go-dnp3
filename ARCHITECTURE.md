@@ -218,6 +218,7 @@ and reports one as a g122 event every `StatisticsThreshold` increments.
 | End to end | master against outstation for every function; the dual end point; concurrency and stress (`e2e/stress_test.go`), many masters, parallel masters with secure authentication and files, reconnects, rapid open and close, cancellation | `e2e` |
 | Chaos | a proxy corrupting, splitting and delaying octets and killing connections while every kind of request runs, with and without secure authentication: no data that was not sent, no control executed more often than sent, recovery, no goroutine left | `e2e/chaos_test.go` |
 | Interop | both roles against stepfunc dnp3, opendnp3, DSC go-dnp3 and dnp3py (against dnp3py's outstation, its fixture only) | `interop` (build tag) |
+| IED conformance | the DNP Users Group's IED certification procedures (dnp3c: 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2) against a test outstation with a fixed Device Profile | `conformance` (a module of its own) |
 | Secure authentication | MACs, key wrap vectors, the key change data, the statistics | `secauth` |
 | Catalog | every entry of `app/catalog.json` against the codec; the generated files up to date | `app` (`TestCatalog`), `make generate-check` |
 | Examples | each self-contained example runs to its end | `make examples`, CI |

@@ -50,6 +50,9 @@ make upstream-watch
 # Run the interop tests against the dnp3-interop reference images (needs Docker)
 make interop
 
+# Run the IED certification procedures (dnp3c) against the conformance outstation (needs Java 17 and Maven)
+make conformance
+
 # Build the examples into ./bin
 make build
 ```
@@ -106,6 +109,15 @@ the same. Never push that image anywhere. A reference that deviates from the
 fixture's behaviour is recorded in dnp3-interop's `tests/known-bugs.tsv`
 and mirrored in `interop/harness.go`'s `knownBugs`, so that the test checks
 the behaviour and logs the deviation.
+
+The conformance run ([conformance](conformance)) downloads dnp3c from Maven
+Central. Never commit or publish a dnp3c build. The integration plugin in
+`conformance/plugin` is GPL-3.0-only, like dnp3c, which it links. Keep
+everything else, including the test outstation in `conformance/dut`, out of
+the plugin, and keep the plugin out of go-dnp3's module. A procedure that
+fails because of the test outstation's profile is fixed in
+`conformance/device.ini` or `conformance/dut`. One that fails because of the
+library is fixed in the library, with a test in `server/conformance_test.go`.
 
 ## Pull Requests
 

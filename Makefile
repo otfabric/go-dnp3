@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch interop-stepfunc
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch interop-stepfunc conformance
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -139,6 +139,9 @@ test-interop: interop-stepfunc ## Run the interop suite against the stepfunc, op
 		go test -tags=$(INTEROP_TAGS) -count=1 -timeout=30m ./interop/...
 
 interop: test-interop ## Alias for test-interop
+
+conformance: ## Run the DNP3 IED certification procedures (dnp3c 3.1r1 levels 2 and 3, 2.7) against the outstation (needs Java 17 and Maven)
+	@conformance/run.sh
 
 generate: ## Generate the object table, Measurements' points and OBJECTS.md from app/catalog.json
 	@echo "Generating from app/catalog.json"
