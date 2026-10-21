@@ -4,6 +4,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -227,27 +228,37 @@ func (c *Client) Operate(ctx context.Context, mode CommandMode, cmds ...Command)
 			// SELECT and OPERATE in one turn: the OPERATE must carry the
 			// next sequence number.
 			res, err := c.exchange(ctx, app.FuncSelect, hs)
-			if err != nil {
-				return err
-			}
-			statuses, err = echoStatuses(hs, res)
-			if err != nil {
-				return err
-			}
-			if err := firstFailure(hs, statuses); err != nil {
+			if statuses, err = controlResult(hs, res, err); err != nil {
 				return err
 			}
 		}
 		res, err := c.exchange(ctx, fc, hs)
-		if err != nil {
-			return err
-		}
-		statuses, err = echoStatuses(hs, res)
-		if err != nil {
-			return err
-		}
-		return firstFailure(hs, statuses)
+		statuses, err = controlResult(hs, res, err)
+		return err
 	})
+	return statuses, err
+}
+
+// controlResult returns the statuses of a control response and the error
+// of the first control that failed. A response that sets an error IIN but
+// echoes the request, as an outstation does for a control it does not
+// support (NOT_SUPPORTED with IIN2.2), reports its statuses: a
+// CommandError, rather than the IINError.
+func controlResult(req []app.Header, res *Result, err error) ([]app.CommandStatus, error) {
+	var ie *dnp3.IINError
+	if err != nil && (!errors.As(err, &ie) || res == nil || len(res.Fragments) == 0) {
+		return nil, err
+	}
+	statuses, echoErr := echoStatuses(req, res)
+	if echoErr != nil {
+		if err != nil {
+			return nil, err
+		}
+		return nil, echoErr
+	}
+	if failed := firstFailure(req, statuses); failed != nil {
+		return statuses, failed
+	}
 	return statuses, err
 }
 

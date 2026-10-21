@@ -29,7 +29,7 @@ type adapter struct {
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.4.3 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
+// otfabric/dnp3-interop v0.5.1 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
 // go-dnp3 v0.8.1, dnp3py 0.6.0). The published images are pinned by
 // multi-arch index digest so that a run is reproducible. The stepfunc
 // image is not published, as Step Function I/O's licence does not allow
@@ -38,11 +38,11 @@ type adapter struct {
 // Moving to another release of dnp3-interop means changing these
 // constants; the Makefile and the interop workflow follow.
 const (
-	interopRelease         = "v0.4.3"
+	interopRelease         = "v0.5.1"
 	defaultStepfuncImage   = "dnp3-interop-stepfunc:" + interopRelease
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:d8d8dcc2ced9499853b5ece8fda709d935c23981f00e84241ceb2286075835b4"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f53f82430f60b6c40acd89928cab3aea675565ce0f96fe664b067ac9bfae93b9"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:129d3678f18c2f62b410d74c17f41661fe6b3588bfe4950242fb01ac006fe8fd"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:abc0d87ef30aceff748cc513f1e5840618ea9a78cc8a4713ba67d06507089314"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f8a5b14eb6ab0c60f1ef4a1499bb1dc2f9fe696bc4087c5fcfdef4252dda04c7"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:13ce4679287f50e485554a402320354728c56b974360826ee0c328c6be991cff"
 )
 
 // adapters returns the reference implementations to test against. The image

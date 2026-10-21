@@ -84,6 +84,10 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 				status = app.StatusNoSelect
 			case expired:
 				status = app.StatusTimeout
+			case requestStatus(o.Value) != app.StatusSuccess:
+				// A control whose request carries a status is not carried
+				// out (TB2014-002; IEEE 1815-202x; 3.1r1 8.2.6).
+				status = app.StatusFormatError
 			case hdr.GV == app.G12V2:
 				status = a.pattern(ctx, h, fc, o.Value.(app.CROB), req.Headers[i+1])
 			default:
@@ -217,6 +221,18 @@ func binaryValues(h app.Header) bool {
 		}
 	}
 	return true
+}
+
+// requestStatus is the status field of a control block as the master sent
+// it, which must be zero.
+func requestStatus(v app.Value) app.CommandStatus {
+	switch x := v.(type) {
+	case app.CROB:
+		return x.Status
+	case app.AnalogOutput:
+		return x.Status
+	}
+	return app.StatusSuccess
 }
 
 func withStatus(v app.Value, s app.CommandStatus) app.Value {

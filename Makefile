@@ -37,20 +37,21 @@ INTEROP_TAGS := interop
 # licence yourself. Keep in step with interop/harness.go. Override to test
 # other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev
-INTEROP_RELEASE := v0.4.3
-INTEROP_COMMIT  := 470c69beb64ef0d6efda02480acfd6597d56c0df
+INTEROP_RELEASE := v0.5.1
+INTEROP_COMMIT  := f6ac6d346cc3d0224d0eae0f0dc772a213342286
 DNP3_INTEROP_STEPFUNC_IMAGE   ?= dnp3-interop-stepfunc:$(INTEROP_RELEASE)
-DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:d8d8dcc2ced9499853b5ece8fda709d935c23981f00e84241ceb2286075835b4
-DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f53f82430f60b6c40acd89928cab3aea675565ce0f96fe664b067ac9bfae93b9
-DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:129d3678f18c2f62b410d74c17f41661fe6b3588bfe4950242fb01ac006fe8fd
+DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:abc0d87ef30aceff748cc513f1e5840618ea9a78cc8a4713ba67d06507089314
+DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f8a5b14eb6ab0c60f1ef4a1499bb1dc2f9fe696bc4087c5fcfdef4252dda04c7
+DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:13ce4679287f50e485554a402320354728c56b974360826ee0c328c6be991cff
 
 # The dnp3c runner for 'make conformance': dnp3-interop's image of Step
 # Function I/O's dnp3c (the DNP3 IED Certification Procedure), GPL-3.0-only
 # and not published. make conformance-image builds it here from
 # dnp3-interop's source at CONFORMANCE_COMMIT; the build fetches dnp3c from
-# Maven Central. Nothing of it is in this repository. dnp3-interop v0.5.0.
-CONFORMANCE_RELEASE := v0.5.0
-CONFORMANCE_COMMIT  ?= 9340a77524c835615623609def142f20bb4bbe4e
+# Maven Central. Nothing of it is in this repository. The same release as
+# the interop images.
+CONFORMANCE_RELEASE := $(INTEROP_RELEASE)
+CONFORMANCE_COMMIT  ?= $(INTEROP_COMMIT)
 DNP3_INTEROP_DNP3C_IMAGE ?= dnp3-interop-dnp3c:$(CONFORMANCE_RELEASE)
 
 all: build ## Default target: build the examples

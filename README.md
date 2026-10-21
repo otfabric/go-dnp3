@@ -47,7 +47,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against Step Function I/O's dnp3, opendnp3, DSC go-dnp3 and
   dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.4.3,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.5.1,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -335,7 +335,7 @@ Device Profile.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.4.3](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.3):
+of [otfabric/dnp3-interop v0.5.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.5.1):
 the published ones pinned by digest, and the stepfunc one built locally by
 `make interop-stepfunc` from dnp3-interop's source at that release. Step
 Function I/O's licence allows testing with its library but not
@@ -395,11 +395,9 @@ linked into go-dnp3.
   against a [test outstation](internal/cmd/conformance) built on the library, with the
   Device Profile in `internal/cmd/conformance/device.ini`. That is not a
   certification. go-dnp3 declares no subset level of its own, and the
-  run does not cover what that profile leaves out: double-bit inputs
-  (level 4 objects in dnp3c), serial and UDP, multi-drop, and the network
-  tests of section 9. 3.1r1's 8.2.6 passes with a warning: the echo of a
-  SELECT that carries a nonzero status gives SUCCESS, as IEEE 1815-2012
-  allows and 1815-202x does not.
+  run does not cover what that profile leaves out: double-bit inputs in
+  3.1r1 (level 4 objects in dnp3c; the 2.7 run has them), serial and UDP,
+  multi-drop, and the network tests of section 9.
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation: a
