@@ -302,7 +302,7 @@ func (a *association) unsolicitedTimeout(u *pendingUnsol, now time.Time) {
 			return
 		}
 	}
-	if u.attempts < a.srv.opts.unsolicited.Retries {
+	if r := a.srv.opts.unsolicited.Retries; r < 0 || u.attempts < r {
 		u.attempts++
 		u.deadline = now.Add(a.srv.opts.confirmTimeout)
 		a.log.Debug("unsolicited response repeated", "seq", u.seq, "attempt", u.attempts)

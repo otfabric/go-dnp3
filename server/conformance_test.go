@@ -834,3 +834,21 @@ func TestDeferredReadSuperseded(t *testing.T) {
 	m.send(confirm(null.Control.Seq, true))
 	m.none(200 * time.Millisecond)
 }
+
+// TestUnsolicitedUnlimitedRetries: with a negative Retries an unconfirmed
+// unsolicited response is repeated until it is confirmed.
+func TestUnsolicitedUnlimitedRetries(t *testing.T) {
+	m := newMaster(t, WithConfirmTimeout(50*time.Millisecond), WithUnsolicited(Unsolicited{Enabled: true, Retries: -1}))
+	first := m.recvFunc(app.FuncUnsolicitedResponse)
+	for range 8 {
+		if f := m.recvFunc(app.FuncUnsolicitedResponse); f.Control.Seq != first.Control.Seq || len(f.Headers) != 0 {
+			t.Fatalf("repeat %s", f)
+		}
+	}
+	m.send(confirm(first.Control.Seq, true))
+	time.Sleep(60 * time.Millisecond)
+	for len(m.in) > 0 {
+		<-m.in
+	}
+	m.none(200 * time.Millisecond)
+}

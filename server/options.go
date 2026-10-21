@@ -34,7 +34,8 @@ type Unsolicited struct {
 	HoldCount int
 	// Retries is how often an unconfirmed unsolicited response is
 	// repeated before it is given up; its events are kept and reported
-	// later. Zero means 3.
+	// later. Zero means 3; a negative value repeats it until it is
+	// confirmed.
 	Retries int
 	// RetryDelay is the pause after an unsolicited response was given up.
 	// Zero means 5 seconds.
