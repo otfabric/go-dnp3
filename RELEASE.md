@@ -8,6 +8,9 @@
 ## Summary
 
 Fixes from running the DNP Users Group's IED certification procedures
+A crash of the outstation on a malformed request is fixed (see the first
+entry: upgrade if an untrusted master can reach your outstation), with the
+fixes from running the DNP Users Group's IED certification procedures
 (Step Function I/O's dnp3c, 3.1 rev 1) against the outstation.
 
 ## Changes
@@ -15,6 +18,15 @@ Fixes from running the DNP Users Group's IED certification procedures
 ### Tests
 
 - **IED conformance procedures in CI** (`make conformance`, [conformance.yml](.github/workflows/conformance.yml)): Step Function I/O's [dnp3c](https://github.com/stepfunc/dnp3c) 0.2.0 runs the DNP3 IED Certification Procedure, 3.1 rev 1 at subset levels 2 and 3 and 2.7 at level 2, against a test outstation built on the library ([internal/cmd/conformance](internal/cmd/conformance)), with its Device Profile in `device.ini` there. dnp3c runs in [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop)'s dnp3c runner image, which `make conformance-image` builds from dnp3-interop's source at `CONFORMANCE_COMMIT`; dnp3c and the runner are GPL-3.0-only, are not in this repository, and the image is not published. Not a certification.
+### Outstation
+
+- **READ while an unsolicited response waits for its confirmation** (3.1r1 8.11.2a, 8.11.2.5): the READ is answered once the response is confirmed, or once its confirm timeout expires and before it is repeated (IEEE 1815-2012 4.6.6 rule 16, TB2015-002a), instead of at once. A READ from another master than the one the response went to, or one that came before it (the datagram that starts a UDP session), is answered at once; a later request supersedes the deferred READ, which is then not answered. A repeated unsolicited response carries the indications as they are when it is repeated, e.g. without IIN1.7 once the master cleared it, instead of those of its first transmission. A READ answered at the confirm timeout reports the events of the unconfirmed unsolicited response, which is then not repeated (8.11.2.5), and no unsolicited response is repeated while a solicited one is in progress, between its fragments or before its confirmation. `Unsolicited.Retries` below zero repeats an unsolicited response until it is confirmed (3.1r1 8.11.2.5 configures it).
+- **Broadcast indication** (3.1r1 8.6.5b): after a broadcast to 0xFFFE (confirmation required) or 0xFFFF (optional), the response that reports IIN1.0 asks for an application confirmation, and IIN1.0 is cleared when it arrives; it never asked for one. After a broadcast to 0xFFFD, IIN1.0 is still cleared once reported.
+- **A crash on a malformed request** (security): a READ of g70v5 (file transport) under a qualifier that carries indices but no objects made the outstation panic and took the whole process down, for any master that can reach it (v1.3.2 and earlier). The outstation now answers it, and every other header whose objects lack the value their variation needs (controls, time writes, the IIN bits, deadbands, octet strings, attributes, freeze at time), with IIN2.2. The master no longer assumes the time delay object of a restart or delay measurement response either. Found by `FuzzOutstation` in CI; the input is kept as a seed.
+- **Reads of a type without points** (3.1r1 8.13.2d, 8.16.1.2.4, 8.21, 8.22, 8.24.2b): a read of the static or event objects of a type of input or output point the outstation has none of is a null response with IIN2.1 (OBJECT_UNKNOWN), as TB2016-001 and the 3.1r1 procedure require; it was a null response without it. A read of the events of a type the outstation has, while it has no events of it, is still a plain null response. A go-dnp3 master reports the response as an `IINError`.
+- **Reads of variations without flags** (3.1r1 8.24.2d to 8.24.2f): a counter, frozen counter or analog input whose flags are anything but ONLINE alone is reported with flags (g20v1/v2, g21v1/v2, g30v1/v2) when g20v5/v6, g21v9/v10 or g30v3/v4 is read, as the packed binary variations already were, so that its quality is not hidden.
+- **CTO of relative-time events** (3.1r1 8.14.2m, 8.15.3, 8.22m): with `WithTimeSync`, g51v2 (unsynchronized) until the first time synchronization after the start or a restart, and again once twice the interval has passed without one; g51v1 otherwise, also while IIN1.4 asks for the next synchronization. It was always g51v1. A restart (`Server.Restart`, or a COLD_RESTART or WARM_RESTART handler that calls it) now forgets the synchronization: IIN1.4 and g51v2 until the next one.
+- **Controls** (3.1r1 8.2.1.2.3, 8.2.1.2.4, 8.2.1.2.10, 8.4.1.2.x): an OPERATE that matches its SELECT but comes after the select timeout is answered with TIMEOUT, not NO_SELECT (IEEE 1815-2012 Table 11-4). A control the handler answers with NOT_SUPPORTED, for example of a point the outstation does not have, also sets IIN2.2 (PARAMETER_ERROR), as opendnp3 and stepfunc do; the echo is still sent. A go-dnp3 master reports such a response as an `IINError` instead of a `CommandError`.
 
 ---
 

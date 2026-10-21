@@ -85,8 +85,13 @@ func (m *master) sendRaw(b []byte) {
 
 func (m *master) sendBroadcast(f *app.Fragment) {
 	m.t.Helper()
+	m.sendBroadcastTo(f, link.BroadcastNoConfirm)
+}
+
+func (m *master) sendBroadcastTo(f *app.Fragment, to link.Address) {
+	m.t.Helper()
 	b, _ := f.Encode()
-	if err := m.sess.SendBroadcast(context.Background(), b, link.BroadcastNoConfirm); err != nil {
+	if err := m.sess.SendBroadcast(context.Background(), b, to); err != nil {
 		m.t.Fatal(err)
 	}
 }
@@ -191,14 +196,33 @@ func TestBroadcast(t *testing.T) {
 	// SELECT is never executed from a broadcast.
 	m.sendBroadcast(req(2, app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})))
 	m.none(100 * time.Millisecond)
-	// The next response reports IIN1.0 once.
+	// After a broadcast to 0xFFFD the next response reports IIN1.0, without
+	// asking for confirmation, and the one after it no longer does.
 	m.send(req(3, app.FuncRead, app.AllObjects(app.G80V1)))
-	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) {
-		t.Fatalf("no BROADCAST indication: %s", f.IIN)
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) || f.Control.CON {
+		t.Fatalf("after 0xFFFD: %s, CON %v", f.IIN, f.Control.CON)
 	}
 	m.send(req(4, app.FuncRead, app.AllObjects(app.G80V1)))
 	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINBroadcast) {
 		t.Fatal("BROADCAST indication repeated")
+	}
+	// After one to 0xFFFE or 0xFFFF the response reporting IIN1.0 asks for
+	// confirmation; until it is confirmed, IIN1.0 is reported again.
+	for i, to := range []link.Address{link.BroadcastConfirm, link.BroadcastOptionalConfirm} {
+		seq := uint8(5 + 3*i)
+		m.sendBroadcastTo(req(seq, app.FuncDirectOperateNoAck, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})), to)
+		m.none(100 * time.Millisecond)
+		for s := seq; s <= seq+1; s++ {
+			m.send(req(s, app.FuncRead, app.AllObjects(app.G80V1)))
+			if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) || !f.Control.CON {
+				t.Fatalf("after %v: %s, CON %v", to, f.IIN, f.Control.CON)
+			}
+		}
+		m.send(confirm(seq+1, false))
+		m.send(req(seq+2, app.FuncRead, app.AllObjects(app.G80V1)))
+		if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINBroadcast) || f.Control.CON {
+			t.Fatalf("after %v, confirmed: %s, CON %v", to, f.IIN, f.Control.CON)
+		}
 	}
 }
 
@@ -290,6 +314,34 @@ func TestUnsolicitedHold(t *testing.T) {
 	}
 }
 
+// TestControlNotSupported: a control the handler does not support is echoed
+// with NOT_SUPPORTED and IIN2.2 (PARAMETER_ERROR), the other controls of the
+// request with their own status.
+func TestControlNotSupported(t *testing.T) {
+	h := HandlerFunc(func(_ context.Context, c Command, _ OperateType) app.CommandStatus {
+		if c.Index != 0 {
+			return app.StatusNotSupported
+		}
+		return app.StatusSuccess
+	})
+	m := newMaster(t, WithHandler(h))
+	m.send(req(1, app.FuncDirectOperate, app.Indexed(app.G12V1,
+		app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}},
+		app.Object{Index: 65535, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("IIN %s, want PARAMETER_ERROR", f.IIN)
+	}
+	if len(f.Headers) != 1 || len(f.Headers[0].Objects) != 2 {
+		t.Fatalf("echo %v", f.Headers)
+	}
+	for i, want := range []app.CommandStatus{app.StatusSuccess, app.StatusNotSupported} {
+		if s := f.Headers[0].Objects[i].Value.(app.CROB).Status; s != want {
+			t.Fatalf("control %d: status %s, want %s", i, s, want)
+		}
+	}
+}
+
 func TestSelectTimeoutAndMismatch(t *testing.T) {
 	r := &countingHandler{}
 	m := newMaster(t, WithHandler(r), WithSelectTimeout(150*time.Millisecond))
@@ -302,7 +354,7 @@ func TestSelectTimeoutAndMismatch(t *testing.T) {
 	m.recvFunc(app.FuncResponse)
 	time.Sleep(250 * time.Millisecond)
 	m.send(req(2, app.FuncOperate, crob(app.OpLatchOn)))
-	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusNoSelect {
+	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusTimeout {
 		t.Fatalf("after select timeout: %s", s)
 	}
 	m.send(req(3, app.FuncSelect, crob(app.OpLatchOn)))
@@ -737,4 +789,298 @@ func TestChallengeReply(t *testing.T) {
 	if f := o.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINNoFuncCodeSupport) {
 		t.Fatalf("without secure authentication: %s", f.IIN)
 	}
+}
+
+// TestRelativeTimeCTO: relative-time events carry an unsynchronized CTO
+// (g51v2) until the first time synchronization, a synchronized one (g51v1)
+// after it, also once the outstation asks for the time again, and an
+// unsynchronized one again after a restart and once twice the interval has
+// passed without a synchronization.
+func TestRelativeTimeCTO(t *testing.T) {
+	const interval = 300 * time.Millisecond
+	m := newMaster(t, WithTimeSync(interval))
+	ctoOf := func(f *app.Fragment) app.GroupVariation {
+		t.Helper()
+		if len(f.Headers) != 2 || f.Headers[1].GV != app.G2V3 {
+			t.Fatalf("headers %v, want a CTO and g2v3", f.Headers)
+		}
+		return f.Headers[0].GV
+	}
+	db := m.srv.Database()
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.AllObjects(app.G2V3)))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V2 {
+		t.Fatalf("unsynchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(1, false))
+
+	m.send(req(2, app.FuncWrite, app.Counted(app.G50V1, app.AbsoluteTime{Time: app.Now()})))
+	m.recvFunc(app.FuncResponse)
+	_ = db.UpdateBinaryInput(0, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(3, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V1 {
+		t.Fatalf("synchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(3, false))
+
+	// Due for synchronization: IIN1.4, but still synchronized.
+	time.Sleep(interval + 50*time.Millisecond)
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(6, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V1 {
+		t.Fatalf("due for synchronization: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(6, false))
+	// Twice the interval without one: unsynchronized.
+	time.Sleep(interval)
+	_ = db.UpdateBinaryInput(0, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(7, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if ctoOf(f) != app.G51V2 {
+		t.Fatalf("synchronization expired: CTO %s", f.Headers[0].GV)
+	}
+	m.send(confirm(7, false))
+	m.send(req(8, app.FuncWrite, app.Counted(app.G50V1, app.AbsoluteTime{Time: app.Now()})))
+	m.recvFunc(app.FuncResponse)
+
+	// After a restart the time is unsynchronized again.
+	m.srv.Restart()
+	m.send(req(9, app.FuncRead, app.AllObjects(app.G80V1))) // the restart has taken effect once answered
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("no restart: IIN %s", f.IIN)
+	}
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(10, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V2 {
+		t.Fatalf("after a restart: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+}
+
+// TestReadWithoutFlagsKeepsQuality: a read of a variation without flags
+// reports the points whose flags are anything but ONLINE in the variation
+// with flags, and the others as asked.
+func TestReadWithoutFlagsKeepsQuality(t *testing.T) {
+	m := newMaster(t)
+	db := m.srv.Database()
+	_ = db.AddCounter(1, PointConfig{}, app.Counter{Value: 2, Flags: app.FlagOnline})
+	_ = db.AddAnalogInput(1, PointConfig{}, app.Analog{Value: 3, Flags: app.FlagOnline})
+	_ = db.Update(Counter, 0, app.Counter{Value: 1, Flags: app.FlagCommLost}, EventSuppress)
+	_ = db.Update(AnalogInput, 0, app.Analog{Value: 5}, EventSuppress)
+	cases := []struct{ read, abnormal, normal app.GroupVariation }{
+		{app.G20V5, app.G20V1, app.G20V5},
+		{app.G20V6, app.G20V2, app.G20V6},
+		{app.G30V3, app.G30V1, app.G30V3},
+		{app.G30V4, app.G30V2, app.G30V4},
+	}
+	for i, c := range cases {
+		seq := uint8(i + 1)
+		m.send(req(seq, app.FuncRead, app.AllObjects(c.read)))
+		f := m.recvFunc(app.FuncResponse)
+		if len(f.Headers) != 2 || f.Headers[0].GV != c.abnormal || f.Headers[1].GV != c.normal ||
+			f.Headers[0].Objects[0].Index != 0 || f.Headers[1].Objects[0].Index != 1 {
+			t.Fatalf("read of %s: %v", c.read, f.Headers)
+		}
+	}
+}
+
+// TestReadOfAbsentType: a read of a type the outstation has no points of,
+// static or events, is a null response with IIN2.1; a read of the events of
+// a type it has, but has no events of, a null response without it.
+func TestReadOfAbsentType(t *testing.T) {
+	m := newMaster(t)
+	for i, gv := range []app.GroupVariation{app.GV(3, 0), app.GV(4, 0), app.GV(21, 0), app.GV(40, 0)} {
+		m.send(req(uint8(i+1), app.FuncRead, app.AllObjects(gv)))
+		if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) || len(f.Headers) != 0 {
+			t.Fatalf("read of %s: IIN %s, headers %v", gv, f.IIN, f.Headers)
+		}
+	}
+	m.send(req(5, app.FuncRead, app.AllObjects(app.GV(2, 0))))
+	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINObjectUnknown) || len(f.Headers) != 0 {
+		t.Fatalf("read of g2v0 without events: IIN %s, headers %v", f.IIN, f.Headers)
+	}
+}
+
+// TestObjectsWithoutValues: headers whose objects carry indices but no
+// value (a qualifier that carries indices only) are answered with IIN2.2,
+// not by taking the outstation down. The first is the input the fuzzer
+// found: a READ of g70v5.
+func TestObjectsWithoutValues(t *testing.T) {
+	m := newMaster(t, WithFileServer(FSFileServer{FS: fstest.MapFS{"a.txt": {Data: []byte("hello")}}}))
+	for _, raw := range [][]byte{
+		[]byte("\xc9\x01F\x05'\x01\b\x00\x01\x00\x00\x00\x00;;\x00\x00\x00"),
+		{0xC1, 0x01, 70, 5, 0x17, 1, 0}, // READ g70v5, one index
+	} {
+		m.sendRaw(raw)
+		if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+			t.Fatalf("% x: IIN %s, want PARAMETER_ERROR", raw, f.IIN)
+		}
+	}
+	// The outstation still answers.
+	m.send(req(6, app.FuncRead, app.ClassHeaders(0)...))
+	m.recvFunc(app.FuncResponse)
+}
+
+// TestHeadersWithoutValuesDispatched: the other requests whose objects
+// need a value check it too, although the decoder gives values to every
+// object but those of a READ: each header here, with an object without a
+// value, is answered with IIN2.2.
+func TestHeadersWithoutValuesDispatched(t *testing.T) {
+	srv, err := New(WithHandler(&countingHandler{}),
+		WithFileServer(FSFileServer{FS: fstest.MapFS{"a.txt": {Data: []byte("hello")}}}),
+		WithAttributeSet(1, map[uint8]app.Attribute{10: app.StringAttribute("t")}, 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	_ = srv.Database().AddAnalogInput(0, PointConfig{}, app.Analog{Flags: app.FlagOnline})
+	_ = srv.Database().Add(OctetString, 0, PointConfig{}, app.OctetString{Data: []byte{1}})
+	a := srv.association(1)
+	bare := func(gv app.GroupVariation) app.Header {
+		return app.Header{GV: gv, Qualifier: app.Qual1ByteIndexCount, Count: 1, Objects: []app.Object{{Index: 0}}}
+	}
+	crob := app.Counted(app.G12V2, app.CROB{Op: app.OpLatchOn, Count: 1})
+	attr := bare(app.GV(0, 10))
+	attr.Qualifier, attr.Start, attr.Stop = app.Qual1ByteStartStop, 1, 1
+	cases := []struct {
+		name string
+		fc   app.FunctionCode
+		hs   []app.Header
+	}{
+		{"control", app.FuncDirectOperate, []app.Header{bare(app.G12V1)}},
+		{"analog output", app.FuncDirectOperate, []app.Header{bare(app.G41V2)}},
+		{"pattern mask", app.FuncDirectOperate, []app.Header{crob, bare(app.G12V3)}},
+		{"absolute time", app.FuncWrite, []app.Header{bare(app.G50V1)}},
+		{"LAN time", app.FuncWrite, []app.Header{bare(app.G50V3)}},
+		{"IIN", app.FuncWrite, []app.Header{bare(app.G80V1)}},
+		{"deadband", app.FuncWrite, []app.Header{bare(app.G34V1)}},
+		{"octet string", app.FuncWrite, []app.Header{bare(app.GV(110, 1))}},
+		{"attribute", app.FuncWrite, []app.Header{attr}},
+		{"file block", app.FuncWrite, []app.Header{bare(app.G70V5)}},
+		{"freeze at time", app.FuncFreezeAtTime, []app.Header{bare(app.G50V2), app.AllObjects(app.G20V0)}},
+	}
+	for _, c := range cases {
+		done := make(chan *response, 1)
+		a.post(func() { done <- a.dispatch(&app.Fragment{Function: c.fc, Headers: c.hs}, inbound{}, false) })
+		if r := <-done; r.iin&app.IINParameterError == 0 {
+			t.Errorf("%s: IIN %s, want PARAMETER_ERROR", c.name, r.iin)
+		}
+	}
+}
+
+// TestReadDeferredByUnsolicited: a READ that comes while an unsolicited
+// response waits for its confirmation is answered once the confirm timeout
+// expires, before the response is repeated; the repeat carries the
+// indications as they are then (IIN1.7 cleared meanwhile). A READ during
+// the repeat is answered as soon as it is confirmed.
+func TestReadDeferredByUnsolicited(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	if !null.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("null unsolicited IIN %s", null.IIN)
+	}
+	// A WRITE is answered at once.
+	m.send(req(1, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})))
+	if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 1 {
+		t.Fatalf("write answered with %s", f)
+	}
+	sent := time.Now()
+	m.send(req(2, app.FuncRead, app.ClassHeaders(0)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || f.Control.Seq != 2 {
+		t.Fatalf("first after the deferred READ: %s", f)
+	}
+	if time.Since(sent) < 200*time.Millisecond {
+		t.Fatal("READ answered before the unsolicited confirm timeout")
+	}
+	retry := m.recv()
+	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != null.Control.Seq {
+		t.Fatalf("after the READ: %s", retry)
+	}
+	if retry.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("repeat still reports IIN1.7: %s", retry.IIN)
+	}
+	m.send(req(3, app.FuncRead, app.ClassHeaders(0)...))
+	m.none(100 * time.Millisecond)
+	m.send(confirm(retry.Control.Seq, true))
+	if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 3 {
+		t.Fatalf("READ after the confirmation: %s", f)
+	}
+}
+
+// TestDeferredReadTakesUnsolicitedEvents: a READ deferred by an unconfirmed
+// unsolicited response with events reports those events once the confirm
+// timeout expires, and the unsolicited response is not repeated.
+func TestDeferredReadTakesUnsolicitedEvents(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1}, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	m.send(confirm(null.Control.Seq, true))
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	if u := m.recvFunc(app.FuncUnsolicitedResponse); len(u.Headers) == 0 {
+		t.Fatalf("unsolicited without events: %s", u)
+	}
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1, 2, 3)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || !f.Control.CON || len(f.Headers) != 1 || f.Headers[0].GV.Group() != 2 {
+		t.Fatalf("deferred READ answered with %s", f)
+	}
+	m.send(confirm(f.Control.Seq, false))
+	m.none(500 * time.Millisecond)
+}
+
+// TestUnsolicitedRepeatWaitsForResponse: the null unsolicited response is
+// not repeated while the response to a deferred READ waits for its
+// confirmation (300 ms here), and is repeated once it is confirmed.
+func TestUnsolicitedRepeatWaitsForResponse(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || !f.Control.CON {
+		t.Fatalf("deferred READ answered with %s", f)
+	}
+	m.none(150 * time.Millisecond)
+	m.send(confirm(f.Control.Seq, false))
+	if r := m.recv(); r.Function != app.FuncUnsolicitedResponse || r.Control.Seq != null.Control.Seq || len(r.Headers) != 0 {
+		t.Fatalf("after the confirmation: %s", r)
+	}
+}
+
+// TestDeferredReadSuperseded: a request that comes after a deferred READ is
+// answered at once, and the READ is not answered at all.
+func TestDeferredReadSuperseded(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	m.send(req(1, app.FuncRead, app.ClassHeaders(0)...))
+	m.send(req(2, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})))
+	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 2 {
+		t.Fatalf("after the WRITE: %s", f)
+	}
+	if f := m.recv(); f.Function != app.FuncUnsolicitedResponse || f.Control.Seq != null.Control.Seq {
+		t.Fatalf("at the confirm timeout: %s", f)
+	}
+	m.send(confirm(null.Control.Seq, true))
+	m.none(200 * time.Millisecond)
+}
+
+// TestUnsolicitedUnlimitedRetries: with a negative Retries an unconfirmed
+// unsolicited response is repeated until it is confirmed.
+func TestUnsolicitedUnlimitedRetries(t *testing.T) {
+	m := newMaster(t, WithConfirmTimeout(50*time.Millisecond), WithUnsolicited(Unsolicited{Enabled: true, Retries: -1}))
+	first := m.recvFunc(app.FuncUnsolicitedResponse)
+	for range 8 {
+		if f := m.recvFunc(app.FuncUnsolicitedResponse); f.Control.Seq != first.Control.Seq || len(f.Headers) != 0 {
+			t.Fatalf("repeat %s", f)
+		}
+	}
+	m.send(confirm(first.Control.Seq, true))
+	time.Sleep(60 * time.Millisecond)
+	for len(m.in) > 0 {
+		<-m.in
+	}
+	m.none(200 * time.Millisecond)
 }

@@ -34,7 +34,8 @@ type Unsolicited struct {
 	HoldCount int
 	// Retries is how often an unconfirmed unsolicited response is
 	// repeated before it is given up; its events are kept and reported
-	// later. Zero means 3.
+	// later. Zero means 3; a negative value repeats it until it is
+	// confirmed.
 	Retries int
 	// RetryDelay is the pause after an unsolicited response was given up.
 	// Zero means 5 seconds.
@@ -197,8 +198,8 @@ func WithConfirmTimeout(d time.Duration) Option {
 	}
 }
 
-// WithSelectTimeout sets how long a SELECT stays valid for its OPERATE.
-// The default is 10 seconds.
+// WithSelectTimeout sets how long a SELECT stays valid for its OPERATE;
+// an OPERATE after it is answered with TIMEOUT. The default is 10 seconds.
 func WithSelectTimeout(d time.Duration) Option {
 	return func(o *options) error {
 		if d <= 0 {
@@ -266,6 +267,11 @@ func WithEventLimits(limits map[PointType]int) Option {
 // WithTimeSync makes the outstation request time synchronization (IIN1.4
 // NEED_TIME) at start and again when interval has passed since the last
 // one. Zero, the default, never requests it.
+//
+// Its time counts as unsynchronized, which relative-time events report
+// with a g51v2 CTO instead of g51v1, until the first synchronization after
+// the start or a restart, and again once twice the interval has passed
+// without one.
 func WithTimeSync(interval time.Duration) Option {
 	return func(o *options) error {
 		if interval < 0 {

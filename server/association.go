@@ -49,12 +49,20 @@ type association struct {
 	holdStart  time.Time
 	unsolPause time.Time
 	timer      *time.Timer
+	// deferred is a READ that came while an unsolicited response waited
+	// for its confirmation, answered once it is confirmed or times out.
+	deferred *inbound
+	sentOK   bool // the last fragment sent went out
 
 	pendingAuth   *challenge
 	lastChallenge []byte // the last g120v1 fragment sent
 	keys          sessionKeys
 	csq           uint32
 	stats         [secauth.NumStatistics]uint32
+
+	// broadcastTo is the address of the last broadcast: whether the
+	// response reporting it asks for confirmation.
+	broadcastTo link.Address
 
 	files             map[uint32]*openFile
 	nextHandle        uint32
@@ -66,6 +74,8 @@ type inbound struct {
 	frag []byte
 	dest link.Address
 	at   time.Time
+	// resumed: a deferred READ, now answered.
+	resumed bool
 }
 
 // lastRequest is kept to answer a repeated request with the same
@@ -83,13 +93,18 @@ type pendingResponse struct {
 	next     int // index of the fragment waiting for its confirmation
 	iin      app.IIN
 	deadline time.Time
+	// broadcast: the first fragment reported IIN1.0, which its
+	// confirmation clears.
+	broadcast bool
 }
 
 // pendingUnsol is an unsolicited response waiting for its confirmation.
 type pendingUnsol struct {
 	null     bool
 	seq      uint8
-	data     []byte
+	frag     *app.Fragment
+	sent     time.Time // when it last went out; zero if it never did
+	peer     string    // where it went
 	events   []*bufEvent
 	attempts int
 	deadline time.Time
@@ -178,6 +193,7 @@ func (a *association) detach() {
 		a.events.release(a.unsol.events)
 		a.unsol = nil
 	}
+	a.deferred = nil
 	a.selection = nil
 	a.lastReq = nil
 	a.closeFiles()
@@ -202,6 +218,8 @@ func (a *association) receive(sess *channel.Session, frag []byte, dest link.Addr
 func (a *association) restart() {
 	a.detach()
 	a.restartIIN = true
+	// The clock is unsynchronized again: NEED_TIME, and g51v2 CTOs.
+	a.lastSync = time.Time{}
 	a.nullDone = false
 	a.unsolMask = a.startupMask()
 	a.events.mu.Lock()
@@ -241,7 +259,7 @@ func (a *association) arm() {
 	if a.sol != nil {
 		consider(a.sol.deadline)
 	}
-	if a.unsol != nil {
+	if a.unsol != nil && a.sol == nil {
 		consider(a.unsol.deadline)
 	}
 	consider(a.unsolPause)
@@ -264,27 +282,54 @@ func (a *association) onTimer() {
 		a.log.Debug("response not confirmed", "seq", a.sol.seq)
 		a.abandonSolicited()
 	}
-	if u := a.unsol; u != nil && !now.Before(u.deadline) {
-		if u.attempts < a.srv.opts.unsolicited.Retries {
-			u.attempts++
-			u.deadline = now.Add(a.srv.opts.confirmTimeout)
-			a.log.Debug("unsolicited response repeated", "seq", u.seq, "attempt", u.attempts)
-			a.sendRaw(u.data)
-		} else {
-			err := fmt.Errorf("%w: unsolicited response not confirmed", dnp3.ErrTimeout)
-			a.log.Info("unsolicited response given up", "seq", u.seq, "events", len(u.events))
-			a.events.release(u.events)
-			if a.srv.sm != nil {
-				a.srv.sm.OnUnsolicited(a.remote(), len(u.events), err)
-			}
-			a.unsol = nil
-			a.unsolSeq = app.NextSeq(a.unsolSeq)
-			a.unsolPause = now.Add(a.srv.opts.unsolicited.RetryDelay)
-		}
+	if u := a.unsol; u != nil && a.sol == nil && !now.Before(u.deadline) {
+		a.unsolicitedTimeout(u, now)
 	}
 	if !a.unsolPause.IsZero() && !now.Before(a.unsolPause) {
 		a.unsolPause = time.Time{}
 	}
+}
+
+// unsolicitedTimeout handles an unsolicited response whose confirm timeout
+// has expired, once no solicited response is in progress: a repeat is never
+// sent between the fragments of a response, or before its confirmation.
+func (a *association) unsolicitedTimeout(u *pendingUnsol, now time.Time) {
+	if a.deferred != nil {
+		// A READ deferred while the response waited is answered now
+		// (TB2015-002a). The events of a response with data go back to
+		// the buffer, so that the READ reports them, and the response is
+		// not repeated; a null response is repeated once the READ's
+		// response is done.
+		if !u.null {
+			a.log.Debug("unsolicited response superseded by a deferred READ", "seq", u.seq, "events", len(u.events))
+			a.events.release(u.events)
+			a.unsol = nil
+			a.unsolSeq = app.NextSeq(a.unsolSeq)
+		}
+		a.answerDeferred()
+		if a.unsol == nil || a.sol != nil {
+			return
+		}
+	}
+	if r := a.srv.opts.unsolicited.Retries; r < 0 || u.attempts < r {
+		u.attempts++
+		u.deadline = now.Add(a.srv.opts.confirmTimeout)
+		a.log.Debug("unsolicited response repeated", "seq", u.seq, "attempt", u.attempts)
+		// A repeat is the same response, with the indications as they
+		// are now: e.g. IIN1.7 cleared by the master meanwhile.
+		u.frag.IIN = a.iin()
+		a.sendUnsolicited(u)
+		return
+	}
+	err := fmt.Errorf("%w: unsolicited response not confirmed", dnp3.ErrTimeout)
+	a.log.Info("unsolicited response given up", "seq", u.seq, "events", len(u.events))
+	a.events.release(u.events)
+	if a.srv.sm != nil {
+		a.srv.sm.OnUnsolicited(a.remote(), len(u.events), err)
+	}
+	a.unsol = nil
+	a.unsolSeq = app.NextSeq(a.unsolSeq)
+	a.unsolPause = now.Add(a.srv.opts.unsolicited.RetryDelay)
 }
 
 func (a *association) remote() net.Addr {
@@ -303,10 +348,27 @@ func (a *association) iin() app.IIN {
 	if a.broadcast {
 		i |= app.IINBroadcast
 	}
-	if n := a.srv.opts.needTime; n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n) {
+	if a.needsTime() {
 		i |= app.IINNeedTime
 	}
 	return i
+}
+
+// needsTime reports whether the outstation asks for time synchronization
+// (IIN1.4): its clock has not been synchronized since the start, or not
+// within the interval of WithTimeSync.
+func (a *association) needsTime() bool {
+	n := a.srv.opts.needTime
+	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n)
+}
+
+// unsynchronized reports whether the outstation's time counts as
+// unsynchronized, as the CTO of relative-time events says (g51v2): with
+// WithTimeSync, until the first synchronization since the start or a
+// restart, and once twice the interval has passed without one.
+func (a *association) unsynchronized() bool {
+	n := a.srv.opts.needTime
+	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > 2*n)
 }
 
 func (a *association) handle(in inbound) {
@@ -318,7 +380,7 @@ func (a *association) handle(in inbound) {
 		}
 		return
 	}
-	if m := a.srv.opts.metrics; m != nil {
+	if m := a.srv.opts.metrics; m != nil && !in.resumed {
 		m.OnFragmentReceived(a.remote(), req, len(in.frag))
 	}
 	if a.log.DebugEnabled() {
@@ -337,6 +399,23 @@ func (a *association) handle(in inbound) {
 		return
 	}
 	broadcast := in.dest.Broadcast()
+	if req.Function == app.FuncRead && !broadcast && !in.resumed && a.defers(in.at) {
+		// A READ sent while an unsolicited response waits for its
+		// confirmation is not answered until it is confirmed or its
+		// confirm timeout expires (IEEE 1815-2012 4.6.6 rule 16,
+		// TB2015-002a). One that came before it, e.g. the datagram that
+		// started a UDP session, is answered. A newer READ replaces an
+		// older one.
+		a.log.Debug("READ deferred until the unsolicited response is confirmed", "seq", req.Control.Seq)
+		in.resumed = true
+		a.deferred = &in
+		return
+	}
+	// A newer request supersedes a deferred READ, which is not answered.
+	if !in.resumed && a.deferred != nil {
+		a.log.Debug("deferred READ superseded", "seq", req.Control.Seq)
+		a.deferred = nil
+	}
 	if !broadcast {
 		if r := a.lastReq; r != nil && r.seq == req.Control.Seq && bytes.Equal(r.data, in.frag) && req.Function != app.FuncRead {
 			a.log.Debug("repeated request answered with the previous response", "seq", r.seq)
@@ -380,7 +459,7 @@ func (a *association) handle(in inbound) {
 		a.srv.sm.OnHandled(a.remote(), req.Function, time.Since(start))
 	}
 	if broadcast {
-		a.broadcast = true
+		a.broadcast, a.broadcastTo = true, in.dest
 		return
 	}
 	if resp.none || req.Function.NoAck() {
@@ -452,15 +531,25 @@ func (a *association) sendSolicited(seq uint8, r *response) []byte {
 func (a *association) sendFragment(p *pendingResponse) ([]byte, bool) {
 	plan := p.plans[p.next]
 	fin := p.next == len(p.plans)-1
-	con := !fin || len(plan.events) > 0
+	iin := a.iin() | p.iin
+	// The response that reports a broadcast (IIN1.0) asks for
+	// confirmation when the broadcast was to 0xFFFE (confirmation required)
+	// or 0xFFFF (optional), and IIN1.0 is cleared when it comes; after one
+	// to 0xFFFD (no confirmation) once it is sent (IEEE 1815-2012 Table 9-2,
+	// the DNP3 IED certification procedure 3.1r1 Section 2 Note 7).
+	if p.next == 0 && a.broadcast {
+		if a.broadcastTo == link.BroadcastNoConfirm {
+			a.broadcast = false
+		} else {
+			p.broadcast = true
+		}
+	}
+	con := !fin || len(plan.events) > 0 || (p.next == 0 && p.broadcast)
 	f := &app.Fragment{
 		Control:  app.Control{FIR: p.next == 0, FIN: fin, CON: con, Seq: p.seq},
 		Function: app.FuncResponse,
-		IIN:      a.iin() | p.iin,
+		IIN:      iin,
 		Headers:  plan.headers,
-	}
-	if p.next == 0 {
-		a.broadcast = false
 	}
 	return a.send(f), con
 }
@@ -493,6 +582,7 @@ func (a *association) onConfirm(req *app.Fragment) {
 		a.unsol = nil
 		a.unsolSeq = app.NextSeq(a.unsolSeq)
 		a.holdStart = time.Time{}
+		a.answerDeferred()
 		return
 	}
 	p := a.sol
@@ -501,6 +591,9 @@ func (a *association) onConfirm(req *app.Fragment) {
 		return
 	}
 	a.events.confirm(p.plans[p.next].events)
+	if p.next == 0 && p.broadcast {
+		a.broadcast = false
+	}
 	p.next++
 	if p.next == len(p.plans) {
 		a.sol = nil
@@ -526,8 +619,8 @@ func (a *association) maybeUnsolicited() {
 			Function: app.FuncUnsolicitedResponse,
 			IIN:      a.iin(),
 		}
-		data := a.send(f)
-		a.unsol = &pendingUnsol{null: true, seq: a.unsolSeq, data: data, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+		a.unsol = &pendingUnsol{null: true, seq: a.unsolSeq, frag: f, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+		a.sendUnsolicited(a.unsol)
 		return
 	}
 	if a.unsolMask == 0 {
@@ -564,8 +657,17 @@ func (a *association) maybeUnsolicited() {
 		IIN:      a.iin(),
 		Headers:  plan.headers,
 	}
-	data := a.send(f)
-	a.unsol = &pendingUnsol{seq: a.unsolSeq, data: data, events: plan.events, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+	a.unsol = &pendingUnsol{seq: a.unsolSeq, frag: f, events: plan.events, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+	a.sendUnsolicited(a.unsol)
+}
+
+// answerDeferred answers the READ deferred while an unsolicited response
+// waited for its confirmation.
+func (a *association) answerDeferred() {
+	if d := a.deferred; d != nil {
+		a.deferred = nil
+		a.handle(*d)
+	}
 }
 
 // send encodes and sends f on the current session and returns the
@@ -588,7 +690,43 @@ func (a *association) send(f *app.Fragment) []byte {
 	return data
 }
 
+// sendUnsolicited sends an unsolicited response and records when it went
+// out and to which peer; the time stays zero when it had nowhere to go,
+// e.g. over UDP before a master's first datagram.
+func (a *association) sendUnsolicited(u *pendingUnsol) {
+	peer := a.peer()
+	if data := a.send(u.frag); data == nil || !a.sentOK || peer == nil {
+		return
+	}
+	u.sent, u.peer = time.Now(), peer.String()
+}
+
+// peer is where the current session's fragments go.
+func (a *association) peer() net.Addr {
+	if a.sess == nil {
+		return nil
+	}
+	return a.sess.Channel().Peer()
+}
+
+// defers reports whether a READ received at is held back by the
+// unsolicited response waiting for its confirmation: it was sent before the
+// READ came, to the master the READ came from. A READ from another master
+// (over UDP, one that took over the socket), or that came first, as the
+// datagram that started a UDP session, is answered.
+func (a *association) defers(at time.Time) bool {
+	u := a.unsol
+	if u == nil || u.sent.IsZero() || !at.After(u.sent) {
+		return false
+	}
+	p := a.peer()
+	return p != nil && p.String() == u.peer
+}
+
+// sendRaw sends data on the current session; sentOK says whether it went
+// out.
 func (a *association) sendRaw(data []byte) {
+	a.sentOK = false
 	if a.sess == nil || data == nil {
 		return
 	}
@@ -596,5 +734,7 @@ func (a *association) sendRaw(data []byte) {
 	defer cancel()
 	if err := a.sess.Send(ctx, data); err != nil {
 		a.log.Debug("fragment not sent", "error", err)
+		return
 	}
+	a.sentOK = true
 }
