@@ -1,5 +1,23 @@
 # go-dnp3 Releases
 
+## v1.4.0
+
+**Date:** not yet released
+**Previous release:** v1.3.2
+
+## Summary
+
+Fixes from running the DNP Users Group's IED certification procedures
+(Step Function I/O's dnp3c, 3.1 rev 1) against the outstation.
+
+## Changes
+
+### Outstation
+
+- **Controls** (3.1r1 8.2.1.2.3, 8.2.1.2.4, 8.2.1.2.10, 8.4.1.2.x): an OPERATE that matches its SELECT but comes after the select timeout is answered with TIMEOUT, not NO_SELECT (IEEE 1815-2012 Table 11-4). A control the handler answers with NOT_SUPPORTED, for example of a point the outstation does not have, also sets IIN2.2 (PARAMETER_ERROR), as opendnp3 and stepfunc do; the echo is still sent. A go-dnp3 master reports such a response as an `IINError` instead of a `CommandError`.
+
+---
+
 ## v1.3.2
 
 **Date:** 2026-10-21

@@ -197,8 +197,8 @@ func WithConfirmTimeout(d time.Duration) Option {
 	}
 }
 
-// WithSelectTimeout sets how long a SELECT stays valid for its OPERATE.
-// The default is 10 seconds.
+// WithSelectTimeout sets how long a SELECT stays valid for its OPERATE;
+// an OPERATE after it is answered with TIMEOUT. The default is 10 seconds.
 func WithSelectTimeout(d time.Duration) Option {
 	return func(o *options) error {
 		if d <= 0 {
