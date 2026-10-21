@@ -79,6 +79,9 @@ func (d *device) handle(r *request) (rep reply) {
 		}
 		return rep
 	}
+	if r.Op == "checkOperate" {
+		d.awaitOperation(operation{r.Kind, r.Index})
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	logf := func(format string, args ...any) { rep.Log = append(rep.Log, fmt.Sprintf(format, args...)) }
@@ -86,6 +89,23 @@ func (d *device) handle(r *request) (rep reply) {
 		rep.Error = err.Error()
 	}
 	return rep
+}
+
+// operateWait is how long a check that an output operated waits for it: a
+// control sent without a response (DIRECT_OPERATE_NR, a broadcast) is
+// checked as soon as it is sent, and may not have been handled yet.
+const operateWait = 2 * time.Second
+
+// awaitOperation waits until the output operated, or operateWait passed.
+func (d *device) awaitOperation(o operation) {
+	for deadline := time.Now().Add(operateWait); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		d.mu.Lock()
+		done := slices.Contains(d.ops, o)
+		d.mu.Unlock()
+		if done {
+			return
+		}
+	}
 }
 
 func (d *device) do(r *request, rep *reply, logf func(string, ...any)) error {
