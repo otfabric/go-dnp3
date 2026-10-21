@@ -202,6 +202,8 @@ func (a *association) receive(sess *channel.Session, frag []byte, dest link.Addr
 func (a *association) restart() {
 	a.detach()
 	a.restartIIN = true
+	// The clock is unsynchronized again: NEED_TIME, and g51v2 CTOs.
+	a.lastSync = time.Time{}
 	a.nullDone = false
 	a.unsolMask = a.startupMask()
 	a.events.mu.Lock()

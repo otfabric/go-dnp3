@@ -768,4 +768,18 @@ func TestRelativeTimeCTO(t *testing.T) {
 	if f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V1 {
 		t.Fatalf("synchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
 	}
+	m.send(confirm(3, false))
+
+	// After a restart the time is unsynchronized again.
+	m.srv.Restart()
+	m.send(req(4, app.FuncRead, app.AllObjects(app.G80V1))) // the restart has taken effect once answered
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("no restart: IIN %s", f.IIN)
+	}
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(5, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V2 {
+		t.Fatalf("after a restart: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
 }
