@@ -122,6 +122,13 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				p.iin |= app.IINObjectUnknown
 				continue
 			}
+			if measurement(t) && len(db.points[t]) == 0 {
+				// The outstation has no points of the type: a null response
+				// with IIN2.1, as TB2016-001 and the DNP3 IED certification
+				// procedure 3.1r1 (Table 11-1) require.
+				p.iin |= app.IINObjectUnknown
+				continue
+			}
 			if isEvent {
 				sels = append(sels, &eventSelector{typ: t, variation: v, limit: limit})
 				continue
@@ -147,6 +154,16 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 	}
 	p.items = append(p.items, statics...)
 	return p
+}
+
+// measurement reports whether t is a type of input or output point, whose
+// reads are answered with IIN2.1 when the database has none of it.
+func measurement(t PointType) bool {
+	switch t {
+	case BinaryInput, DoubleBitInput, BinaryOutput, Counter, FrozenCounter, AnalogInput, FrozenAnalogInput, AnalogOutput:
+		return true
+	}
+	return false
 }
 
 func validVariation(t PointType, event bool, gv app.GroupVariation) bool {

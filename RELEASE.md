@@ -1,5 +1,23 @@
 # go-dnp3 Releases
 
+## v1.4.0
+
+**Date:** not yet released
+**Previous release:** v1.3.2
+
+## Summary
+
+Fixes from running the DNP Users Group's IED certification procedures
+(Step Function I/O's dnp3c, 3.1 rev 1) against the outstation.
+
+## Changes
+
+### Outstation
+
+- **Reads of a type without points** (3.1r1 8.13.2d, 8.16.1.2.4, 8.21, 8.22, 8.24.2b): a read of the static or event objects of a type of input or output point the outstation has none of is a null response with IIN2.1 (OBJECT_UNKNOWN), as TB2016-001 and the 3.1r1 procedure require; it was a null response without it. A read of the events of a type the outstation has, while it has no events of it, is still a plain null response. A go-dnp3 master reports the response as an `IINError`.
+
+---
+
 ## v1.3.2
 
 **Date:** 2026-10-21
