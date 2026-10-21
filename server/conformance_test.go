@@ -863,6 +863,23 @@ func TestReadWithoutFlagsKeepsQuality(t *testing.T) {
 	}
 }
 
+// TestReadOfAbsentType: a read of a type the outstation has no points of,
+// static or events, is a null response with IIN2.1; a read of the events of
+// a type it has, but has no events of, a null response without it.
+func TestReadOfAbsentType(t *testing.T) {
+	m := newMaster(t)
+	for i, gv := range []app.GroupVariation{app.GV(3, 0), app.GV(4, 0), app.GV(21, 0), app.GV(40, 0)} {
+		m.send(req(uint8(i+1), app.FuncRead, app.AllObjects(gv)))
+		if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) || len(f.Headers) != 0 {
+			t.Fatalf("read of %s: IIN %s, headers %v", gv, f.IIN, f.Headers)
+		}
+	}
+	m.send(req(5, app.FuncRead, app.AllObjects(app.GV(2, 0))))
+	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINObjectUnknown) || len(f.Headers) != 0 {
+		t.Fatalf("read of g2v0 without events: IIN %s, headers %v", f.IIN, f.Headers)
+	}
+}
+
 // TestObjectsWithoutValues: headers whose objects carry indices but no
 // value (a qualifier that carries indices only) are answered with IIN2.2,
 // not by taking the outstation down. The first is the input the fuzzer
