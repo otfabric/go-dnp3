@@ -862,3 +862,28 @@ func TestReadWithoutFlagsKeepsQuality(t *testing.T) {
 		}
 	}
 }
+
+// TestObjectsWithoutValues: headers whose objects carry indices but no
+// value (a qualifier that carries indices only) are answered with IIN2.2,
+// not by taking the outstation down. The first is the input the fuzzer
+// found: a READ of g70v5.
+func TestObjectsWithoutValues(t *testing.T) {
+	m := newMaster(t, WithFileServer(FSFileServer{FS: fstest.MapFS{"a.txt": {Data: []byte("hello")}}}))
+	for _, raw := range [][]byte{
+		[]byte("\xc9\x01F\x05'\x01\b\x00\x01\x00\x00\x00\x00;;\x00\x00\x00"),
+		{0xC1, 0x01, 70, 5, 0x17, 1, 0}, // READ g70v5, one index
+		{0xC2, 0x05, 12, 1, 0x17, 1, 0}, // DIRECT_OPERATE g12v1, no CROB
+		{0xC3, 0x05, 41, 2, 0x17, 1, 0}, // DIRECT_OPERATE g41v2, no value
+		{0xC4, 0x02, 50, 1, 0x17, 1, 0}, // WRITE g50v1, no time
+		{0xC5, 0x02, 80, 1, 0x17, 1, 7}, // WRITE g80v1, no bit
+	} {
+		m.sendRaw(raw)
+		f := m.recvFunc(app.FuncResponse)
+		if !f.IIN.Has(app.IINParameterError) && !f.IIN.Has(app.IINObjectUnknown) {
+			t.Fatalf("% x: IIN %s, want an error", raw, f.IIN)
+		}
+	}
+	// The outstation still answers.
+	m.send(req(6, app.FuncRead, app.ClassHeaders(0)...))
+	m.recvFunc(app.FuncResponse)
+}

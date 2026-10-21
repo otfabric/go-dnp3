@@ -67,6 +67,13 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 			allOK, malformed = false, true
 			continue
 		}
+		if !controlValues(hdr) || (hdr.GV == app.G12V2 && !binaryValues(req.Headers[i+1])) {
+			// A header whose objects carry no control block, e.g. one
+			// with a qualifier that carries indices only.
+			r.iin |= app.IINParameterError
+			allOK, malformed = false, true
+			continue
+		}
 		for j := range echo[i].Objects {
 			o := &echo[i].Objects[j]
 			var status app.CommandStatus
@@ -170,7 +177,7 @@ func crobState(c app.CROB) bool {
 func (a *association) pattern(ctx context.Context, h Handler, fc app.FunctionCode, pcb app.CROB, mask app.Header) app.CommandStatus {
 	status := app.StatusSuccess
 	for _, o := range mask.Objects {
-		if !o.Value.(app.Binary).Value {
+		if b, _ := o.Value.(app.Binary); !b.Value {
 			continue
 		}
 		s := a.execute(ctx, h, fc, Command{GV: app.G12V2, Index: o.Index, Value: pcb, Master: a.master})
@@ -179,6 +186,37 @@ func (a *association) pattern(ctx context.Context, h Handler, fc app.FunctionCod
 		}
 	}
 	return status
+}
+
+// controlValues reports whether every object of a control header carries
+// the block of its variation: a CROB for g12, an analog output for g41.
+func controlValues(h app.Header) bool {
+	for _, o := range h.Objects {
+		switch o.Value.(type) {
+		case app.CROB:
+			if h.GV.Group() != 12 {
+				return false
+			}
+		case app.AnalogOutput:
+			if h.GV.Group() != 41 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// binaryValues reports whether every object of h is a binary value, as the
+// bits of a pattern mask (g12v3) are.
+func binaryValues(h app.Header) bool {
+	for _, o := range h.Objects {
+		if _, ok := o.Value.(app.Binary); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func withStatus(v app.Value, s app.CommandStatus) app.Value {

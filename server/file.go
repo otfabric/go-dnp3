@@ -200,7 +200,13 @@ func gvOf(v app.Value) uint8 {
 // readFile answers a READ of g70v5: the master asks for one block.
 func (a *association) readFile(h *app.Header, p *readPlan) {
 	for _, o := range h.Objects {
-		t := o.Value.(app.FileTransport) // the only value g70v5 decodes to
+		t, ok := o.Value.(app.FileTransport)
+		if !ok {
+			// An object without a file transport block, e.g. under a
+			// qualifier that carries indices only.
+			p.iin |= app.IINParameterError
+			continue
+		}
 		of, ok := a.files[t.Handle]
 		if !ok || of.mode != app.FileModeRead {
 			p.items = append(p.items, item{h: app.FreeFormat(app.G70V6,
@@ -238,7 +244,10 @@ func (a *association) writeFile(h app.Header) app.IIN {
 		return app.IINObjectUnknown
 	}
 	for _, o := range h.Objects {
-		t := o.Value.(app.FileTransport)
+		t, ok := o.Value.(app.FileTransport)
+		if !ok {
+			return app.IINParameterError
+		}
 		st := app.FileTransportStatus{Handle: t.Handle, Block: t.Block, Last: t.Last}
 		of, ok := a.files[t.Handle]
 		switch {

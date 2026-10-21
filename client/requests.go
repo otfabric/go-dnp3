@@ -331,8 +331,8 @@ func (c *Client) SyncTime(ctx context.Context, p TimeSync) error {
 			rtt := time.Since(sent)
 			var processing time.Duration
 			for _, h := range res.Headers() {
-				if h.GV == app.G52V2 && len(h.Objects) == 1 {
-					processing = h.Objects[0].Value.(app.TimeDelay).Delay
+				if d, ok := timeDelay(h); ok && h.GV == app.G52V2 {
+					processing = d
 				}
 			}
 			delay := max((rtt-processing)/2, 0)
@@ -355,11 +355,20 @@ func (c *Client) DelayMeasure(ctx context.Context) (processing, roundTrip time.D
 	}
 	roundTrip = time.Since(start)
 	for _, h := range res.Headers() {
-		if h.GV == app.G52V2 && len(h.Objects) == 1 {
-			processing = h.Objects[0].Value.(app.TimeDelay).Delay
+		if d, ok := timeDelay(h); ok && h.GV == app.G52V2 {
+			processing = d
 		}
 	}
 	return processing, roundTrip, nil
+}
+
+// timeDelay returns the delay of a header with one time delay object (g52).
+func timeDelay(h app.Header) (time.Duration, bool) {
+	if len(h.Objects) != 1 {
+		return 0, false
+	}
+	t, ok := h.Objects[0].Value.(app.TimeDelay)
+	return t.Delay, ok
 }
 
 // ColdRestart asks the outstation for a cold restart and returns the time
@@ -380,8 +389,8 @@ func (c *Client) restart(ctx context.Context, fc app.FunctionCode) (time.Duratio
 		return 0, err
 	}
 	for _, h := range res.Headers() {
-		if (h.GV == app.G52V1 || h.GV == app.G52V2) && len(h.Objects) == 1 {
-			return h.Objects[0].Value.(app.TimeDelay).Delay, nil
+		if d, ok := timeDelay(h); ok && (h.GV == app.G52V1 || h.GV == app.G52V2) {
+			return d, nil
 		}
 	}
 	return 0, fmt.Errorf("%w: restart response without a time delay object", dnp3.ErrProtocol)
