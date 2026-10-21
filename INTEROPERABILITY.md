@@ -209,6 +209,7 @@ a pre-shared session key is used directly (outside the standard, see
 | Chaos: corrupted, split and delayed octets and killed connections under load, with and without secure authentication | ✅ `e2e/chaos_test.go` |
 | Link procedures frame by frame; noisy and duplicating lines | ✅ |
 | Outstation conformance with a scripted master | ✅ |
+| DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
 | As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.4.3 |

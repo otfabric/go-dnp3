@@ -50,6 +50,9 @@ make upstream-watch
 # Run the interop tests against the dnp3-interop reference images (needs Docker)
 make interop
 
+# Run the IED certification procedures (dnp3c) against the conformance outstation (needs Docker)
+make conformance
+
 # Build the examples into ./bin
 make build
 ```
@@ -106,6 +109,14 @@ the same. Never push that image anywhere. A reference that deviates from the
 fixture's behaviour is recorded in dnp3-interop's `tests/known-bugs.tsv`
 and mirrored in `interop/harness.go`'s `knownBugs`, so that the test checks
 the behaviour and logs the deviation.
+
+The conformance run ([internal/cmd/conformance](internal/cmd/conformance)) uses dnp3-interop's dnp3c runner, whose
+image `make conformance-image` builds from dnp3-interop's source at
+`CONFORMANCE_COMMIT`. dnp3c and the runner are GPL-3.0-only: keep them out
+of this repository, which stays MIT, and never push that image anywhere. A
+procedure that fails because of the test outstation's profile is fixed in
+`internal/cmd/conformance/device.ini` or the outstation's code. One that fails because of the
+library is fixed in the library, with a test in `server/conformance_test.go`.
 
 ## Pull Requests
 

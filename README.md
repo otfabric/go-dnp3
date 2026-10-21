@@ -101,7 +101,7 @@ you can pick the right one for your project.
 | Metrics | ✅ callbacks (`dnp3.Metrics`) | not documented | — | `Stats()` counters |
 | Dependencies | none (standard library) | Tokio, tracing; rustls for TLS, tokio-serial for serial | ASIO, exe4cpp, ser4cpp; OpenSSL for TLS | standard library; go.bug.st/serial for serial |
 | Tested against other stacks in CI | ✅ the three and dnp3py, the features of the [coverage matrix](INTEROPERABILITY.md#interop-coverage) | not documented | not documented | ✅ opendnp3 |
-| DNP Users Group IED conformance procedures (dnp3c) in CI | — (outstation conformance tests with a scripted master) | ✅ 3.1r1 subset level 3, 2.7 level 2 | not documented | ✅ 3.1r1 subset level 3, 2.7 level 2 (not a certification) |
+| DNP Users Group IED conformance procedures (dnp3c) in CI | ✅ 3.1r1 subset levels 2 and 3, 2.7 level 2, against a [test outstation](internal/cmd/conformance) (not a certification) | ✅ 3.1r1 subset level 3, 2.7 level 2 | not documented | ✅ 3.1r1 subset level 3, 2.7 level 2 (not a certification) |
 
 ✅ = available · — = not available. For stepfunc dnp3 1.7.0, opendnp3
 3.1.2 and DSC go-dnp3 v0.8.1, the versions go-dnp3 is tested against,
@@ -318,6 +318,19 @@ and against scripted peers over loopback, including a chaos suite that
 corrupts, duplicates and drops octets on the line, and stress tests with
 many masters and concurrent requests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Conformance tests
+
+`make conformance` runs the DNP Users Group's IED certification procedures
+against a test outstation built on the library: 3.1 rev 1 at subset levels
+2 and 3, and 2.7 at level 2. It uses Step Function I/O's
+[dnp3c](https://github.com/stepfunc/dnp3c) 0.2.0, through
+[otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop)'s dnp3c
+runner. dnp3c and the runner are GPL-3.0 and not part of this repository;
+`make conformance-image` builds the runner's image from dnp3-interop's
+source, and it is not published. CI runs the same on every push. The
+results are not a certification. [internal/cmd/conformance](internal/cmd/conformance) describes the setup and the
+Device Profile.
+
 ## Interop tests
 
 `make interop` runs go-dnp3 as master against the reference outstations,
@@ -377,10 +390,16 @@ linked into go-dnp3.
   (groups 83, 85..88, 90, 91 carried raw, except the one-octet data set
   characteristics g86v2; 112, 113 decoded) have no procedures: exchange
   them with the generic request methods.
-- **Conformance**: the outstation is tested against IEEE 1815 with a
-  scripted master and against four other stacks, but not with the DNP
-  Users Group's IED conformance procedures, and go-dnp3 declares no
-  subset level.
+- **Conformance**: CI runs the DNP Users Group's IED certification
+  procedures (dnp3c: 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2)
+  against a [test outstation](internal/cmd/conformance) built on the library, with the
+  Device Profile in `internal/cmd/conformance/device.ini`. That is not a
+  certification. go-dnp3 declares no subset level of its own, and the
+  run does not cover what that profile leaves out: double-bit inputs
+  (level 4 objects in dnp3c), serial and UDP, multi-drop, and the network
+  tests of section 9. 3.1r1's 8.2.6 passes with a warning: the echo of a
+  SELECT that carries a nonzero status gives SUCCESS, as IEEE 1815-2012
+  allows and 1815-202x does not.
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation: a
