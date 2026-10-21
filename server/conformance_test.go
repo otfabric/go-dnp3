@@ -766,3 +766,72 @@ func TestChallengeReply(t *testing.T) {
 		t.Fatalf("without secure authentication: %s", f.IIN)
 	}
 }
+
+// TestRelativeTimeCTO: relative-time events carry an unsynchronized CTO
+// (g51v2) until the first time synchronization, a synchronized one (g51v1)
+// after it, also once the outstation asks for the time again, and an
+// unsynchronized one again after a restart and once twice the interval has
+// passed without a synchronization.
+func TestRelativeTimeCTO(t *testing.T) {
+	const interval = 300 * time.Millisecond
+	m := newMaster(t, WithTimeSync(interval))
+	ctoOf := func(f *app.Fragment) app.GroupVariation {
+		t.Helper()
+		if len(f.Headers) != 2 || f.Headers[1].GV != app.G2V3 {
+			t.Fatalf("headers %v, want a CTO and g2v3", f.Headers)
+		}
+		return f.Headers[0].GV
+	}
+	db := m.srv.Database()
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.AllObjects(app.G2V3)))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V2 {
+		t.Fatalf("unsynchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(1, false))
+
+	m.send(req(2, app.FuncWrite, app.Counted(app.G50V1, app.AbsoluteTime{Time: app.Now()})))
+	m.recvFunc(app.FuncResponse)
+	_ = db.UpdateBinaryInput(0, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(3, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V1 {
+		t.Fatalf("synchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(3, false))
+
+	// Due for synchronization: IIN1.4, but still synchronized.
+	time.Sleep(interval + 50*time.Millisecond)
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(6, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V1 {
+		t.Fatalf("due for synchronization: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(6, false))
+	// Twice the interval without one: unsynchronized.
+	time.Sleep(interval)
+	_ = db.UpdateBinaryInput(0, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(7, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if ctoOf(f) != app.G51V2 {
+		t.Fatalf("synchronization expired: CTO %s", f.Headers[0].GV)
+	}
+	m.send(confirm(7, false))
+	m.send(req(8, app.FuncWrite, app.Counted(app.G50V1, app.AbsoluteTime{Time: app.Now()})))
+	m.recvFunc(app.FuncResponse)
+
+	// After a restart the time is unsynchronized again.
+	m.srv.Restart()
+	m.send(req(9, app.FuncRead, app.AllObjects(app.G80V1))) // the restart has taken effect once answered
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("no restart: IIN %s", f.IIN)
+	}
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(10, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V2 {
+		t.Fatalf("after a restart: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+}

@@ -100,8 +100,10 @@ func (s *Server) indications() app.IIN {
 }
 
 // Restart behaves as after a restart of the outstation: every association
-// reports IIN1.7 (DEVICE_RESTART) again, its event buffer is cleared and
-// unsolicited responses start over with a null unsolicited response.
+// reports IIN1.7 (DEVICE_RESTART) again, its event buffer is cleared,
+// unsolicited responses start over with a null unsolicited response, and,
+// with WithTimeSync, its time counts as unsynchronized until the next time
+// synchronization (IIN1.4).
 func (s *Server) Restart() {
 	for _, a := range s.associations() {
 		a.post(func() { a.restart() })

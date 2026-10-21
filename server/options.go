@@ -266,6 +266,11 @@ func WithEventLimits(limits map[PointType]int) Option {
 // WithTimeSync makes the outstation request time synchronization (IIN1.4
 // NEED_TIME) at start and again when interval has passed since the last
 // one. Zero, the default, never requests it.
+//
+// Its time counts as unsynchronized, which relative-time events report
+// with a g51v2 CTO instead of g51v1, until the first synchronization after
+// the start or a restart, and again once twice the interval has passed
+// without one.
 func WithTimeSync(interval time.Duration) Option {
 	return func(o *options) error {
 		if interval < 0 {
