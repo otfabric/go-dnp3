@@ -970,3 +970,117 @@ func TestHeadersWithoutValuesDispatched(t *testing.T) {
 		}
 	}
 }
+
+// TestReadDeferredByUnsolicited: a READ that comes while an unsolicited
+// response waits for its confirmation is answered once the confirm timeout
+// expires, before the response is repeated; the repeat carries the
+// indications as they are then (IIN1.7 cleared meanwhile). A READ during
+// the repeat is answered as soon as it is confirmed.
+func TestReadDeferredByUnsolicited(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	if !null.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("null unsolicited IIN %s", null.IIN)
+	}
+	// A WRITE is answered at once.
+	m.send(req(1, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})))
+	if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 1 {
+		t.Fatalf("write answered with %s", f)
+	}
+	sent := time.Now()
+	m.send(req(2, app.FuncRead, app.ClassHeaders(0)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || f.Control.Seq != 2 {
+		t.Fatalf("first after the deferred READ: %s", f)
+	}
+	if time.Since(sent) < 200*time.Millisecond {
+		t.Fatal("READ answered before the unsolicited confirm timeout")
+	}
+	retry := m.recv()
+	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != null.Control.Seq {
+		t.Fatalf("after the READ: %s", retry)
+	}
+	if retry.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("repeat still reports IIN1.7: %s", retry.IIN)
+	}
+	m.send(req(3, app.FuncRead, app.ClassHeaders(0)...))
+	m.none(100 * time.Millisecond)
+	m.send(confirm(retry.Control.Seq, true))
+	if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 3 {
+		t.Fatalf("READ after the confirmation: %s", f)
+	}
+}
+
+// TestDeferredReadTakesUnsolicitedEvents: a READ deferred by an unconfirmed
+// unsolicited response with events reports those events once the confirm
+// timeout expires, and the unsolicited response is not repeated.
+func TestDeferredReadTakesUnsolicitedEvents(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1}, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	m.send(confirm(null.Control.Seq, true))
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	if u := m.recvFunc(app.FuncUnsolicitedResponse); len(u.Headers) == 0 {
+		t.Fatalf("unsolicited without events: %s", u)
+	}
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1, 2, 3)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || !f.Control.CON || len(f.Headers) != 1 || f.Headers[0].GV.Group() != 2 {
+		t.Fatalf("deferred READ answered with %s", f)
+	}
+	m.send(confirm(f.Control.Seq, false))
+	m.none(500 * time.Millisecond)
+}
+
+// TestUnsolicitedRepeatWaitsForResponse: the null unsolicited response is
+// not repeated while the response to a deferred READ waits for its
+// confirmation (300 ms here), and is repeated once it is confirmed.
+func TestUnsolicitedRepeatWaitsForResponse(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || !f.Control.CON {
+		t.Fatalf("deferred READ answered with %s", f)
+	}
+	m.none(150 * time.Millisecond)
+	m.send(confirm(f.Control.Seq, false))
+	if r := m.recv(); r.Function != app.FuncUnsolicitedResponse || r.Control.Seq != null.Control.Seq || len(r.Headers) != 0 {
+		t.Fatalf("after the confirmation: %s", r)
+	}
+}
+
+// TestDeferredReadSuperseded: a request that comes after a deferred READ is
+// answered at once, and the READ is not answered at all.
+func TestDeferredReadSuperseded(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	m.send(req(1, app.FuncRead, app.ClassHeaders(0)...))
+	m.send(req(2, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})))
+	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 2 {
+		t.Fatalf("after the WRITE: %s", f)
+	}
+	if f := m.recv(); f.Function != app.FuncUnsolicitedResponse || f.Control.Seq != null.Control.Seq {
+		t.Fatalf("at the confirm timeout: %s", f)
+	}
+	m.send(confirm(null.Control.Seq, true))
+	m.none(200 * time.Millisecond)
+}
+
+// TestUnsolicitedUnlimitedRetries: with a negative Retries an unconfirmed
+// unsolicited response is repeated until it is confirmed.
+func TestUnsolicitedUnlimitedRetries(t *testing.T) {
+	m := newMaster(t, WithConfirmTimeout(50*time.Millisecond), WithUnsolicited(Unsolicited{Enabled: true, Retries: -1}))
+	first := m.recvFunc(app.FuncUnsolicitedResponse)
+	for range 8 {
+		if f := m.recvFunc(app.FuncUnsolicitedResponse); f.Control.Seq != first.Control.Seq || len(f.Headers) != 0 {
+			t.Fatalf("repeat %s", f)
+		}
+	}
+	m.send(confirm(first.Control.Seq, true))
+	time.Sleep(60 * time.Millisecond)
+	for len(m.in) > 0 {
+		<-m.in
+	}
+	m.none(200 * time.Millisecond)
+}

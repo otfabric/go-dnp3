@@ -104,6 +104,16 @@ func (c *Channel) Start() {
 // Remote returns the address of the peer.
 func (c *Channel) Remote() net.Addr { return c.cfg.Remote }
 
+// Peer returns the address what is written goes to: the stream's own
+// (Peer() net.Addr), which for a UDP socket is the master that sent the
+// last datagram and nil before the first, or else Remote.
+func (c *Channel) Peer() net.Addr {
+	if p, ok := c.stream.(interface{ Peer() net.Addr }); ok {
+		return p.Peer()
+	}
+	return c.cfg.Remote
+}
+
 // Done is closed when the channel has stopped: the reader and every
 // session goroutine have returned.
 func (c *Channel) Done() <-chan struct{} { return c.done }
