@@ -75,27 +75,29 @@ func (a *association) write(req *app.Fragment) *response {
 	for _, h := range req.Headers {
 		switch h.GV {
 		case app.G50V1:
-			if len(h.Objects) != 1 {
+			at, ok := oneObject[app.AbsoluteTime](h)
+			if !ok {
 				r.iin |= app.IINParameterError
 				continue
 			}
-			t := h.Objects[0].Value.(app.AbsoluteTime).Time.Time()
+			t := at.Time.Time()
 			a.srv.clock.set(t, time.Now())
 			a.synchronized(ctx, t)
 		case app.G50V3:
 			// LAN procedure: the master's time at the moment the outstation
 			// recorded with RECORD_CURRENT_TIME.
-			if len(h.Objects) != 1 || a.recorded.IsZero() {
+			at, ok := oneObject[app.AbsoluteTime](h)
+			if !ok || a.recorded.IsZero() {
 				r.iin |= app.IINParameterError
 				continue
 			}
-			t := h.Objects[0].Value.(app.AbsoluteTime).Time.Time()
+			t := at.Time.Time()
 			a.srv.clock.set(t, a.recorded)
 			a.recorded = time.Time{}
 			a.synchronized(ctx, a.srv.clock.time())
 		case app.G80V1:
 			for _, o := range h.Objects {
-				if o.Index != app.IINBit(app.IINDeviceRestart) || o.Value.(app.Binary).Value {
+				if b, ok := o.Value.(app.Binary); !ok || o.Index != app.IINBit(app.IINDeviceRestart) || b.Value {
 					r.iin |= app.IINParameterError
 					continue
 				}
@@ -110,7 +112,12 @@ func (a *association) write(req *app.Fragment) *response {
 					r.iin |= app.IINParameterError
 					continue
 				}
-				p.cfg.Deadband = o.Value.(app.AnalogDeadband).Value
+				d, isDeadband := o.Value.(app.AnalogDeadband)
+				if !isDeadband {
+					r.iin |= app.IINParameterError
+					continue
+				}
+				p.cfg.Deadband = d.Value
 			}
 			db.mu.Unlock()
 		default:
@@ -119,7 +126,11 @@ func (a *association) write(req *app.Fragment) *response {
 				r.iin |= a.writeAttributes(ctx, h)
 			case 110:
 				for _, o := range h.Objects {
-					s := o.Value.(app.OctetString)
+					s, ok := o.Value.(app.OctetString)
+					if !ok {
+						r.iin |= app.IINParameterError
+						continue
+					}
 					if err := a.srv.db.Update(OctetString, o.Index, s, EventOnChange); err != nil {
 						r.iin |= app.IINParameterError
 						continue
@@ -165,10 +176,13 @@ func (a *association) freeze(req *app.Fragment) *response {
 	clearAfter := req.Function == app.FuncFreezeClear || req.Function == app.FuncFreezeClearNoAck
 	hs := req.Headers
 	if req.Function == app.FuncFreezeAtTime || req.Function == app.FuncFreezeAtTimeNoAck {
-		if len(hs) == 0 || hs[0].GV != app.G50V2 || len(hs[0].Objects) != 1 {
+		if len(hs) == 0 || hs[0].GV != app.G50V2 {
 			return &response{iin: app.IINParameterError}
 		}
-		at := hs[0].Objects[0].Value.(app.AbsoluteTime)
+		at, ok := oneObject[app.AbsoluteTime](hs[0])
+		if !ok {
+			return &response{iin: app.IINParameterError}
+		}
 		hs = hs[1:]
 		if iin := freezeHeadersValid(hs); iin != 0 {
 			return &response{iin: iin}
@@ -471,7 +485,11 @@ func (a *association) writeAttributes(ctx context.Context, h app.Header) app.IIN
 	}
 	v := h.GV.Variation()
 	for _, o := range h.Objects {
-		val := o.Value.(app.Attribute)
+		val, isAttribute := o.Value.(app.Attribute)
+		if !isAttribute {
+			iin |= app.IINParameterError
+			continue
+		}
 		if as.legacy {
 			wh, ok := a.srv.opts.handler.(WriteHandler)
 			if !ok || wh.WriteAttribute(ctx, v, val) != nil {
@@ -507,4 +525,16 @@ func sortedVariations(m map[uint8]app.Attribute) []uint8 {
 		}
 	}
 	return out
+}
+
+// oneObject returns the value of the only object of h, when it has exactly
+// one and the value is a T: an object of a qualifier that carries indices
+// only has none.
+func oneObject[T app.Value](h app.Header) (T, bool) {
+	var zero T
+	if len(h.Objects) != 1 {
+		return zero, false
+	}
+	v, ok := h.Objects[0].Value.(T)
+	return v, ok
 }
