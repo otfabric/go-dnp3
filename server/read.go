@@ -294,7 +294,7 @@ func (a *association) eventItems(sels []*eventSelector) []item {
 			if rel {
 				cto = ts
 				ctoGV := app.G51V1
-				if a.needsTime() {
+				if a.unsynchronized() {
 					ctoGV = app.G51V2
 				}
 				pre := app.Counted(ctoGV, app.CTO{Time: cto})

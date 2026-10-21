@@ -14,7 +14,7 @@ Fixes from running the DNP Users Group's IED certification procedures
 
 ### Outstation
 
-- **CTO of relative-time events** (3.1r1 8.14.2m, 8.15.3, 8.22m): g51v2 (unsynchronized) while the outstation asks for the time (IIN1.4), g51v1 only once it has been synchronized; it was always g51v1. After a restart (`Server.Restart`, or a COLD_RESTART or WARM_RESTART handler that calls it) the time counts as unsynchronized again: IIN1.4 and g51v2 until the next synchronization.
+- **CTO of relative-time events** (3.1r1 8.14.2m, 8.15.3, 8.22m): with `WithTimeSync`, g51v2 (unsynchronized) until the first time synchronization after the start or a restart, and again once twice the interval has passed without one; g51v1 otherwise, also while IIN1.4 asks for the next synchronization. It was always g51v1. A restart (`Server.Restart`, or a COLD_RESTART or WARM_RESTART handler that calls it) now forgets the synchronization: IIN1.4 and g51v2 until the next one.
 
 ---
 
