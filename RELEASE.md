@@ -15,6 +15,9 @@ Fixes from running the DNP Users Group's IED certification procedures
 ### Outstation
 
 - **Reads of a type without points** (3.1r1 8.13.2d, 8.16.1.2.4, 8.21, 8.22, 8.24.2b): a read of the static or event objects of a type of input or output point the outstation has none of is a null response with IIN2.1 (OBJECT_UNKNOWN), as TB2016-001 and the 3.1r1 procedure require; it was a null response without it. A read of the events of a type the outstation has, while it has no events of it, is still a plain null response. A go-dnp3 master reports the response as an `IINError`.
+- **Reads of variations without flags** (3.1r1 8.24.2d to 8.24.2f): a counter, frozen counter or analog input whose flags are anything but ONLINE alone is reported with flags (g20v1/v2, g21v1/v2, g30v1/v2) when g20v5/v6, g21v9/v10 or g30v3/v4 is read, as the packed binary variations already were, so that its quality is not hidden.
+- **CTO of relative-time events** (3.1r1 8.14.2m, 8.15.3, 8.22m): with `WithTimeSync`, g51v2 (unsynchronized) until the first time synchronization after the start or a restart, and again once twice the interval has passed without one; g51v1 otherwise, also while IIN1.4 asks for the next synchronization. It was always g51v1. A restart (`Server.Restart`, or a COLD_RESTART or WARM_RESTART handler that calls it) now forgets the synchronization: IIN1.4 and g51v2 until the next one.
+- **Controls** (3.1r1 8.2.1.2.3, 8.2.1.2.4, 8.2.1.2.10, 8.4.1.2.x): an OPERATE that matches its SELECT but comes after the select timeout is answered with TIMEOUT, not NO_SELECT (IEEE 1815-2012 Table 11-4). A control the handler answers with NOT_SUPPORTED, for example of a point the outstation does not have, also sets IIN2.2 (PARAMETER_ERROR), as opendnp3 and stepfunc do; the echo is still sent. A go-dnp3 master reports such a response as an `IINError` instead of a `CommandError`.
 
 ---
 
