@@ -879,3 +879,70 @@ func TestReadOfAbsentType(t *testing.T) {
 		t.Fatalf("read of g2v0 without events: IIN %s, headers %v", f.IIN, f.Headers)
 	}
 }
+
+// TestObjectsWithoutValues: headers whose objects carry indices but no
+// value (a qualifier that carries indices only) are answered with IIN2.2,
+// not by taking the outstation down. The first is the input the fuzzer
+// found: a READ of g70v5.
+func TestObjectsWithoutValues(t *testing.T) {
+	m := newMaster(t, WithFileServer(FSFileServer{FS: fstest.MapFS{"a.txt": {Data: []byte("hello")}}}))
+	for _, raw := range [][]byte{
+		[]byte("\xc9\x01F\x05'\x01\b\x00\x01\x00\x00\x00\x00;;\x00\x00\x00"),
+		{0xC1, 0x01, 70, 5, 0x17, 1, 0}, // READ g70v5, one index
+	} {
+		m.sendRaw(raw)
+		if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
+			t.Fatalf("% x: IIN %s, want PARAMETER_ERROR", raw, f.IIN)
+		}
+	}
+	// The outstation still answers.
+	m.send(req(6, app.FuncRead, app.ClassHeaders(0)...))
+	m.recvFunc(app.FuncResponse)
+}
+
+// TestHeadersWithoutValuesDispatched: the other requests whose objects
+// need a value check it too, although the decoder gives values to every
+// object but those of a READ: each header here, with an object without a
+// value, is answered with IIN2.2.
+func TestHeadersWithoutValuesDispatched(t *testing.T) {
+	srv, err := New(WithHandler(&countingHandler{}),
+		WithFileServer(FSFileServer{FS: fstest.MapFS{"a.txt": {Data: []byte("hello")}}}),
+		WithAttributeSet(1, map[uint8]app.Attribute{10: app.StringAttribute("t")}, 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	_ = srv.Database().AddAnalogInput(0, PointConfig{}, app.Analog{Flags: app.FlagOnline})
+	_ = srv.Database().Add(OctetString, 0, PointConfig{}, app.OctetString{Data: []byte{1}})
+	a := srv.association(1)
+	bare := func(gv app.GroupVariation) app.Header {
+		return app.Header{GV: gv, Qualifier: app.Qual1ByteIndexCount, Count: 1, Objects: []app.Object{{Index: 0}}}
+	}
+	crob := app.Counted(app.G12V2, app.CROB{Op: app.OpLatchOn, Count: 1})
+	attr := bare(app.GV(0, 10))
+	attr.Qualifier, attr.Start, attr.Stop = app.Qual1ByteStartStop, 1, 1
+	cases := []struct {
+		name string
+		fc   app.FunctionCode
+		hs   []app.Header
+	}{
+		{"control", app.FuncDirectOperate, []app.Header{bare(app.G12V1)}},
+		{"analog output", app.FuncDirectOperate, []app.Header{bare(app.G41V2)}},
+		{"pattern mask", app.FuncDirectOperate, []app.Header{crob, bare(app.G12V3)}},
+		{"absolute time", app.FuncWrite, []app.Header{bare(app.G50V1)}},
+		{"LAN time", app.FuncWrite, []app.Header{bare(app.G50V3)}},
+		{"IIN", app.FuncWrite, []app.Header{bare(app.G80V1)}},
+		{"deadband", app.FuncWrite, []app.Header{bare(app.G34V1)}},
+		{"octet string", app.FuncWrite, []app.Header{bare(app.GV(110, 1))}},
+		{"attribute", app.FuncWrite, []app.Header{attr}},
+		{"file block", app.FuncWrite, []app.Header{bare(app.G70V5)}},
+		{"freeze at time", app.FuncFreezeAtTime, []app.Header{bare(app.G50V2), app.AllObjects(app.G20V0)}},
+	}
+	for _, c := range cases {
+		done := make(chan *response, 1)
+		a.post(func() { done <- a.dispatch(&app.Fragment{Function: c.fc, Headers: c.hs}, inbound{}, false) })
+		if r := <-done; r.iin&app.IINParameterError == 0 {
+			t.Errorf("%s: IIN %s, want PARAMETER_ERROR", c.name, r.iin)
+		}
+	}
+}

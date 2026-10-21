@@ -40,6 +40,10 @@ func FuzzOutstation(f *testing.F) {
 		req(2, app.FuncFreezeAtTime, app.Counted(app.G50V2, app.AbsoluteTime{Interval: 1}), app.AllObjects(app.G20V0)),
 		req(3, app.FuncRead, app.AllObjects(app.G34V0)),
 	}
+	// Found by fuzzing: a READ of g70v5 under a qualifier that carries
+	// indices only, so its object has no file transport block. It took
+	// the outstation down (v1.3.2 and earlier).
+	f.Add([]byte("\xc9\x01F\x05'\x01\b\x00\x01\x00\x00\x00\x00;;\x00\x00\x00"))
 	for _, s := range seeds {
 		b, err := s.Encode()
 		if err != nil {
