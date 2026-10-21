@@ -28,12 +28,15 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 		return &response{none: true}
 	}
 
-	var noSelect bool
+	// An OPERATE that matches no SELECT is answered NO_SELECT; one that
+	// matches a SELECT whose timer has run out, TIMEOUT (IEEE 1815-2012
+	// Table 11-4).
+	var noSelect, expired bool
 	if fc == app.FuncOperate {
 		s := a.selection
 		a.selection = nil
-		noSelect = s == nil || req.Control.Seq != app.NextSeq(s.seq) || !bytes.Equal(s.objects, objects) ||
-			time.Since(s.at) > a.srv.opts.selectTimeout
+		noSelect = s == nil || req.Control.Seq != app.NextSeq(s.seq) || !bytes.Equal(s.objects, objects)
+		expired = !noSelect && time.Since(s.at) > a.srv.opts.selectTimeout
 	}
 
 	ctx, cancel := a.srv.handlerContext()
@@ -42,6 +45,7 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 	echo := make([]app.Header, len(req.Headers))
 	r := &response{}
 	allOK := true
+	malformed := false
 	count := 0
 	for i, hdr := range req.Headers {
 		echo[i] = hdr
@@ -53,14 +57,21 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 			// mask that follows it.
 			if i+1 >= len(req.Headers) || req.Headers[i+1].GV != app.G12V3 || len(hdr.Objects) != 1 {
 				r.iin |= app.IINParameterError
-				allOK = false
+				allOK, malformed = false, true
 				continue
 			}
 		case app.G12V3:
 			continue // handled with its pattern control block
 		default:
 			r.iin |= app.IINObjectUnknown
-			allOK = false
+			allOK, malformed = false, true
+			continue
+		}
+		if !controlValues(hdr) || (hdr.GV == app.G12V2 && !binaryValues(req.Headers[i+1])) {
+			// A header whose objects carry no control block, e.g. one
+			// with a qualifier that carries indices only.
+			r.iin |= app.IINParameterError
+			allOK, malformed = false, true
 			continue
 		}
 		for j := range echo[i].Objects {
@@ -71,6 +82,8 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 				status = app.StatusTooManyObjects
 			case noSelect:
 				status = app.StatusNoSelect
+			case expired:
+				status = app.StatusTimeout
 			case hdr.GV == app.G12V2:
 				status = a.pattern(ctx, h, fc, o.Value.(app.CROB), req.Headers[i+1])
 			default:
@@ -79,6 +92,12 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 			count++
 			if status != app.StatusSuccess {
 				allOK = false
+			}
+			// A control of a point the outstation does not have, or does
+			// not support, also sets IIN2.2, as opendnp3 and stepfunc do
+			// and the DNP3 IED certification procedure requires.
+			if status == app.StatusNotSupported {
+				r.iin |= app.IINParameterError
 			}
 			o.Value = withStatus(o.Value, status)
 		}
@@ -89,7 +108,7 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 	if fc == app.FuncDirectOperateNoAck {
 		return &response{none: true}
 	}
-	if r.iin&(app.IINObjectUnknown|app.IINParameterError) == 0 {
+	if !malformed {
 		r.plans = []fragPlan{{headers: echo}}
 	}
 	return r
@@ -158,7 +177,7 @@ func crobState(c app.CROB) bool {
 func (a *association) pattern(ctx context.Context, h Handler, fc app.FunctionCode, pcb app.CROB, mask app.Header) app.CommandStatus {
 	status := app.StatusSuccess
 	for _, o := range mask.Objects {
-		if !o.Value.(app.Binary).Value {
+		if b, _ := o.Value.(app.Binary); !b.Value {
 			continue
 		}
 		s := a.execute(ctx, h, fc, Command{GV: app.G12V2, Index: o.Index, Value: pcb, Master: a.master})
@@ -167,6 +186,37 @@ func (a *association) pattern(ctx context.Context, h Handler, fc app.FunctionCod
 		}
 	}
 	return status
+}
+
+// controlValues reports whether every object of a control header carries
+// the block of its variation: a CROB for g12, an analog output for g41.
+func controlValues(h app.Header) bool {
+	for _, o := range h.Objects {
+		switch o.Value.(type) {
+		case app.CROB:
+			if h.GV.Group() != 12 {
+				return false
+			}
+		case app.AnalogOutput:
+			if h.GV.Group() != 41 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// binaryValues reports whether every object of h is a binary value, as the
+// bits of a pattern mask (g12v3) are.
+func binaryValues(h app.Header) bool {
+	for _, o := range h.Objects {
+		if _, ok := o.Value.(app.Binary); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func withStatus(v app.Value, s app.CommandStatus) app.Value {

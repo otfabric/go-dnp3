@@ -122,6 +122,13 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				p.iin |= app.IINObjectUnknown
 				continue
 			}
+			if measurement(t) && len(db.points[t]) == 0 {
+				// The outstation has no points of the type: a null response
+				// with IIN2.1, as TB2016-001 and the DNP3 IED certification
+				// procedure 3.1r1 (Table 11-1) require.
+				p.iin |= app.IINObjectUnknown
+				continue
+			}
 			if isEvent {
 				sels = append(sels, &eventSelector{typ: t, variation: v, limit: limit})
 				continue
@@ -148,6 +155,16 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 	p.items = append(p.items, statics...)
 	return p
 }
+
+// measurements are the types of input and output points, whose reads are
+// answered with IIN2.1 when the database has none of them.
+var measurements = [numPointTypes]bool{
+	BinaryInput: true, DoubleBitInput: true, BinaryOutput: true, Counter: true,
+	FrozenCounter: true, AnalogInput: true, FrozenAnalogInput: true, AnalogOutput: true,
+}
+
+// measurement reports whether t is a type of input or output point.
+func measurement(t PointType) bool { return measurements[t] }
 
 func validVariation(t PointType, event bool, gv app.GroupVariation) bool {
 	switch t {
@@ -214,8 +231,8 @@ func (db *Database) statics(t PointType, s selector, requested uint8, class0 boo
 			continue
 		}
 		gv := staticGV(t, p, requested)
-		if packedLosesQuality(gv, p.value) {
-			gv = app.GV(gv.Group(), 2)
+		if f, ok := withFlags[gv]; ok && !onlineOnly(p.value) {
+			gv = f
 		}
 		if cur == nil || cur.h.GV != gv || (!indexed && idx != last+1) {
 			q := app.Qual1ByteStartStop
@@ -293,7 +310,11 @@ func (a *association) eventItems(sels []*eventSelector) []item {
 			it := item{h: app.Header{GV: gv, Qualifier: app.Qual2ByteIndexCount}}
 			if rel {
 				cto = ts
-				pre := app.Counted(app.G51V1, app.CTO{Time: cto})
+				ctoGV := app.G51V1
+				if a.unsynchronized() {
+					ctoGV = app.G51V2
+				}
+				pre := app.Counted(ctoGV, app.CTO{Time: cto})
 				it.pre = &pre
 			}
 			out = append(out, it)
@@ -305,23 +326,38 @@ func (a *association) eventItems(sels []*eventSelector) []item {
 	return out
 }
 
-// packedLosesQuality reports whether reporting a point in a packed
-// variation (g1v1, g3v1, g10v1), which carries no flags, would hide its
-// quality: its flags are anything but ONLINE alone. Such a point is
-// reported in the variation with flags instead, as opendnp3 and stepfunc
-// do.
-func packedLosesQuality(gv app.GroupVariation, v app.Value) bool {
-	if gv != app.G1V1 && gv != app.G3V1 && gv != app.G10V1 {
-		return false
-	}
+// withFlags maps the static variations that carry no flags (packed, and
+// the counters and analog inputs without flag) to the variation of the same
+// value with flags. A point whose flags are anything but ONLINE alone is
+// reported in that variation instead, so that its quality is not hidden, as
+// opendnp3 and stepfunc do and the DNP3 IED certification procedure
+// requires (3.1r1 8.24).
+var withFlags = map[app.GroupVariation]app.GroupVariation{
+	app.G1V1:   app.G1V2,
+	app.G3V1:   app.G3V2,
+	app.G10V1:  app.G10V2,
+	app.G20V5:  app.G20V1,
+	app.G20V6:  app.G20V2,
+	app.G21V9:  app.G21V1,
+	app.G21V10: app.G21V2,
+	app.G30V3:  app.G30V1,
+	app.G30V4:  app.G30V2,
+}
+
+// onlineOnly reports whether a point's flags are ONLINE alone.
+func onlineOnly(v app.Value) bool {
 	var f app.Flags
 	switch x := v.(type) {
 	case app.Binary:
 		f = x.Flags
 	case app.DoubleBitBinary:
 		f = x.Flags
+	case app.Counter:
+		f = x.Flags
+	case app.Analog:
+		f = x.Flags
 	}
-	return f != app.FlagOnline
+	return f == app.FlagOnline
 }
 
 // deadbandItems returns the deadbands of the analog inputs a READ of g34

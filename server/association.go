@@ -60,6 +60,10 @@ type association struct {
 	csq           uint32
 	stats         [secauth.NumStatistics]uint32
 
+	// broadcastTo is the address of the last broadcast: whether the
+	// response reporting it asks for confirmation.
+	broadcastTo link.Address
+
 	files             map[uint32]*openFile
 	nextHandle        uint32
 	pendingFileStatus []app.FileTransportStatus
@@ -89,6 +93,9 @@ type pendingResponse struct {
 	next     int // index of the fragment waiting for its confirmation
 	iin      app.IIN
 	deadline time.Time
+	// broadcast: the first fragment reported IIN1.0, which its
+	// confirmation clears.
+	broadcast bool
 }
 
 // pendingUnsol is an unsolicited response waiting for its confirmation.
@@ -211,6 +218,8 @@ func (a *association) receive(sess *channel.Session, frag []byte, dest link.Addr
 func (a *association) restart() {
 	a.detach()
 	a.restartIIN = true
+	// The clock is unsynchronized again: NEED_TIME, and g51v2 CTOs.
+	a.lastSync = time.Time{}
 	a.nullDone = false
 	a.unsolMask = a.startupMask()
 	a.events.mu.Lock()
@@ -339,10 +348,27 @@ func (a *association) iin() app.IIN {
 	if a.broadcast {
 		i |= app.IINBroadcast
 	}
-	if n := a.srv.opts.needTime; n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n) {
+	if a.needsTime() {
 		i |= app.IINNeedTime
 	}
 	return i
+}
+
+// needsTime reports whether the outstation asks for time synchronization
+// (IIN1.4): its clock has not been synchronized since the start, or not
+// within the interval of WithTimeSync.
+func (a *association) needsTime() bool {
+	n := a.srv.opts.needTime
+	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n)
+}
+
+// unsynchronized reports whether the outstation's time counts as
+// unsynchronized, as the CTO of relative-time events says (g51v2): with
+// WithTimeSync, until the first synchronization since the start or a
+// restart, and once twice the interval has passed without one.
+func (a *association) unsynchronized() bool {
+	n := a.srv.opts.needTime
+	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > 2*n)
 }
 
 func (a *association) handle(in inbound) {
@@ -433,7 +459,7 @@ func (a *association) handle(in inbound) {
 		a.srv.sm.OnHandled(a.remote(), req.Function, time.Since(start))
 	}
 	if broadcast {
-		a.broadcast = true
+		a.broadcast, a.broadcastTo = true, in.dest
 		return
 	}
 	if resp.none || req.Function.NoAck() {
@@ -505,15 +531,25 @@ func (a *association) sendSolicited(seq uint8, r *response) []byte {
 func (a *association) sendFragment(p *pendingResponse) ([]byte, bool) {
 	plan := p.plans[p.next]
 	fin := p.next == len(p.plans)-1
-	con := !fin || len(plan.events) > 0
+	iin := a.iin() | p.iin
+	// The response that reports a broadcast (IIN1.0) asks for
+	// confirmation when the broadcast was to 0xFFFE (confirmation required)
+	// or 0xFFFF (optional), and IIN1.0 is cleared when it comes; after one
+	// to 0xFFFD (no confirmation) once it is sent (IEEE 1815-2012 Table 9-2,
+	// the DNP3 IED certification procedure 3.1r1 Section 2 Note 7).
+	if p.next == 0 && a.broadcast {
+		if a.broadcastTo == link.BroadcastNoConfirm {
+			a.broadcast = false
+		} else {
+			p.broadcast = true
+		}
+	}
+	con := !fin || len(plan.events) > 0 || (p.next == 0 && p.broadcast)
 	f := &app.Fragment{
 		Control:  app.Control{FIR: p.next == 0, FIN: fin, CON: con, Seq: p.seq},
 		Function: app.FuncResponse,
-		IIN:      a.iin() | p.iin,
+		IIN:      iin,
 		Headers:  plan.headers,
-	}
-	if p.next == 0 {
-		a.broadcast = false
 	}
 	return a.send(f), con
 }
@@ -555,6 +591,9 @@ func (a *association) onConfirm(req *app.Fragment) {
 		return
 	}
 	a.events.confirm(p.plans[p.next].events)
+	if p.next == 0 && p.broadcast {
+		a.broadcast = false
+	}
 	p.next++
 	if p.next == len(p.plans) {
 		a.sol = nil
