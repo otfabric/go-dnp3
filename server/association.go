@@ -37,27 +37,28 @@ type association struct {
 	sess       *channel.Session
 	restartIIN bool
 	broadcast  bool
-	// broadcastTo is the address of the last broadcast: whether the
-	// response reporting it asks for confirmation.
-	broadcastTo link.Address
-	lastSync    time.Time
-	lastReq     *lastRequest
-	selection   *selection
-	recorded    time.Time
-	sol         *pendingResponse
-	unsol       *pendingUnsol
-	unsolMask   uint8 // enabled classes, 1<<class
-	nullDone    bool  // the null unsolicited response was confirmed
-	unsolSeq    uint8
-	holdStart   time.Time
-	unsolPause  time.Time
-	timer       *time.Timer
+	lastSync   time.Time
+	lastReq    *lastRequest
+	selection  *selection
+	recorded   time.Time
+	sol        *pendingResponse
+	unsol      *pendingUnsol
+	unsolMask  uint8 // enabled classes, 1<<class
+	nullDone   bool  // the null unsolicited response was confirmed
+	unsolSeq   uint8
+	holdStart  time.Time
+	unsolPause time.Time
+	timer      *time.Timer
 
 	pendingAuth   *challenge
 	lastChallenge []byte // the last g120v1 fragment sent
 	keys          sessionKeys
 	csq           uint32
 	stats         [secauth.NumStatistics]uint32
+
+	// broadcastTo is the address of the last broadcast: whether the
+	// response reporting it asks for confirmation.
+	broadcastTo link.Address
 
 	files             map[uint32]*openFile
 	nextHandle        uint32
