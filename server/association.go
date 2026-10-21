@@ -303,10 +303,19 @@ func (a *association) iin() app.IIN {
 	if a.broadcast {
 		i |= app.IINBroadcast
 	}
-	if n := a.srv.opts.needTime; n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n) {
+	if a.needsTime() {
 		i |= app.IINNeedTime
 	}
 	return i
+}
+
+// needsTime reports whether the outstation asks for time synchronization
+// (IIN1.4): its clock has not been synchronized since the start, or not
+// within the interval of WithTimeSync. Its time is then unsynchronized, as
+// the CTO of relative-time events says (g51v2).
+func (a *association) needsTime() bool {
+	n := a.srv.opts.needTime
+	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n)
 }
 
 func (a *association) handle(in inbound) {

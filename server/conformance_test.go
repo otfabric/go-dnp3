@@ -738,3 +738,34 @@ func TestChallengeReply(t *testing.T) {
 		t.Fatalf("without secure authentication: %s", f.IIN)
 	}
 }
+
+// TestRelativeTimeCTO: relative-time events carry an unsynchronized CTO
+// (g51v2) while the outstation asks for the time, and a synchronized one
+// (g51v1) after a time synchronization.
+func TestRelativeTimeCTO(t *testing.T) {
+	m := newMaster(t, WithTimeSync(time.Hour))
+	ctoOf := func(f *app.Fragment) app.GroupVariation {
+		t.Helper()
+		if len(f.Headers) != 2 || f.Headers[1].GV != app.G2V3 {
+			t.Fatalf("headers %v, want a CTO and g2v3", f.Headers)
+		}
+		return f.Headers[0].GV
+	}
+	db := m.srv.Database()
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.AllObjects(app.G2V3)))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V2 {
+		t.Fatalf("unsynchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(1, false))
+
+	m.send(req(2, app.FuncWrite, app.Counted(app.G50V1, app.AbsoluteTime{Time: app.Now()})))
+	m.recvFunc(app.FuncResponse)
+	_ = db.UpdateBinaryInput(0, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(3, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V1 {
+		t.Fatalf("synchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+}

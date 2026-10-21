@@ -1,5 +1,23 @@
 # go-dnp3 Releases
 
+## v1.4.0
+
+**Date:** not yet released
+**Previous release:** v1.3.2
+
+## Summary
+
+Fixes from running the DNP Users Group's IED certification procedures
+(Step Function I/O's dnp3c, 3.1 rev 1) against the outstation.
+
+## Changes
+
+### Outstation
+
+- **CTO of relative-time events** (3.1r1 8.14.2m, 8.15.3, 8.22m): g51v2 (unsynchronized) while the outstation asks for the time (IIN1.4), g51v1 only once it has been synchronized; it was always g51v1.
+
+---
+
 ## v1.3.2
 
 **Date:** 2026-10-21

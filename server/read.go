@@ -293,7 +293,11 @@ func (a *association) eventItems(sels []*eventSelector) []item {
 			it := item{h: app.Header{GV: gv, Qualifier: app.Qual2ByteIndexCount}}
 			if rel {
 				cto = ts
-				pre := app.Counted(app.G51V1, app.CTO{Time: cto})
+				ctoGV := app.G51V1
+				if a.needsTime() {
+					ctoGV = app.G51V2
+				}
+				pre := app.Counted(ctoGV, app.CTO{Time: cto})
 				it.pre = &pre
 			}
 			out = append(out, it)
