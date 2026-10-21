@@ -835,3 +835,30 @@ func TestRelativeTimeCTO(t *testing.T) {
 		t.Fatalf("after a restart: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
 	}
 }
+
+// TestReadWithoutFlagsKeepsQuality: a read of a variation without flags
+// reports the points whose flags are anything but ONLINE in the variation
+// with flags, and the others as asked.
+func TestReadWithoutFlagsKeepsQuality(t *testing.T) {
+	m := newMaster(t)
+	db := m.srv.Database()
+	_ = db.AddCounter(1, PointConfig{}, app.Counter{Value: 2, Flags: app.FlagOnline})
+	_ = db.AddAnalogInput(1, PointConfig{}, app.Analog{Value: 3, Flags: app.FlagOnline})
+	_ = db.Update(Counter, 0, app.Counter{Value: 1, Flags: app.FlagCommLost}, EventSuppress)
+	_ = db.Update(AnalogInput, 0, app.Analog{Value: 5}, EventSuppress)
+	cases := []struct{ read, abnormal, normal app.GroupVariation }{
+		{app.G20V5, app.G20V1, app.G20V5},
+		{app.G20V6, app.G20V2, app.G20V6},
+		{app.G30V3, app.G30V1, app.G30V3},
+		{app.G30V4, app.G30V2, app.G30V4},
+	}
+	for i, c := range cases {
+		seq := uint8(i + 1)
+		m.send(req(seq, app.FuncRead, app.AllObjects(c.read)))
+		f := m.recvFunc(app.FuncResponse)
+		if len(f.Headers) != 2 || f.Headers[0].GV != c.abnormal || f.Headers[1].GV != c.normal ||
+			f.Headers[0].Objects[0].Index != 0 || f.Headers[1].Objects[0].Index != 1 {
+			t.Fatalf("read of %s: %v", c.read, f.Headers)
+		}
+	}
+}
