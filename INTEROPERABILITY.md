@@ -147,7 +147,7 @@ reference outstations do.
 | Event reporting in time order across types | ✅ | ✅ per-master buffers, limits per type, oldest discarded with overflow |
 | Event deadbands | ✅ writes and reads g34 | ✅ per point (`PointConfig.Deadband`) for analog and counter points; analog input deadbands written and read by the master (g34) |
 | Unsolicited: null response at connection, enable/disable per class, hold time and count, retries, retry delay | ✅ | ✅ classes survive connections |
-| Select-before-operate: same objects, next sequence number, select timeout | ✅ | ✅ NO_SELECT, or TIMEOUT once the select timeout has passed; NOT_SUPPORTED with IIN2.2 |
+| Select-before-operate: same objects, next sequence number, select timeout | ✅ | ✅ NO_SELECT, or TIMEOUT once the select timeout has passed; NOT_SUPPORTED with IIN2.2; FORMAT_ERROR for a control whose request carries a status (TB2014-002) |
 | Direct operate, no-ack, pattern control | ✅ | ✅ |
 | Time synchronization, LAN and non-LAN procedures | ✅ automatic on NEED_TIME | ✅ NEED_TIME at start and after an interval |
 | Restart, delay announced | ✅ | ✅ |
@@ -212,8 +212,8 @@ a pre-shared session key is used directly (outside the standard, see
 | DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.4.3 |
-| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.4.3 |
+| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.5.1 |
+| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.5.1 |
 | TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3, including a refused certificate of another CA |
 | UDP, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3 over a pseudo-terminal bridged to TCP |

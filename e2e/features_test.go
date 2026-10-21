@@ -345,6 +345,26 @@ func TestTooManyControls(t *testing.T) {
 	}
 }
 
+// TestNotSupportedControl: a control the outstation answers NOT_SUPPORTED,
+// with IIN2.2, is reported with its statuses as a CommandError, for direct
+// operate and for select-before-operate, and the others in the request
+// with theirs.
+func TestNotSupportedControl(t *testing.T) {
+	r := &relay{}
+	p := newPair(t, fullDatabase, []server.Option{server.WithHandler(r)})
+	for _, mode := range []client.CommandMode{client.DirectOperate, client.SelectBeforeOperate} {
+		r.mu.Lock()
+		r.status = app.StatusNotSupported
+		r.mu.Unlock()
+		st, err := p.c.Operate(ctx(t), mode, client.CROB(1, app.OpLatchOn, 0, 0))
+		var ce *dnp3.CommandError
+		if !errors.As(err, &ce) || ce.Status != app.StatusNotSupported || ce.Index != 1 ||
+			len(st) != 1 || st[0] != app.StatusNotSupported {
+			t.Fatalf("mode %d: %v %v", mode, st, err)
+		}
+	}
+}
+
 func TestTimeSync(t *testing.T) {
 	r := &relay{}
 	for _, proc := range []client.TimeSync{client.TimeSyncLAN, client.TimeSyncNonLAN} {

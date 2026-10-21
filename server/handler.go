@@ -44,8 +44,9 @@ type Command struct {
 	GV app.GroupVariation
 	// Index is the point index.
 	Index uint32
-	// Value is an app.CROB or an app.AnalogOutput. Its Status field is the
-	// one the master sent and is ignored.
+	// Value is an app.CROB or an app.AnalogOutput. Its Status field is
+	// zero: a control whose request carries another status is answered
+	// with FORMAT_ERROR without calling the Handler (TB2014-002).
 	Value app.Value
 	// Master is the link address of the master that sent the control.
 	Master link.Address

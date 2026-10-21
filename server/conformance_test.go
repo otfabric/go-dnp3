@@ -1084,3 +1084,38 @@ func TestUnsolicitedUnlimitedRetries(t *testing.T) {
 	}
 	m.none(200 * time.Millisecond)
 }
+
+// TestControlWithRequestStatus: a control whose request carries a nonzero
+// status is not carried out and is echoed with FORMAT_ERROR (TB2014-002),
+// for a SELECT, a DIRECT_OPERATE and an analog output.
+func TestControlWithRequestStatus(t *testing.T) {
+	r := &countingHandler{}
+	m := newMaster(t, WithHandler(r))
+	for i, h := range []struct {
+		fc app.FunctionCode
+		h  app.Header
+	}{
+		{app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 126}})},
+		{app.FuncDirectOperate, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 1}})},
+		{app.FuncDirectOperate, app.Indexed(app.G41V2, app.Object{Index: 0, Value: app.AnalogOutput{Value: 1, Status: 126}})},
+	} {
+		m.send(req(uint8(i+1), h.fc, h.h))
+		f := m.recvFunc(app.FuncResponse)
+		if len(f.Headers) != 1 || len(f.Headers[0].Objects) != 1 {
+			t.Fatalf("%s: echo %v", h.fc, f.Headers)
+		}
+		var s app.CommandStatus
+		switch v := f.Headers[0].Objects[0].Value.(type) {
+		case app.CROB:
+			s = v.Status
+		case app.AnalogOutput:
+			s = v.Status
+		}
+		if s != app.StatusFormatError {
+			t.Fatalf("%s: status %s, want FORMAT_ERROR", h.fc, s)
+		}
+	}
+	if r.count() != 0 {
+		t.Fatal("a control with a request status was carried out")
+	}
+}

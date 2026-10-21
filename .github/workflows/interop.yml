@@ -30,13 +30,13 @@ permissions:
   packages: read
 
 env:
-  # otfabric/dnp3-interop v0.4.3: stepfunc dnp3 1.7.0, opendnp3 3.1.2,
+  # otfabric/dnp3-interop v0.5.1: stepfunc dnp3 1.7.0, opendnp3 3.1.2,
   # DSC go-dnp3 v0.8.1, dnp3py 0.6.0.
   # Keep in step with the Makefile and interop/harness.go.
-  DNP3_INTEROP_STEPFUNC_IMAGE: ${{ inputs.stepfunc_image || 'dnp3-interop-stepfunc:v0.4.3' }}
-  DNP3_INTEROP_OPENDNP3_IMAGE: ${{ inputs.opendnp3_image || 'ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:d8d8dcc2ced9499853b5ece8fda709d935c23981f00e84241ceb2286075835b4' }}
-  DNP3_INTEROP_DSCSYSTEMS_IMAGE: ${{ inputs.dscsystems_image || 'ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f53f82430f60b6c40acd89928cab3aea675565ce0f96fe664b067ac9bfae93b9' }}
-  DNP3_INTEROP_DNP3PY_IMAGE: ${{ inputs.dnp3py_image || 'ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:129d3678f18c2f62b410d74c17f41661fe6b3588bfe4950242fb01ac006fe8fd' }}
+  DNP3_INTEROP_STEPFUNC_IMAGE: ${{ inputs.stepfunc_image || 'dnp3-interop-stepfunc:v0.5.1' }}
+  DNP3_INTEROP_OPENDNP3_IMAGE: ${{ inputs.opendnp3_image || 'ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:abc0d87ef30aceff748cc513f1e5840618ea9a78cc8a4713ba67d06507089314' }}
+  DNP3_INTEROP_DSCSYSTEMS_IMAGE: ${{ inputs.dscsystems_image || 'ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f8a5b14eb6ab0c60f1ef4a1499bb1dc2f9fe696bc4087c5fcfdef4252dda04c7' }}
+  DNP3_INTEROP_DNP3PY_IMAGE: ${{ inputs.dnp3py_image || 'ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:13ce4679287f50e485554a402320354728c56b974360826ee0c328c6be991cff' }}
 
 jobs:
   interop:

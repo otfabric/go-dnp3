@@ -1,5 +1,34 @@
 # go-dnp3 Releases
 
+## v1.4.1
+
+**Date:** 2026-10-21
+**Previous release:** v1.4.0
+
+## Summary
+
+The last open point of the IED certification run is closed: a control
+whose request carries a status is no longer carried out (TB2014-002), so
+3.1r1 passes without a warning. A go-dnp3 master reports a control the
+outstation answers NOT_SUPPORTED, with IIN2.2, with its statuses again.
+Interop runs against dnp3-interop v0.5.1.
+
+## Changes
+
+### Outstation
+
+- **Controls with a request status** (TB2014-002; IEEE 1815-202x; 3.1r1 8.2.6): a SELECT, OPERATE or DIRECT_OPERATE whose control block carries a nonzero status is answered with FORMAT_ERROR without calling the `Handler`, instead of being carried out. A Handler's `Command.Value` now always has status zero.
+
+### Master
+
+- **NOT_SUPPORTED controls**: a control response that sets an error IIN but echoes the request reports its statuses, as a `CommandError` with the status of the first control that failed, instead of an `IINError`. Since v1.4.0, a go-dnp3 outstation sets IIN2.2 with NOT_SUPPORTED, as opendnp3 and stepfunc always have; against all of them `Operate` returns the statuses again. A response without an echo is still an `IINError`.
+
+### Tests
+
+- Interop against [otfabric/dnp3-interop v0.5.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.5.1): its published images pinned by digest, the stepfunc image built from its source; the conformance run's dnp3c runner from the same release.
+
+---
+
 ## v1.4.0
 
 **Date:** 2026-10-21
