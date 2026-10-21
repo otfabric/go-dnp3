@@ -632,8 +632,11 @@ func TestClientSeveralOutstations(t *testing.T) {
 			base := a.fixture(t).Outstation.Address
 			for i := range uint16(3) {
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				// Longer than opendnp3's unsolicited confirm timeout (5 s): its
+				// outstation can hold a READ until then when its startup
+				// unsolicited response crossed it (INTEROPERABILITY.md).
 				c, err := client.Dial(ctx, s.addr, client.WithAddresses(1, link.Address(base+i)), client.WithAutoIntegrity(false),
-					client.WithResponseTimeout(5*time.Second))
+					client.WithResponseTimeout(12*time.Second))
 				if err != nil {
 					cancel()
 					t.Fatalf("outstation %d: %v", base+i, err)
