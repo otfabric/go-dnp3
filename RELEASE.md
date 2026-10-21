@@ -1,5 +1,23 @@
 # go-dnp3 Releases
 
+## v1.4.0
+
+**Date:** not yet released
+**Previous release:** v1.3.2
+
+## Summary
+
+Fixes from running the DNP Users Group's IED certification procedures
+(Step Function I/O's dnp3c, 3.1 rev 1) against the outstation.
+
+## Changes
+
+### Outstation
+
+- **Broadcast indication** (3.1r1 8.6.5b): the response that reports IIN1.0 after a broadcast asks for an application confirmation, and IIN1.0 is cleared when it arrives; it was cleared once sent, unconfirmed.
+
+---
+
 ## v1.3.2
 
 **Date:** 2026-10-21

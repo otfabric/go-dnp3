@@ -83,6 +83,9 @@ type pendingResponse struct {
 	next     int // index of the fragment waiting for its confirmation
 	iin      app.IIN
 	deadline time.Time
+	// broadcast: the first fragment reported IIN1.0, which its
+	// confirmation clears.
+	broadcast bool
 }
 
 // pendingUnsol is an unsolicited response waiting for its confirmation.
@@ -452,15 +455,18 @@ func (a *association) sendSolicited(seq uint8, r *response) []byte {
 func (a *association) sendFragment(p *pendingResponse) ([]byte, bool) {
 	plan := p.plans[p.next]
 	fin := p.next == len(p.plans)-1
-	con := !fin || len(plan.events) > 0
+	// A response that reports a broadcast (IIN1.0) asks for confirmation,
+	// and IIN1.0 is cleared when it comes (the DNP3 IED certification
+	// procedure 3.1r1, Section 2 Note 7).
+	if p.next == 0 && a.broadcast {
+		p.broadcast = true
+	}
+	con := !fin || len(plan.events) > 0 || (p.next == 0 && p.broadcast)
 	f := &app.Fragment{
 		Control:  app.Control{FIR: p.next == 0, FIN: fin, CON: con, Seq: p.seq},
 		Function: app.FuncResponse,
 		IIN:      a.iin() | p.iin,
 		Headers:  plan.headers,
-	}
-	if p.next == 0 {
-		a.broadcast = false
 	}
 	return a.send(f), con
 }
@@ -501,6 +507,9 @@ func (a *association) onConfirm(req *app.Fragment) {
 		return
 	}
 	a.events.confirm(p.plans[p.next].events)
+	if p.next == 0 && p.broadcast {
+		a.broadcast = false
+	}
 	p.next++
 	if p.next == len(p.plans) {
 		a.sol = nil

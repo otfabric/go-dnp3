@@ -191,14 +191,18 @@ func TestBroadcast(t *testing.T) {
 	// SELECT is never executed from a broadcast.
 	m.sendBroadcast(req(2, app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})))
 	m.none(100 * time.Millisecond)
-	// The next response reports IIN1.0 once.
-	m.send(req(3, app.FuncRead, app.AllObjects(app.G80V1)))
-	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) {
-		t.Fatalf("no BROADCAST indication: %s", f.IIN)
+	// The next response reports IIN1.0 and asks for confirmation; until
+	// it is confirmed, IIN1.0 is reported again.
+	for seq := uint8(3); seq <= 4; seq++ {
+		m.send(req(seq, app.FuncRead, app.AllObjects(app.G80V1)))
+		if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) || !f.Control.CON {
+			t.Fatalf("no BROADCAST indication with CON: %s, CON %v", f.IIN, f.Control.CON)
+		}
 	}
-	m.send(req(4, app.FuncRead, app.AllObjects(app.G80V1)))
-	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINBroadcast) {
-		t.Fatal("BROADCAST indication repeated")
+	m.send(confirm(4, false))
+	m.send(req(5, app.FuncRead, app.AllObjects(app.G80V1)))
+	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINBroadcast) || f.Control.CON {
+		t.Fatalf("BROADCAST indication after its confirmation: %s, CON %v", f.IIN, f.Control.CON)
 	}
 }
 
