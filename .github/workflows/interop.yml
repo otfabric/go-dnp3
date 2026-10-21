@@ -30,13 +30,13 @@ permissions:
   packages: read
 
 env:
-  # otfabric/dnp3-interop v0.4.1: stepfunc dnp3 1.7.0, opendnp3 3.1.2,
+  # otfabric/dnp3-interop v0.4.3: stepfunc dnp3 1.7.0, opendnp3 3.1.2,
   # DSC go-dnp3 v0.8.1, dnp3py 0.6.0.
   # Keep in step with the Makefile and interop/harness.go.
-  DNP3_INTEROP_STEPFUNC_IMAGE: ${{ inputs.stepfunc_image || 'ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:84f32f97a35df004e6585d2a874e213d5c0a638e7e557da250fe6e7f5cc4bf9b' }}
-  DNP3_INTEROP_OPENDNP3_IMAGE: ${{ inputs.opendnp3_image || 'ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a706e024958394b53f1df449ea669c0a4020e4779888db18a7e2b8abd1e1e74e' }}
-  DNP3_INTEROP_DSCSYSTEMS_IMAGE: ${{ inputs.dscsystems_image || 'ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:fc0796b9ab72efbf966dfbf1d78e1cb09730d5e2860c679d335df68e3f367eee' }}
-  DNP3_INTEROP_DNP3PY_IMAGE: ${{ inputs.dnp3py_image || 'ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:d79d17d50ffeeb8595d304a76dc739a0a1fa915e88874cca53319002dbca6dc4' }}
+  DNP3_INTEROP_STEPFUNC_IMAGE: ${{ inputs.stepfunc_image || 'dnp3-interop-stepfunc:v0.4.3' }}
+  DNP3_INTEROP_OPENDNP3_IMAGE: ${{ inputs.opendnp3_image || 'ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:d8d8dcc2ced9499853b5ece8fda709d935c23981f00e84241ceb2286075835b4' }}
+  DNP3_INTEROP_DSCSYSTEMS_IMAGE: ${{ inputs.dscsystems_image || 'ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f53f82430f60b6c40acd89928cab3aea675565ce0f96fe664b067ac9bfae93b9' }}
+  DNP3_INTEROP_DNP3PY_IMAGE: ${{ inputs.dnp3py_image || 'ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:129d3678f18c2f62b410d74c17f41661fe6b3588bfe4950242fb01ac006fe8fd' }}
 
 jobs:
   interop:
@@ -52,9 +52,14 @@ jobs:
         with:
           go-version: "1.23.x"
 
+      # The stepfunc image is not published (Step Function I/O's licence
+      # does not allow redistributing its library): it is built here from
+      # dnp3-interop's source, unless an image is given.
+      - name: Build the stepfunc reference image
+        run: make interop-stepfunc
+
       - name: Pull reference images
         run: |
-          docker pull "$DNP3_INTEROP_STEPFUNC_IMAGE"
           docker pull "$DNP3_INTEROP_OPENDNP3_IMAGE"
           docker pull "$DNP3_INTEROP_DSCSYSTEMS_IMAGE"
           docker pull "$DNP3_INTEROP_DNP3PY_IMAGE"

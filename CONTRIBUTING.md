@@ -98,7 +98,11 @@ something to happen.
 
 The interop tests consume the images of
 [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop). This
-repository holds no reference code. A reference that deviates from the
+repository holds no reference code. The stepfunc image is not published
+(Step Function I/O's licence does not allow redistributing its library):
+`make interop` builds it first with `make interop-stepfunc`, from
+dnp3-interop's source at the pinned commit, and the interop workflow does
+the same. Never push that image anywhere. A reference that deviates from the
 fixture's behaviour is recorded in dnp3-interop's `tests/known-bugs.tsv`
 and mirrored in `interop/harness.go`'s `knownBugs`, so that the test checks
 the behaviour and logs the deviation.
