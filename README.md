@@ -47,7 +47,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against Step Function I/O's dnp3, opendnp3, DSC go-dnp3 and
   dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.4.1,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.4.3,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -322,8 +322,13 @@ many masters and concurrent requests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.4.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.1),
-pinned by digest:
+of [otfabric/dnp3-interop v0.4.3](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.3):
+the published ones pinned by digest, and the stepfunc one built locally by
+`make interop-stepfunc` from dnp3-interop's source at that release. Step
+Function I/O's licence allows testing with its library but not
+redistributing it, so its image is not published
+([dnp3-interop#19](https://github.com/otfabric/dnp3-interop/issues/19)); the
+build fetches the crate from crates.io under that licence.
 
 | Reference | Version | Licence | Roles tested |
 |-----------|---------|---------|--------------|
@@ -354,7 +359,8 @@ functions and several outstations behind one port. The
 [coverage matrix](INTEROPERABILITY.md#interop-coverage) shows each feature
 per reference and direction. Deviations a reference has from the
 fixture are those dnp3-interop records as known bugs. Docker is needed; the
-images are consumed as published, nothing of dnp3-interop is built here.
+images are consumed as published, except stepfunc's, which is built from
+dnp3-interop's source as described above.
 
 The third-party code runs in its own container only: nothing of it is
 linked into go-dnp3.

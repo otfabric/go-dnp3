@@ -29,17 +29,20 @@ type adapter struct {
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.4.1 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
-// go-dnp3 v0.8.1, dnp3py 0.6.0), pinned by multi-arch index digest
-// so that a run is reproducible. Moving to another release of
-// dnp3-interop means changing these constants; the Makefile and the
-// interop workflow follow.
+// otfabric/dnp3-interop v0.4.3 (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC
+// go-dnp3 v0.8.1, dnp3py 0.6.0). The published images are pinned by
+// multi-arch index digest so that a run is reproducible. The stepfunc
+// image is not published, as Step Function I/O's licence does not allow
+// redistributing its library: `make interop-stepfunc` builds it locally,
+// under this tag, from dnp3-interop's source at the release's commit.
+// Moving to another release of dnp3-interop means changing these
+// constants; the Makefile and the interop workflow follow.
 const (
-	interopRelease         = "v0.4.1"
-	defaultStepfuncImage   = "ghcr.io/otfabric/dnp3-interop-stepfunc@sha256:84f32f97a35df004e6585d2a874e213d5c0a638e7e557da250fe6e7f5cc4bf9b"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a706e024958394b53f1df449ea669c0a4020e4779888db18a7e2b8abd1e1e74e"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:fc0796b9ab72efbf966dfbf1d78e1cb09730d5e2860c679d335df68e3f367eee"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:d79d17d50ffeeb8595d304a76dc739a0a1fa915e88874cca53319002dbca6dc4"
+	interopRelease         = "v0.4.3"
+	defaultStepfuncImage   = "dnp3-interop-stepfunc:" + interopRelease
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:d8d8dcc2ced9499853b5ece8fda709d935c23981f00e84241ceb2286075835b4"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f53f82430f60b6c40acd89928cab3aea675565ce0f96fe664b067ac9bfae93b9"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:129d3678f18c2f62b410d74c17f41661fe6b3588bfe4950242fb01ac006fe8fd"
 )
 
 // adapters returns the reference implementations to test against. The image

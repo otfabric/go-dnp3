@@ -1,5 +1,26 @@
 # go-dnp3 Releases
 
+## v1.3.2
+
+**Date:** 2026-10-21
+**Previous release:** v1.3.1
+
+## Summary
+
+Interop against dnp3-interop v0.4.3, whose four adapters now follow its
+container contract and whose stepfunc image is built locally, and an
+interop test that no longer fails when a master's first requests cross
+opendnp3's startup unsolicited response. No change of the library.
+
+## Changes
+
+### Tests
+
+- Interop against [otfabric/dnp3-interop v0.4.3](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.3): its published images pinned by digest (`interop/harness.go`, Makefile, `.github/workflows/interop.yml`), and the stepfunc image built locally by the new `make interop-stepfunc` from dnp3-interop's source at the release's commit. Step Function I/O's licence allows testing with its library but not redistributing it, so that image is no longer published ([dnp3-interop#19](https://github.com/otfabric/dnp3-interop/issues/19)); `make interop` and the interop workflow build it first.
+- The no-ack and broadcast interop tests wait 15 s for the effect: opendnp3 can leave a READ unanswered until its unsolicited confirm timeout (5 s) when it sent its next unsolicited response before the confirm of the first arrived. go-dnp3 confirmed both in order; the test failed about one run in forty. Recorded in [INTEROPERABILITY.md](INTEROPERABILITY.md#interop-coverage).
+
+---
+
 ## v1.3.1
 
 **Date:** 2026-10-20
