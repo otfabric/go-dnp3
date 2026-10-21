@@ -147,7 +147,7 @@ reference outstations do.
 | Event reporting in time order across types | ✅ | ✅ per-master buffers, limits per type, oldest discarded with overflow |
 | Event deadbands | ✅ writes and reads g34 | ✅ per point (`PointConfig.Deadband`) for analog and counter points; analog input deadbands written and read by the master (g34) |
 | Unsolicited: null response at connection, enable/disable per class, hold time and count, retries, retry delay | ✅ | ✅ classes survive connections |
-| Select-before-operate: same objects, next sequence number, select timeout | ✅ | ✅ |
+| Select-before-operate: same objects, next sequence number, select timeout | ✅ | ✅ NO_SELECT, or TIMEOUT once the select timeout has passed; NOT_SUPPORTED with IIN2.2 |
 | Direct operate, no-ack, pattern control | ✅ | ✅ |
 | Time synchronization, LAN and non-LAN procedures | ✅ automatic on NEED_TIME | ✅ NEED_TIME at start and after an interval |
 | Restart, delay announced | ✅ | ✅ |

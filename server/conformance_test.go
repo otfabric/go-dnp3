@@ -290,6 +290,34 @@ func TestUnsolicitedHold(t *testing.T) {
 	}
 }
 
+// TestControlNotSupported: a control the handler does not support is echoed
+// with NOT_SUPPORTED and IIN2.2 (PARAMETER_ERROR), the other controls of the
+// request with their own status.
+func TestControlNotSupported(t *testing.T) {
+	h := HandlerFunc(func(_ context.Context, c Command, _ OperateType) app.CommandStatus {
+		if c.Index != 0 {
+			return app.StatusNotSupported
+		}
+		return app.StatusSuccess
+	})
+	m := newMaster(t, WithHandler(h))
+	m.send(req(1, app.FuncDirectOperate, app.Indexed(app.G12V1,
+		app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}},
+		app.Object{Index: 65535, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("IIN %s, want PARAMETER_ERROR", f.IIN)
+	}
+	if len(f.Headers) != 1 || len(f.Headers[0].Objects) != 2 {
+		t.Fatalf("echo %v", f.Headers)
+	}
+	for i, want := range []app.CommandStatus{app.StatusSuccess, app.StatusNotSupported} {
+		if s := f.Headers[0].Objects[i].Value.(app.CROB).Status; s != want {
+			t.Fatalf("control %d: status %s, want %s", i, s, want)
+		}
+	}
+}
+
 func TestSelectTimeoutAndMismatch(t *testing.T) {
 	r := &countingHandler{}
 	m := newMaster(t, WithHandler(r), WithSelectTimeout(150*time.Millisecond))
@@ -302,7 +330,7 @@ func TestSelectTimeoutAndMismatch(t *testing.T) {
 	m.recvFunc(app.FuncResponse)
 	time.Sleep(250 * time.Millisecond)
 	m.send(req(2, app.FuncOperate, crob(app.OpLatchOn)))
-	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusNoSelect {
+	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusTimeout {
 		t.Fatalf("after select timeout: %s", s)
 	}
 	m.send(req(3, app.FuncSelect, crob(app.OpLatchOn)))
@@ -736,6 +764,75 @@ func TestChallengeReply(t *testing.T) {
 	o.send(req(1, app.FuncAuthRequest, app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: 1})))
 	if f := o.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINNoFuncCodeSupport) {
 		t.Fatalf("without secure authentication: %s", f.IIN)
+	}
+}
+
+// TestRelativeTimeCTO: relative-time events carry an unsynchronized CTO
+// (g51v2) until the first time synchronization, a synchronized one (g51v1)
+// after it, also once the outstation asks for the time again, and an
+// unsynchronized one again after a restart and once twice the interval has
+// passed without a synchronization.
+func TestRelativeTimeCTO(t *testing.T) {
+	const interval = 300 * time.Millisecond
+	m := newMaster(t, WithTimeSync(interval))
+	ctoOf := func(f *app.Fragment) app.GroupVariation {
+		t.Helper()
+		if len(f.Headers) != 2 || f.Headers[1].GV != app.G2V3 {
+			t.Fatalf("headers %v, want a CTO and g2v3", f.Headers)
+		}
+		return f.Headers[0].GV
+	}
+	db := m.srv.Database()
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.AllObjects(app.G2V3)))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V2 {
+		t.Fatalf("unsynchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(1, false))
+
+	m.send(req(2, app.FuncWrite, app.Counted(app.G50V1, app.AbsoluteTime{Time: app.Now()})))
+	m.recvFunc(app.FuncResponse)
+	_ = db.UpdateBinaryInput(0, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(3, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V1 {
+		t.Fatalf("synchronized: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(3, false))
+
+	// Due for synchronization: IIN1.4, but still synchronized.
+	time.Sleep(interval + 50*time.Millisecond)
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(6, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V1 {
+		t.Fatalf("due for synchronization: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
+	}
+	m.send(confirm(6, false))
+	// Twice the interval without one: unsynchronized.
+	time.Sleep(interval)
+	_ = db.UpdateBinaryInput(0, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(7, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if ctoOf(f) != app.G51V2 {
+		t.Fatalf("synchronization expired: CTO %s", f.Headers[0].GV)
+	}
+	m.send(confirm(7, false))
+	m.send(req(8, app.FuncWrite, app.Counted(app.G50V1, app.AbsoluteTime{Time: app.Now()})))
+	m.recvFunc(app.FuncResponse)
+
+	// After a restart the time is unsynchronized again.
+	m.srv.Restart()
+	m.send(req(9, app.FuncRead, app.AllObjects(app.G80V1))) // the restart has taken effect once answered
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("no restart: IIN %s", f.IIN)
+	}
+	_ = db.UpdateBinaryInput(0, app.Binary{Flags: app.FlagOnline})
+	m.send(req(10, app.FuncRead, app.AllObjects(app.G2V3)))
+	f = m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINNeedTime) || ctoOf(f) != app.G51V2 {
+		t.Fatalf("after a restart: IIN %s, CTO %s", f.IIN, f.Headers[0].GV)
 	}
 }
 

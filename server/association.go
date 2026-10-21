@@ -202,6 +202,8 @@ func (a *association) receive(sess *channel.Session, frag []byte, dest link.Addr
 func (a *association) restart() {
 	a.detach()
 	a.restartIIN = true
+	// The clock is unsynchronized again: NEED_TIME, and g51v2 CTOs.
+	a.lastSync = time.Time{}
 	a.nullDone = false
 	a.unsolMask = a.startupMask()
 	a.events.mu.Lock()
@@ -303,10 +305,27 @@ func (a *association) iin() app.IIN {
 	if a.broadcast {
 		i |= app.IINBroadcast
 	}
-	if n := a.srv.opts.needTime; n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n) {
+	if a.needsTime() {
 		i |= app.IINNeedTime
 	}
 	return i
+}
+
+// needsTime reports whether the outstation asks for time synchronization
+// (IIN1.4): its clock has not been synchronized since the start, or not
+// within the interval of WithTimeSync.
+func (a *association) needsTime() bool {
+	n := a.srv.opts.needTime
+	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n)
+}
+
+// unsynchronized reports whether the outstation's time counts as
+// unsynchronized, as the CTO of relative-time events says (g51v2): with
+// WithTimeSync, until the first synchronization since the start or a
+// restart, and once twice the interval has passed without one.
+func (a *association) unsynchronized() bool {
+	n := a.srv.opts.needTime
+	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > 2*n)
 }
 
 func (a *association) handle(in inbound) {
