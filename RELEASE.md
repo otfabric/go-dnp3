@@ -7,6 +7,7 @@
 
 ## Summary
 
+Fixes from running the DNP Users Group's IED certification procedures
 A crash of the outstation on a malformed request is fixed (see the first
 entry: upgrade if an untrusted master can reach your outstation), with the
 fixes from running the DNP Users Group's IED certification procedures
@@ -16,6 +17,7 @@ fixes from running the DNP Users Group's IED certification procedures
 
 ### Outstation
 
+- **Broadcast indication** (3.1r1 8.6.5b): after a broadcast to 0xFFFE (confirmation required) or 0xFFFF (optional), the response that reports IIN1.0 asks for an application confirmation, and IIN1.0 is cleared when it arrives; it never asked for one. After a broadcast to 0xFFFD, IIN1.0 is still cleared once reported.
 - **A crash on a malformed request** (security): a READ of g70v5 (file transport) under a qualifier that carries indices but no objects made the outstation panic and took the whole process down, for any master that can reach it (v1.3.2 and earlier). The outstation now answers it, and every other header whose objects lack the value their variation needs (controls, time writes, the IIN bits, deadbands, octet strings, attributes, freeze at time), with IIN2.2. The master no longer assumes the time delay object of a restart or delay measurement response either. Found by `FuzzOutstation` in CI; the input is kept as a seed.
 - **Reads of a type without points** (3.1r1 8.13.2d, 8.16.1.2.4, 8.21, 8.22, 8.24.2b): a read of the static or event objects of a type of input or output point the outstation has none of is a null response with IIN2.1 (OBJECT_UNKNOWN), as TB2016-001 and the 3.1r1 procedure require; it was a null response without it. A read of the events of a type the outstation has, while it has no events of it, is still a plain null response. A go-dnp3 master reports the response as an `IINError`.
 - **Reads of variations without flags** (3.1r1 8.24.2d to 8.24.2f): a counter, frozen counter or analog input whose flags are anything but ONLINE alone is reported with flags (g20v1/v2, g21v1/v2, g30v1/v2) when g20v5/v6, g21v9/v10 or g30v3/v4 is read, as the packed binary variations already were, so that its quality is not hidden.
