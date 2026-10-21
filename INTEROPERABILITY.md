@@ -134,9 +134,10 @@ Default variations of the outstation (configurable per point): static
 g1v2, g3v2, g10v2, g20v1, g21v1, g30v1, g31v1, g40v1, g50v4, g110, g121v1; events g2v2,
 g4v2, g11v2, g13v2, g22v5, g23v5, g32v3, g33v3, g42v3, g43v3, g111, g122v2.
 
-A read of a packed variation (g1v1, g3v1, g10v1) reports a point whose
-flags are not ONLINE alone in the variation with flags, so that its quality
-is not lost, as the reference outstations do.
+A read of a variation without flags (the packed g1v1, g3v1, g10v1, and
+g20v5/v6, g21v9/v10, g30v3/v4) reports a point whose flags are not ONLINE
+alone in the variation with flags, so that its quality is not lost, as the
+reference outstations do.
 
 ## Procedures
 
