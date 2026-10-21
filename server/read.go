@@ -156,15 +156,15 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 	return p
 }
 
-// measurement reports whether t is a type of input or output point, whose
-// reads are answered with IIN2.1 when the database has none of it.
-func measurement(t PointType) bool {
-	switch t {
-	case BinaryInput, DoubleBitInput, BinaryOutput, Counter, FrozenCounter, AnalogInput, FrozenAnalogInput, AnalogOutput:
-		return true
-	}
-	return false
+// measurements are the types of input and output points, whose reads are
+// answered with IIN2.1 when the database has none of them.
+var measurements = [numPointTypes]bool{
+	BinaryInput: true, DoubleBitInput: true, BinaryOutput: true, Counter: true,
+	FrozenCounter: true, AnalogInput: true, FrozenAnalogInput: true, AnalogOutput: true,
 }
+
+// measurement reports whether t is a type of input or output point.
+func measurement(t PointType) bool { return measurements[t] }
 
 func validVariation(t PointType, event bool, gv app.GroupVariation) bool {
 	switch t {
