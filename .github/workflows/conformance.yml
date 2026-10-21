@@ -3,9 +3,10 @@ run-name: "Conformance (${{ github.event_name }}) on ${{ github.ref_name }} by @
 
 # Runs the DNP Users Group's DNP3 IED Certification Procedure, 3.1 rev 1 at
 # subset levels 2 and 3 and 2.7 at level 2, as Step Function I/O's dnp3c
-# implements it, against the go-dnp3 conformance outstation (conformance/).
-# dnp3c (GPL-3.0) is downloaded from Maven Central as it is published:
-# nothing of it is built or published here. Not a certification.
+# implements it, against the go-dnp3 conformance outstation
+# (internal/cmd/conformance), with otfabric/dnp3-interop's dnp3c runner.
+# The runner image is built from dnp3-interop's source, fetching dnp3c from
+# Maven Central, and never pushed. Not a certification.
 
 on:
   push:
@@ -37,18 +38,17 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: "1.23.x"
-          cache-dependency-path: conformance/go.mod
 
-      - name: Set up Java
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
-          cache-dependency-path: conformance/plugin/pom.xml
+      # The runner is not published (dnp3c is GPL-3.0 and the image is
+      # kept local, like the stepfunc one): it is built here from
+      # dnp3-interop's source at CONFORMANCE_COMMIT.
+      - name: Build the dnp3c runner image
+        run: make conformance-image
 
       - name: Run dnp3c
-        run: conformance/run.sh "${{ matrix.revision }}:${{ matrix.level }}"
+        run: |
+          DNP3_INTEROP_DNP3C_IMAGE="$(make -s print-conformance-image)" \
+            internal/cmd/conformance/run.sh "${{ matrix.revision }}:${{ matrix.level }}"
 
       # The report, each procedure's log and the logs of the run, also when
       # a procedure failed.
@@ -58,6 +58,7 @@ jobs:
         with:
           name: dnp3c-${{ matrix.revision }}-L${{ matrix.level }}
           path: |
-            conformance/results/
-            conformance/build/*.log
+            bin/conformance/results/
+            bin/conformance/*.log
+            bin/conformance/*.ini
           if-no-files-found: warn

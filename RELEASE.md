@@ -14,7 +14,7 @@ Fixes from running the DNP Users Group's IED certification procedures
 
 ### Tests
 
-- **IED conformance procedures in CI** (`make conformance`, [conformance.yml](.github/workflows/conformance.yml)): Step Function I/O's [dnp3c](https://github.com/stepfunc/dnp3c) 0.2.0 runs the DNP3 IED Certification Procedure, 3.1 rev 1 at subset levels 2 and 3 and 2.7 at level 2, against a test outstation built on the library ([conformance](conformance)), with its Device Profile in `conformance/device.ini`. dnp3c is GPL-3.0 and downloaded from Maven Central. Its integration plugin is GPL-3.0 too, and is kept in `conformance/plugin` with its own licence. `conformance` is a Go module of its own, outside go-dnp3's. Not a certification.
+- **IED conformance procedures in CI** (`make conformance`, [conformance.yml](.github/workflows/conformance.yml)): Step Function I/O's [dnp3c](https://github.com/stepfunc/dnp3c) 0.2.0 runs the DNP3 IED Certification Procedure, 3.1 rev 1 at subset levels 2 and 3 and 2.7 at level 2, against a test outstation built on the library ([internal/cmd/conformance](internal/cmd/conformance)), with its Device Profile in `device.ini` there. dnp3c runs in [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop)'s dnp3c runner image, which `make conformance-image` builds from dnp3-interop's source at `CONFORMANCE_COMMIT`; dnp3c and the runner are GPL-3.0-only, are not in this repository, and the image is not published. Not a certification.
 
 ---
 

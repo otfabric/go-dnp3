@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MIT
 
-// Command dut is the device under test of the dnp3c conformance run: a
-// go-dnp3 outstation with a fixed database, and a control port through
-// which the dnp3c integration plugin performs the steps a tester would
-// otherwise perform by hand (restarts, configuration changes, input changes)
-// and checks what the outstation reported against what it holds.
+// Command conformance is the device under test of the dnp3c conformance
+// run (make conformance): a go-dnp3 outstation with a fixed database, and a
+// control port through which dnp3-interop's dnp3c runner performs the steps
+// a tester would otherwise perform by hand (restarts, configuration changes,
+// input changes) and checks what the outstation reported against what it
+// holds.
 //
-// The control protocol: the plugin sends a request as one line of JSON,
-// and the device answers with lines "log <text>", "index <n>", "flags <n>"
-// and "error <text>", ended by "end".
+// The control protocol is dnp3-interop's (docs/CONFORMANCE.md there): a
+// request is one line of JSON, the reply lines "log <text>", "index <n>",
+// "flags <n>" and "error <text>", ended by "end".
 package main
 
 import (
@@ -45,7 +46,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("dut: DNP3 on %s, control on %s", *dnp3Addr, l.Addr())
+	log.Printf("conformance outstation: DNP3 on %s, control on %s", *dnp3Addr, l.Addr())
 	for {
 		c, err := l.Accept()
 		if err != nil {

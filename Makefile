@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch interop-stepfunc conformance
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch interop-stepfunc conformance conformance-image print-conformance-image
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -44,6 +44,14 @@ DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:d
 DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f53f82430f60b6c40acd89928cab3aea675565ce0f96fe664b067ac9bfae93b9
 DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:129d3678f18c2f62b410d74c17f41661fe6b3588bfe4950242fb01ac006fe8fd
 
+# The dnp3c runner for 'make conformance': dnp3-interop's image of Step
+# Function I/O's dnp3c (the DNP3 IED Certification Procedure), GPL-3.0-only
+# and not published. make conformance-image builds it here from
+# dnp3-interop's source at CONFORMANCE_COMMIT; the build fetches dnp3c from
+# Maven Central. Nothing of it is in this repository.
+CONFORMANCE_COMMIT ?= 48885d6143e0cf8e5d48ae9dc5b247c8126d3f85
+DNP3_INTEROP_DNP3C_IMAGE ?= dnp3-interop-dnp3c:$(shell echo $(CONFORMANCE_COMMIT) | cut -c1-12)
+
 all: build ## Default target: build the examples
 
 build: ## Build the examples into ./bin
@@ -77,20 +85,17 @@ fmt-check: ## Fail if the go.mod-version gofmt or the local gofmt would change a
 		exit 1; \
 	fi
 
-lint: ## Run staticcheck (includes -tags=interop for ./interop, and the conformance module)
+lint: ## Run staticcheck (includes -tags=interop for ./interop)
 	@echo "Running staticcheck"
 	@staticcheck -tags=$(INTEROP_TAGS) ./...
-	@cd conformance && staticcheck ./...
 
-lint-ci: ## Run golangci-lint (build-tags include interop; see .golangci.yml), also on the conformance module
+lint-ci: ## Run golangci-lint (build-tags include interop; see .golangci.yml)
 	@echo "Running golangci-lint"
 	@golangci-lint run ./...
-	@cd conformance && golangci-lint run -c ../.golangci.yml ./...
 
-vet: ## Run go vet (includes -tags=interop compile of ./interop, and the conformance module)
+vet: ## Run go vet (includes -tags=interop compile of ./interop)
 	@echo "Running go vet"
 	@go vet -tags=$(INTEROP_TAGS) ./...
-	@cd conformance && go vet ./...
 
 vuln: ## Run govulncheck
 	@echo "Running govulncheck"
@@ -143,8 +148,20 @@ test-interop: interop-stepfunc ## Run the interop suite against the stepfunc, op
 
 interop: test-interop ## Alias for test-interop
 
-conformance: ## Run the DNP3 IED certification procedures (dnp3c 3.1r1 levels 2 and 3, 2.7) against the outstation (needs Java 17 and Maven)
-	@conformance/run.sh
+conformance-image: ## Build dnp3-interop's dnp3c runner image from its source (it is not published; needs Docker)
+	@if docker image inspect "$(DNP3_INTEROP_DNP3C_IMAGE)" >/dev/null 2>&1; then \
+		echo "Using $(DNP3_INTEROP_DNP3C_IMAGE)"; \
+	else \
+		echo "Building $(DNP3_INTEROP_DNP3C_IMAGE) from otfabric/dnp3-interop $(CONFORMANCE_COMMIT)"; \
+		docker build -t "$(DNP3_INTEROP_DNP3C_IMAGE)" -f conformance/dnp3c/Dockerfile \
+			"https://github.com/otfabric/dnp3-interop.git#$(CONFORMANCE_COMMIT)"; \
+	fi
+
+print-conformance-image: ## Print the dnp3c runner image make conformance uses
+	@echo "$(DNP3_INTEROP_DNP3C_IMAGE)"
+
+conformance: conformance-image ## Run the DNP3 IED certification procedures (dnp3c: 3.1r1 levels 2 and 3, 2.7) against the conformance outstation (needs Docker)
+	@DNP3_INTEROP_DNP3C_IMAGE="$(DNP3_INTEROP_DNP3C_IMAGE)" internal/cmd/conformance/run.sh
 
 generate: ## Generate the object table, Measurements' points and OBJECTS.md from app/catalog.json
 	@echo "Generating from app/catalog.json"
