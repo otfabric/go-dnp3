@@ -48,9 +48,10 @@ DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:129
 # Function I/O's dnp3c (the DNP3 IED Certification Procedure), GPL-3.0-only
 # and not published. make conformance-image builds it here from
 # dnp3-interop's source at CONFORMANCE_COMMIT; the build fetches dnp3c from
-# Maven Central. Nothing of it is in this repository.
-CONFORMANCE_COMMIT ?= 48885d6143e0cf8e5d48ae9dc5b247c8126d3f85
-DNP3_INTEROP_DNP3C_IMAGE ?= dnp3-interop-dnp3c:$(shell echo $(CONFORMANCE_COMMIT) | cut -c1-12)
+# Maven Central. Nothing of it is in this repository. dnp3-interop v0.5.0.
+CONFORMANCE_RELEASE := v0.5.0
+CONFORMANCE_COMMIT  ?= 9340a77524c835615623609def142f20bb4bbe4e
+DNP3_INTEROP_DNP3C_IMAGE ?= dnp3-interop-dnp3c:$(CONFORMANCE_RELEASE)
 
 all: build ## Default target: build the examples
 
@@ -152,8 +153,8 @@ conformance-image: ## Build dnp3-interop's dnp3c runner image from its source (i
 	@if docker image inspect "$(DNP3_INTEROP_DNP3C_IMAGE)" >/dev/null 2>&1; then \
 		echo "Using $(DNP3_INTEROP_DNP3C_IMAGE)"; \
 	else \
-		echo "Building $(DNP3_INTEROP_DNP3C_IMAGE) from otfabric/dnp3-interop $(CONFORMANCE_COMMIT)"; \
-		docker build -t "$(DNP3_INTEROP_DNP3C_IMAGE)" -f conformance/dnp3c/Dockerfile \
+		echo "Building $(DNP3_INTEROP_DNP3C_IMAGE) from otfabric/dnp3-interop $(CONFORMANCE_RELEASE) ($(CONFORMANCE_COMMIT))"; \
+		docker build --build-arg ADAPTER_VERSION=$(CONFORMANCE_RELEASE) -t "$(DNP3_INTEROP_DNP3C_IMAGE)" -f conformance/dnp3c/Dockerfile \
 			"https://github.com/otfabric/dnp3-interop.git#$(CONFORMANCE_COMMIT)"; \
 	fi
 
