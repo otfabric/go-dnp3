@@ -290,6 +290,34 @@ func TestUnsolicitedHold(t *testing.T) {
 	}
 }
 
+// TestControlNotSupported: a control the handler does not support is echoed
+// with NOT_SUPPORTED and IIN2.2 (PARAMETER_ERROR), the other controls of the
+// request with their own status.
+func TestControlNotSupported(t *testing.T) {
+	h := HandlerFunc(func(_ context.Context, c Command, _ OperateType) app.CommandStatus {
+		if c.Index != 0 {
+			return app.StatusNotSupported
+		}
+		return app.StatusSuccess
+	})
+	m := newMaster(t, WithHandler(h))
+	m.send(req(1, app.FuncDirectOperate, app.Indexed(app.G12V1,
+		app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}},
+		app.Object{Index: 65535, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})))
+	f := m.recvFunc(app.FuncResponse)
+	if !f.IIN.Has(app.IINParameterError) {
+		t.Fatalf("IIN %s, want PARAMETER_ERROR", f.IIN)
+	}
+	if len(f.Headers) != 1 || len(f.Headers[0].Objects) != 2 {
+		t.Fatalf("echo %v", f.Headers)
+	}
+	for i, want := range []app.CommandStatus{app.StatusSuccess, app.StatusNotSupported} {
+		if s := f.Headers[0].Objects[i].Value.(app.CROB).Status; s != want {
+			t.Fatalf("control %d: status %s, want %s", i, s, want)
+		}
+	}
+}
+
 func TestSelectTimeoutAndMismatch(t *testing.T) {
 	r := &countingHandler{}
 	m := newMaster(t, WithHandler(r), WithSelectTimeout(150*time.Millisecond))
@@ -302,7 +330,7 @@ func TestSelectTimeoutAndMismatch(t *testing.T) {
 	m.recvFunc(app.FuncResponse)
 	time.Sleep(250 * time.Millisecond)
 	m.send(req(2, app.FuncOperate, crob(app.OpLatchOn)))
-	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusNoSelect {
+	if s := status(m.recvFunc(app.FuncResponse)); s != app.StatusTimeout {
 		t.Fatalf("after select timeout: %s", s)
 	}
 	m.send(req(3, app.FuncSelect, crob(app.OpLatchOn)))
