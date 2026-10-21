@@ -56,7 +56,8 @@ type Command struct {
 // handler delays that master's requests, not the others'.
 //
 // The returned status is echoed to the master. A handler that does not
-// support a point returns app.StatusNotSupported.
+// support a point returns app.StatusNotSupported; the response then also
+// sets IIN2.2 (PARAMETER_ERROR).
 type Handler interface {
 	// Select checks whether the control could be executed now, without
 	// executing it.

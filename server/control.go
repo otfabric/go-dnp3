@@ -28,12 +28,15 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 		return &response{none: true}
 	}
 
-	var noSelect bool
+	// An OPERATE that matches no SELECT is answered NO_SELECT; one that
+	// matches a SELECT whose timer has run out, TIMEOUT (IEEE 1815-2012
+	// Table 11-4).
+	var noSelect, expired bool
 	if fc == app.FuncOperate {
 		s := a.selection
 		a.selection = nil
-		noSelect = s == nil || req.Control.Seq != app.NextSeq(s.seq) || !bytes.Equal(s.objects, objects) ||
-			time.Since(s.at) > a.srv.opts.selectTimeout
+		noSelect = s == nil || req.Control.Seq != app.NextSeq(s.seq) || !bytes.Equal(s.objects, objects)
+		expired = !noSelect && time.Since(s.at) > a.srv.opts.selectTimeout
 	}
 
 	ctx, cancel := a.srv.handlerContext()
@@ -42,6 +45,7 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 	echo := make([]app.Header, len(req.Headers))
 	r := &response{}
 	allOK := true
+	malformed := false
 	count := 0
 	for i, hdr := range req.Headers {
 		echo[i] = hdr
@@ -53,14 +57,14 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 			// mask that follows it.
 			if i+1 >= len(req.Headers) || req.Headers[i+1].GV != app.G12V3 || len(hdr.Objects) != 1 {
 				r.iin |= app.IINParameterError
-				allOK = false
+				allOK, malformed = false, true
 				continue
 			}
 		case app.G12V3:
 			continue // handled with its pattern control block
 		default:
 			r.iin |= app.IINObjectUnknown
-			allOK = false
+			allOK, malformed = false, true
 			continue
 		}
 		for j := range echo[i].Objects {
@@ -71,6 +75,8 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 				status = app.StatusTooManyObjects
 			case noSelect:
 				status = app.StatusNoSelect
+			case expired:
+				status = app.StatusTimeout
 			case hdr.GV == app.G12V2:
 				status = a.pattern(ctx, h, fc, o.Value.(app.CROB), req.Headers[i+1])
 			default:
@@ -79,6 +85,12 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 			count++
 			if status != app.StatusSuccess {
 				allOK = false
+			}
+			// A control of a point the outstation does not have, or does
+			// not support, also sets IIN2.2, as opendnp3 and stepfunc do
+			// and the DNP3 IED certification procedure requires.
+			if status == app.StatusNotSupported {
+				r.iin |= app.IINParameterError
 			}
 			o.Value = withStatus(o.Value, status)
 		}
@@ -89,7 +101,7 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 	if fc == app.FuncDirectOperateNoAck {
 		return &response{none: true}
 	}
-	if r.iin&(app.IINObjectUnknown|app.IINParameterError) == 0 {
+	if !malformed {
 		r.plans = []fragPlan{{headers: echo}}
 	}
 	return r
