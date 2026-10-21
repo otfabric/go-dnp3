@@ -778,3 +778,42 @@ func TestReadDeferredByUnsolicited(t *testing.T) {
 		t.Fatalf("READ after the confirmation: %s", f)
 	}
 }
+
+// TestDeferredReadTakesUnsolicitedEvents: a READ deferred by an unconfirmed
+// unsolicited response with events reports those events once the confirm
+// timeout expires, and the unsolicited response is not repeated.
+func TestDeferredReadTakesUnsolicitedEvents(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1}, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	m.send(confirm(null.Control.Seq, true))
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	if u := m.recvFunc(app.FuncUnsolicitedResponse); len(u.Headers) == 0 {
+		t.Fatalf("unsolicited without events: %s", u)
+	}
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1, 2, 3)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || !f.Control.CON || len(f.Headers) != 1 || f.Headers[0].GV.Group() != 2 {
+		t.Fatalf("deferred READ answered with %s", f)
+	}
+	m.send(confirm(f.Control.Seq, false))
+	m.none(500 * time.Millisecond)
+}
+
+// TestUnsolicitedRepeatWaitsForResponse: the null unsolicited response is
+// not repeated while the response to a deferred READ waits for its
+// confirmation (300 ms here), and is repeated once it is confirmed.
+func TestUnsolicitedRepeatWaitsForResponse(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || !f.Control.CON {
+		t.Fatalf("deferred READ answered with %s", f)
+	}
+	m.none(150 * time.Millisecond)
+	m.send(confirm(f.Control.Seq, false))
+	if r := m.recv(); r.Function != app.FuncUnsolicitedResponse || r.Control.Seq != null.Control.Seq || len(r.Headers) != 0 {
+		t.Fatalf("after the confirmation: %s", r)
+	}
+}

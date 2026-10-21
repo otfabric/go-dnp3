@@ -250,7 +250,7 @@ func (a *association) arm() {
 	if a.sol != nil {
 		consider(a.sol.deadline)
 	}
-	if a.unsol != nil {
+	if a.unsol != nil && a.sol == nil {
 		consider(a.unsol.deadline)
 	}
 	consider(a.unsolPause)
@@ -273,33 +273,54 @@ func (a *association) onTimer() {
 		a.log.Debug("response not confirmed", "seq", a.sol.seq)
 		a.abandonSolicited()
 	}
-	if u := a.unsol; u != nil && !now.Before(u.deadline) {
-		// A READ deferred while the response waited is answered before
-		// the response is repeated (TB2015-002a).
-		a.answerDeferred()
-		if u.attempts < a.srv.opts.unsolicited.Retries {
-			u.attempts++
-			u.deadline = now.Add(a.srv.opts.confirmTimeout)
-			a.log.Debug("unsolicited response repeated", "seq", u.seq, "attempt", u.attempts)
-			// A repeat is the same response, with the indications as
-			// they are now: e.g. IIN1.7 cleared by the master meanwhile.
-			u.frag.IIN = a.iin()
-			a.sendUnsolicited(u)
-		} else {
-			err := fmt.Errorf("%w: unsolicited response not confirmed", dnp3.ErrTimeout)
-			a.log.Info("unsolicited response given up", "seq", u.seq, "events", len(u.events))
-			a.events.release(u.events)
-			if a.srv.sm != nil {
-				a.srv.sm.OnUnsolicited(a.remote(), len(u.events), err)
-			}
-			a.unsol = nil
-			a.unsolSeq = app.NextSeq(a.unsolSeq)
-			a.unsolPause = now.Add(a.srv.opts.unsolicited.RetryDelay)
-		}
+	if u := a.unsol; u != nil && a.sol == nil && !now.Before(u.deadline) {
+		a.unsolicitedTimeout(u, now)
 	}
 	if !a.unsolPause.IsZero() && !now.Before(a.unsolPause) {
 		a.unsolPause = time.Time{}
 	}
+}
+
+// unsolicitedTimeout handles an unsolicited response whose confirm timeout
+// has expired, once no solicited response is in progress: a repeat is never
+// sent between the fragments of a response, or before its confirmation.
+func (a *association) unsolicitedTimeout(u *pendingUnsol, now time.Time) {
+	if a.deferred != nil {
+		// A READ deferred while the response waited is answered now
+		// (TB2015-002a). The events of a response with data go back to
+		// the buffer, so that the READ reports them, and the response is
+		// not repeated; a null response is repeated once the READ's
+		// response is done.
+		if !u.null {
+			a.log.Debug("unsolicited response superseded by a deferred READ", "seq", u.seq, "events", len(u.events))
+			a.events.release(u.events)
+			a.unsol = nil
+			a.unsolSeq = app.NextSeq(a.unsolSeq)
+		}
+		a.answerDeferred()
+		if a.unsol == nil || a.sol != nil {
+			return
+		}
+	}
+	if u.attempts < a.srv.opts.unsolicited.Retries {
+		u.attempts++
+		u.deadline = now.Add(a.srv.opts.confirmTimeout)
+		a.log.Debug("unsolicited response repeated", "seq", u.seq, "attempt", u.attempts)
+		// A repeat is the same response, with the indications as they
+		// are now: e.g. IIN1.7 cleared by the master meanwhile.
+		u.frag.IIN = a.iin()
+		a.sendUnsolicited(u)
+		return
+	}
+	err := fmt.Errorf("%w: unsolicited response not confirmed", dnp3.ErrTimeout)
+	a.log.Info("unsolicited response given up", "seq", u.seq, "events", len(u.events))
+	a.events.release(u.events)
+	if a.srv.sm != nil {
+		a.srv.sm.OnUnsolicited(a.remote(), len(u.events), err)
+	}
+	a.unsol = nil
+	a.unsolSeq = app.NextSeq(a.unsolSeq)
+	a.unsolPause = now.Add(a.srv.opts.unsolicited.RetryDelay)
 }
 
 func (a *association) remote() net.Addr {
