@@ -817,3 +817,20 @@ func TestUnsolicitedRepeatWaitsForResponse(t *testing.T) {
 		t.Fatalf("after the confirmation: %s", r)
 	}
 }
+
+// TestDeferredReadSuperseded: a request that comes after a deferred READ is
+// answered at once, and the READ is not answered at all.
+func TestDeferredReadSuperseded(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	m.send(req(1, app.FuncRead, app.ClassHeaders(0)...))
+	m.send(req(2, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})))
+	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 2 {
+		t.Fatalf("after the WRITE: %s", f)
+	}
+	if f := m.recv(); f.Function != app.FuncUnsolicitedResponse || f.Control.Seq != null.Control.Seq {
+		t.Fatalf("at the confirm timeout: %s", f)
+	}
+	m.send(confirm(null.Control.Seq, true))
+	m.none(200 * time.Millisecond)
+}

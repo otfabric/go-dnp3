@@ -385,6 +385,11 @@ func (a *association) handle(in inbound) {
 		a.deferred = &in
 		return
 	}
+	// A newer request supersedes a deferred READ, which is not answered.
+	if !in.resumed && a.deferred != nil {
+		a.log.Debug("deferred READ superseded", "seq", req.Control.Seq)
+		a.deferred = nil
+	}
 	if !broadcast {
 		if r := a.lastReq; r != nil && r.seq == req.Control.Seq && bytes.Equal(r.data, in.frag) && req.Function != app.FuncRead {
 			a.log.Debug("repeated request answered with the previous response", "seq", r.seq)
