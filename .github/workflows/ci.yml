@@ -57,3 +57,12 @@ jobs:
         with:
           go-version: "1.23.x"
       - run: make fuzz FUZZTIME=20s
+      # The input a failing target wrote, to reproduce it with
+      # go test -run=<target>/<file> after copying it into testdata.
+      - name: Upload the failing inputs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-failures
+          path: "**/testdata/fuzz/"
+          if-no-files-found: warn
