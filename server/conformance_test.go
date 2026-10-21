@@ -738,3 +738,43 @@ func TestChallengeReply(t *testing.T) {
 		t.Fatalf("without secure authentication: %s", f.IIN)
 	}
 }
+
+// TestReadDeferredByUnsolicited: a READ that comes while an unsolicited
+// response waits for its confirmation is answered once the confirm timeout
+// expires, before the response is repeated; the repeat carries the
+// indications as they are then (IIN1.7 cleared meanwhile). A READ during
+// the repeat is answered as soon as it is confirmed.
+func TestReadDeferredByUnsolicited(t *testing.T) {
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	null := m.recvFunc(app.FuncUnsolicitedResponse)
+	if !null.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("null unsolicited IIN %s", null.IIN)
+	}
+	// A WRITE is answered at once.
+	m.send(req(1, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})))
+	if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 1 {
+		t.Fatalf("write answered with %s", f)
+	}
+	sent := time.Now()
+	m.send(req(2, app.FuncRead, app.ClassHeaders(0)...))
+	f := m.recv()
+	if f.Function != app.FuncResponse || f.Control.Seq != 2 {
+		t.Fatalf("first after the deferred READ: %s", f)
+	}
+	if time.Since(sent) < 200*time.Millisecond {
+		t.Fatal("READ answered before the unsolicited confirm timeout")
+	}
+	retry := m.recv()
+	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != null.Control.Seq {
+		t.Fatalf("after the READ: %s", retry)
+	}
+	if retry.IIN.Has(app.IINDeviceRestart) {
+		t.Fatalf("repeat still reports IIN1.7: %s", retry.IIN)
+	}
+	m.send(req(3, app.FuncRead, app.ClassHeaders(0)...))
+	m.none(100 * time.Millisecond)
+	m.send(confirm(retry.Control.Seq, true))
+	if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 3 {
+		t.Fatalf("READ after the confirmation: %s", f)
+	}
+}

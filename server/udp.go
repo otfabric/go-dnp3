@@ -64,4 +64,11 @@ func (u *udpStream) Write(b []byte) (int, error) {
 	return u.pc.WriteTo(b, peer)
 }
 
+// Peer returns the address datagrams are sent to, nil before there is one.
+func (u *udpStream) Peer() net.Addr {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.peer
+}
+
 func (u *udpStream) Close() error { return u.pc.Close() }

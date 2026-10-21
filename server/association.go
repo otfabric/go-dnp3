@@ -49,6 +49,10 @@ type association struct {
 	holdStart  time.Time
 	unsolPause time.Time
 	timer      *time.Timer
+	// deferred is a READ that came while an unsolicited response waited
+	// for its confirmation, answered once it is confirmed or times out.
+	deferred *inbound
+	sentOK   bool // the last fragment sent went out
 
 	pendingAuth   *challenge
 	lastChallenge []byte // the last g120v1 fragment sent
@@ -66,6 +70,8 @@ type inbound struct {
 	frag []byte
 	dest link.Address
 	at   time.Time
+	// resumed: a deferred READ, now answered.
+	resumed bool
 }
 
 // lastRequest is kept to answer a repeated request with the same
@@ -89,7 +95,9 @@ type pendingResponse struct {
 type pendingUnsol struct {
 	null     bool
 	seq      uint8
-	data     []byte
+	frag     *app.Fragment
+	sent     time.Time // when it last went out; zero if it never did
+	peer     string    // where it went
 	events   []*bufEvent
 	attempts int
 	deadline time.Time
@@ -178,6 +186,7 @@ func (a *association) detach() {
 		a.events.release(a.unsol.events)
 		a.unsol = nil
 	}
+	a.deferred = nil
 	a.selection = nil
 	a.lastReq = nil
 	a.closeFiles()
@@ -265,11 +274,17 @@ func (a *association) onTimer() {
 		a.abandonSolicited()
 	}
 	if u := a.unsol; u != nil && !now.Before(u.deadline) {
+		// A READ deferred while the response waited is answered before
+		// the response is repeated (TB2015-002a).
+		a.answerDeferred()
 		if u.attempts < a.srv.opts.unsolicited.Retries {
 			u.attempts++
 			u.deadline = now.Add(a.srv.opts.confirmTimeout)
 			a.log.Debug("unsolicited response repeated", "seq", u.seq, "attempt", u.attempts)
-			a.sendRaw(u.data)
+			// A repeat is the same response, with the indications as
+			// they are now: e.g. IIN1.7 cleared by the master meanwhile.
+			u.frag.IIN = a.iin()
+			a.sendUnsolicited(u)
 		} else {
 			err := fmt.Errorf("%w: unsolicited response not confirmed", dnp3.ErrTimeout)
 			a.log.Info("unsolicited response given up", "seq", u.seq, "events", len(u.events))
@@ -318,7 +333,7 @@ func (a *association) handle(in inbound) {
 		}
 		return
 	}
-	if m := a.srv.opts.metrics; m != nil {
+	if m := a.srv.opts.metrics; m != nil && !in.resumed {
 		m.OnFragmentReceived(a.remote(), req, len(in.frag))
 	}
 	if a.log.DebugEnabled() {
@@ -337,6 +352,18 @@ func (a *association) handle(in inbound) {
 		return
 	}
 	broadcast := in.dest.Broadcast()
+	if req.Function == app.FuncRead && !broadcast && !in.resumed && a.defers(in.at) {
+		// A READ sent while an unsolicited response waits for its
+		// confirmation is not answered until it is confirmed or its
+		// confirm timeout expires (IEEE 1815-2012 4.6.6 rule 16,
+		// TB2015-002a). One that came before it, e.g. the datagram that
+		// started a UDP session, is answered. A newer READ replaces an
+		// older one.
+		a.log.Debug("READ deferred until the unsolicited response is confirmed", "seq", req.Control.Seq)
+		in.resumed = true
+		a.deferred = &in
+		return
+	}
 	if !broadcast {
 		if r := a.lastReq; r != nil && r.seq == req.Control.Seq && bytes.Equal(r.data, in.frag) && req.Function != app.FuncRead {
 			a.log.Debug("repeated request answered with the previous response", "seq", r.seq)
@@ -493,6 +520,7 @@ func (a *association) onConfirm(req *app.Fragment) {
 		a.unsol = nil
 		a.unsolSeq = app.NextSeq(a.unsolSeq)
 		a.holdStart = time.Time{}
+		a.answerDeferred()
 		return
 	}
 	p := a.sol
@@ -526,8 +554,8 @@ func (a *association) maybeUnsolicited() {
 			Function: app.FuncUnsolicitedResponse,
 			IIN:      a.iin(),
 		}
-		data := a.send(f)
-		a.unsol = &pendingUnsol{null: true, seq: a.unsolSeq, data: data, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+		a.unsol = &pendingUnsol{null: true, seq: a.unsolSeq, frag: f, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+		a.sendUnsolicited(a.unsol)
 		return
 	}
 	if a.unsolMask == 0 {
@@ -564,8 +592,17 @@ func (a *association) maybeUnsolicited() {
 		IIN:      a.iin(),
 		Headers:  plan.headers,
 	}
-	data := a.send(f)
-	a.unsol = &pendingUnsol{seq: a.unsolSeq, data: data, events: plan.events, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+	a.unsol = &pendingUnsol{seq: a.unsolSeq, frag: f, events: plan.events, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+	a.sendUnsolicited(a.unsol)
+}
+
+// answerDeferred answers the READ deferred while an unsolicited response
+// waited for its confirmation.
+func (a *association) answerDeferred() {
+	if d := a.deferred; d != nil {
+		a.deferred = nil
+		a.handle(*d)
+	}
 }
 
 // send encodes and sends f on the current session and returns the
@@ -588,7 +625,43 @@ func (a *association) send(f *app.Fragment) []byte {
 	return data
 }
 
+// sendUnsolicited sends an unsolicited response and records when it went
+// out and to which peer; the time stays zero when it had nowhere to go,
+// e.g. over UDP before a master's first datagram.
+func (a *association) sendUnsolicited(u *pendingUnsol) {
+	peer := a.peer()
+	if data := a.send(u.frag); data == nil || !a.sentOK || peer == nil {
+		return
+	}
+	u.sent, u.peer = time.Now(), peer.String()
+}
+
+// peer is where the current session's fragments go.
+func (a *association) peer() net.Addr {
+	if a.sess == nil {
+		return nil
+	}
+	return a.sess.Channel().Peer()
+}
+
+// defers reports whether a READ received at is held back by the
+// unsolicited response waiting for its confirmation: it was sent before the
+// READ came, to the master the READ came from. A READ from another master
+// (over UDP, one that took over the socket), or that came first, as the
+// datagram that started a UDP session, is answered.
+func (a *association) defers(at time.Time) bool {
+	u := a.unsol
+	if u == nil || u.sent.IsZero() || !at.After(u.sent) {
+		return false
+	}
+	p := a.peer()
+	return p != nil && p.String() == u.peer
+}
+
+// sendRaw sends data on the current session; sentOK says whether it went
+// out.
 func (a *association) sendRaw(data []byte) {
+	a.sentOK = false
 	if a.sess == nil || data == nil {
 		return
 	}
@@ -596,5 +669,7 @@ func (a *association) sendRaw(data []byte) {
 	defer cancel()
 	if err := a.sess.Send(ctx, data); err != nil {
 		a.log.Debug("fragment not sent", "error", err)
+		return
 	}
+	a.sentOK = true
 }

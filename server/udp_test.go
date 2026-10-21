@@ -78,6 +78,11 @@ func TestServeUDP(t *testing.T) {
 				if f.Function != app.FuncUnsolicitedResponse {
 					t.Fatalf("first datagram %s", f)
 				}
+				// Confirmed, as a master does: until then a READ waits.
+				b, _ := confirm(f.Control.Seq, true).Encode()
+				if err := sess.Send(context.Background(), b); err != nil {
+					t.Fatal(err)
+				}
 			case <-time.After(3 * time.Second):
 				t.Fatal("no unsolicited response to the configured master")
 			}

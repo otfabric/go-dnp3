@@ -1,5 +1,23 @@
 # go-dnp3 Releases
 
+## v1.4.0
+
+**Date:** not yet released
+**Previous release:** v1.3.2
+
+## Summary
+
+Fixes from running the DNP Users Group's IED certification procedures
+(Step Function I/O's dnp3c, 3.1 rev 1) against the outstation.
+
+## Changes
+
+### Outstation
+
+- **READ while an unsolicited response waits for its confirmation** (3.1r1 8.11.2a, 8.11.2.5): the READ is answered once the response is confirmed, or once its confirm timeout expires and before it is repeated (IEEE 1815-2012 4.6.6 rule 16, TB2015-002a), instead of at once. A READ from another master than the one the response went to, or one that came before it (the datagram that starts a UDP session), is answered at once. A repeated unsolicited response carries the indications as they are when it is repeated, e.g. without IIN1.7 once the master cleared it, instead of those of its first transmission.
+
+---
+
 ## v1.3.2
 
 **Date:** 2026-10-21
