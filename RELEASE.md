@@ -1,5 +1,23 @@
 # go-dnp3 Releases
 
+## v1.4.0
+
+**Date:** not yet released
+**Previous release:** v1.3.2
+
+## Summary
+
+Fixes from running the DNP Users Group's IED certification procedures
+(Step Function I/O's dnp3c, 3.1 rev 1) against the outstation.
+
+## Changes
+
+### Outstation
+
+- **Reads of variations without flags** (3.1r1 8.24.2d to 8.24.2f): a counter, frozen counter or analog input whose flags are anything but ONLINE alone is reported with flags (g20v1/v2, g21v1/v2, g30v1/v2) when g20v5/v6, g21v9/v10 or g30v3/v4 is read, as the packed binary variations already were, so that its quality is not hidden.
+
+---
+
 ## v1.3.2
 
 **Date:** 2026-10-21
