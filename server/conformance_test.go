@@ -85,8 +85,13 @@ func (m *master) sendRaw(b []byte) {
 
 func (m *master) sendBroadcast(f *app.Fragment) {
 	m.t.Helper()
+	m.sendBroadcastTo(f, link.BroadcastNoConfirm)
+}
+
+func (m *master) sendBroadcastTo(f *app.Fragment, to link.Address) {
+	m.t.Helper()
 	b, _ := f.Encode()
-	if err := m.sess.SendBroadcast(context.Background(), b, link.BroadcastNoConfirm); err != nil {
+	if err := m.sess.SendBroadcast(context.Background(), b, to); err != nil {
 		m.t.Fatal(err)
 	}
 }
@@ -191,18 +196,33 @@ func TestBroadcast(t *testing.T) {
 	// SELECT is never executed from a broadcast.
 	m.sendBroadcast(req(2, app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})))
 	m.none(100 * time.Millisecond)
-	// The next response reports IIN1.0 and asks for confirmation; until
-	// it is confirmed, IIN1.0 is reported again.
-	for seq := uint8(3); seq <= 4; seq++ {
-		m.send(req(seq, app.FuncRead, app.AllObjects(app.G80V1)))
-		if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) || !f.Control.CON {
-			t.Fatalf("no BROADCAST indication with CON: %s, CON %v", f.IIN, f.Control.CON)
-		}
+	// After a broadcast to 0xFFFD the next response reports IIN1.0, without
+	// asking for confirmation, and the one after it no longer does.
+	m.send(req(3, app.FuncRead, app.AllObjects(app.G80V1)))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) || f.Control.CON {
+		t.Fatalf("after 0xFFFD: %s, CON %v", f.IIN, f.Control.CON)
 	}
-	m.send(confirm(4, false))
-	m.send(req(5, app.FuncRead, app.AllObjects(app.G80V1)))
-	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINBroadcast) || f.Control.CON {
-		t.Fatalf("BROADCAST indication after its confirmation: %s, CON %v", f.IIN, f.Control.CON)
+	m.send(req(4, app.FuncRead, app.AllObjects(app.G80V1)))
+	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINBroadcast) {
+		t.Fatal("BROADCAST indication repeated")
+	}
+	// After one to 0xFFFE or 0xFFFF the response reporting IIN1.0 asks for
+	// confirmation; until it is confirmed, IIN1.0 is reported again.
+	for i, to := range []link.Address{link.BroadcastConfirm, link.BroadcastOptionalConfirm} {
+		seq := uint8(5 + 3*i)
+		m.sendBroadcastTo(req(seq, app.FuncDirectOperateNoAck, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})), to)
+		m.none(100 * time.Millisecond)
+		for s := seq; s <= seq+1; s++ {
+			m.send(req(s, app.FuncRead, app.AllObjects(app.G80V1)))
+			if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINBroadcast) || !f.Control.CON {
+				t.Fatalf("after %v: %s, CON %v", to, f.IIN, f.Control.CON)
+			}
+		}
+		m.send(confirm(seq+1, false))
+		m.send(req(seq+2, app.FuncRead, app.AllObjects(app.G80V1)))
+		if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINBroadcast) || f.Control.CON {
+			t.Fatalf("after %v, confirmed: %s, CON %v", to, f.IIN, f.Control.CON)
+		}
 	}
 }
 

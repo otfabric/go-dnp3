@@ -155,7 +155,7 @@ is not lost, as the reference outstations do.
 | Assign class | ✅ | ✅ |
 | File transfer: read, write, append (`FileOptions.Append`), directory, info, delete, authenticate, abort | ✅ | ✅ |
 | Device attributes | ✅ | ✅ |
-| Broadcast | ✅ `Broadcast` to 0xFFFD, 0xFFFE or 0xFFFF, for the requests that need no answer | ✅ executed without a response, also as a master's first frame; IIN1.0 in the next response, which asks for confirmation and is reported until confirmed |
+| Broadcast | ✅ `Broadcast` to 0xFFFD, 0xFFFE or 0xFFFF, for the requests that need no answer | ✅ executed without a response, also as a master's first frame; IIN1.0 in the next response; after a broadcast to 0xFFFE or 0xFFFF that response asks for confirmation, and IIN1.0 is reported until it comes |
 
 ## Secure Authentication
 

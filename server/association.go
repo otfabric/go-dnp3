@@ -37,18 +37,21 @@ type association struct {
 	sess       *channel.Session
 	restartIIN bool
 	broadcast  bool
-	lastSync   time.Time
-	lastReq    *lastRequest
-	selection  *selection
-	recorded   time.Time
-	sol        *pendingResponse
-	unsol      *pendingUnsol
-	unsolMask  uint8 // enabled classes, 1<<class
-	nullDone   bool  // the null unsolicited response was confirmed
-	unsolSeq   uint8
-	holdStart  time.Time
-	unsolPause time.Time
-	timer      *time.Timer
+	// broadcastTo is the address of the last broadcast: whether the
+	// response reporting it asks for confirmation.
+	broadcastTo link.Address
+	lastSync    time.Time
+	lastReq     *lastRequest
+	selection   *selection
+	recorded    time.Time
+	sol         *pendingResponse
+	unsol       *pendingUnsol
+	unsolMask   uint8 // enabled classes, 1<<class
+	nullDone    bool  // the null unsolicited response was confirmed
+	unsolSeq    uint8
+	holdStart   time.Time
+	unsolPause  time.Time
+	timer       *time.Timer
 
 	pendingAuth   *challenge
 	lastChallenge []byte // the last g120v1 fragment sent
@@ -383,7 +386,7 @@ func (a *association) handle(in inbound) {
 		a.srv.sm.OnHandled(a.remote(), req.Function, time.Since(start))
 	}
 	if broadcast {
-		a.broadcast = true
+		a.broadcast, a.broadcastTo = true, in.dest
 		return
 	}
 	if resp.none || req.Function.NoAck() {
@@ -455,17 +458,24 @@ func (a *association) sendSolicited(seq uint8, r *response) []byte {
 func (a *association) sendFragment(p *pendingResponse) ([]byte, bool) {
 	plan := p.plans[p.next]
 	fin := p.next == len(p.plans)-1
-	// A response that reports a broadcast (IIN1.0) asks for confirmation,
-	// and IIN1.0 is cleared when it comes (the DNP3 IED certification
-	// procedure 3.1r1, Section 2 Note 7).
+	iin := a.iin() | p.iin
+	// The response that reports a broadcast (IIN1.0) asks for
+	// confirmation when the broadcast was to 0xFFFE (confirmation required)
+	// or 0xFFFF (optional), and IIN1.0 is cleared when it comes; after one
+	// to 0xFFFD (no confirmation) once it is sent (IEEE 1815-2012 Table 9-2,
+	// the DNP3 IED certification procedure 3.1r1 Section 2 Note 7).
 	if p.next == 0 && a.broadcast {
-		p.broadcast = true
+		if a.broadcastTo == link.BroadcastNoConfirm {
+			a.broadcast = false
+		} else {
+			p.broadcast = true
+		}
 	}
 	con := !fin || len(plan.events) > 0 || (p.next == 0 && p.broadcast)
 	f := &app.Fragment{
 		Control:  app.Control{FIR: p.next == 0, FIN: fin, CON: con, Seq: p.seq},
 		Function: app.FuncResponse,
-		IIN:      a.iin() | p.iin,
+		IIN:      iin,
 		Headers:  plan.headers,
 	}
 	return a.send(f), con

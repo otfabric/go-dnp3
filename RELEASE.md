@@ -14,7 +14,7 @@ Fixes from running the DNP Users Group's IED certification procedures
 
 ### Outstation
 
-- **Broadcast indication** (3.1r1 8.6.5b): the response that reports IIN1.0 after a broadcast asks for an application confirmation, and IIN1.0 is cleared when it arrives; it was cleared once sent, unconfirmed.
+- **Broadcast indication** (3.1r1 8.6.5b): after a broadcast to 0xFFFE (confirmation required) or 0xFFFF (optional), the response that reports IIN1.0 asks for an application confirmation, and IIN1.0 is cleared when it arrives; it never asked for one. After a broadcast to 0xFFFD, IIN1.0 is still cleared once reported.
 
 ---
 
