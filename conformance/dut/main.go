@@ -68,15 +68,19 @@ func serveControl(d *device, c net.Conn) {
 		} else {
 			rep = d.handle(&req)
 		}
-		writeReply(w, rep)
+		if _, err := w.WriteString(replyText(rep)); err != nil {
+			return
+		}
 		if err := w.Flush(); err != nil {
 			return
 		}
 	}
 }
 
-func writeReply(w *bufio.Writer, rep reply) {
-	line := func(k, v string) { fmt.Fprintf(w, "%s %s\n", k, strings.ReplaceAll(v, "\n", " ")) }
+// replyText is the reply's lines, ended by "end".
+func replyText(rep reply) string {
+	var b strings.Builder
+	line := func(k, v string) { b.WriteString(k + " " + strings.ReplaceAll(v, "\n", " ") + "\n") }
 	for _, l := range rep.Log {
 		line("log", l)
 	}
@@ -87,5 +91,6 @@ func writeReply(w *bufio.Writer, rep reply) {
 	if rep.Error != "" {
 		line("error", rep.Error)
 	}
-	fmt.Fprintln(w, "end")
+	b.WriteString("end\n")
+	return b.String()
 }

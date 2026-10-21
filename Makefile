@@ -77,17 +77,20 @@ fmt-check: ## Fail if the go.mod-version gofmt or the local gofmt would change a
 		exit 1; \
 	fi
 
-lint: ## Run staticcheck (includes -tags=interop for ./interop)
+lint: ## Run staticcheck (includes -tags=interop for ./interop, and the conformance module)
 	@echo "Running staticcheck"
 	@staticcheck -tags=$(INTEROP_TAGS) ./...
+	@cd conformance && staticcheck ./...
 
-lint-ci: ## Run golangci-lint (build-tags include interop; see .golangci.yml)
+lint-ci: ## Run golangci-lint (build-tags include interop; see .golangci.yml), also on the conformance module
 	@echo "Running golangci-lint"
 	@golangci-lint run ./...
+	@cd conformance && golangci-lint run -c ../.golangci.yml ./...
 
-vet: ## Run go vet (includes -tags=interop compile of ./interop)
+vet: ## Run go vet (includes -tags=interop compile of ./interop, and the conformance module)
 	@echo "Running go vet"
 	@go vet -tags=$(INTEROP_TAGS) ./...
+	@cd conformance && go vet ./...
 
 vuln: ## Run govulncheck
 	@echo "Running govulncheck"
