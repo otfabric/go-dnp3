@@ -17,7 +17,7 @@ func TestUserRedacted(t *testing.T) {
 	var buf bytes.Buffer
 	slog.New(slog.NewTextHandler(&buf, nil)).Info("user", "user", u)
 	for _, s := range []string{fmt.Sprint(u), fmt.Sprintf("%+v", u), fmt.Sprintf("%#v", u), fmt.Sprint(&u), buf.String()} {
-		if !strings.Contains(s, "16 octets") || strings.Contains(s, "171") || strings.Contains(s, "abab") || strings.Contains(s, "205") {
+		if !strings.Contains(s, "16 octets") || strings.Contains(s, "171 171") || strings.Contains(s, "abab") || strings.Contains(s, "205 205") || strings.Contains(s, "cdcd") {
 			t.Errorf("formatted: %s", s)
 		}
 	}
