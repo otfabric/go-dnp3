@@ -81,7 +81,7 @@ func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error 
 }
 
 func (s *Server) dial(ctx context.Context, addr string) (net.Conn, error) {
-	var d net.Dialer
+	d := net.Dialer{Timeout: handshakeTimeout}
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,9 @@ func (s *Server) dial(ctx context.Context, addr string) (net.Conn, error) {
 		cfg.ServerName, _, _ = net.SplitHostPort(addr)
 	}
 	tc := tls.Client(conn, cfg)
-	if err := tc.HandshakeContext(ctx); err != nil {
+	hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer cancel()
+	if err := tc.HandshakeContext(hctx); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}

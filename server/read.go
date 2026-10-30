@@ -77,6 +77,19 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 	var sels []*eventSelector
 	var statics []item
 	db := a.srv.db
+	// The objects a READ may plan are bounded by the size of the database:
+	// four complete reads of it, which every reasonable request stays within,
+	// so a request repeating headers that name every point is answered with
+	// IIN2.2 instead of holding the database for its whole length.
+	budget := 4*db.size() + 1024
+	charge := func(t PointType) bool {
+		budget -= len(db.points[t])
+		if budget < 0 {
+			p.iin |= app.IINParameterError
+			return false
+		}
+		return true
+	}
 
 	for i := range req.Headers {
 		h := &req.Headers[i]
@@ -91,6 +104,9 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				if t == TimeAndInterval {
 					continue // read by group and variation only, as the references do
 				}
+				if !charge(t) {
+					break
+				}
 				statics = append(statics, db.statics(t, selector{all: true}, 0, true)...)
 			}
 		case g == 60 && v >= 2 && v <= 4:
@@ -99,6 +115,9 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 			sel, ok := selectorOf(h)
 			if !ok {
 				p.iin |= app.IINParameterError
+				continue
+			}
+			if !charge(AnalogInput) {
 				continue
 			}
 			statics = append(statics, db.deadbandItems(sel, v, &p)...)
@@ -140,6 +159,9 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 			}
 			if t == SecurityStatistic {
 				statics = append(statics, a.statisticItems(sel, v, &p)...)
+				continue
+			}
+			if !charge(t) {
 				continue
 			}
 			items := db.statics(t, sel, v, false)
@@ -231,7 +253,7 @@ func (db *Database) statics(t PointType, s selector, requested uint8, class0 boo
 			continue
 		}
 		gv := staticGV(t, p, requested)
-		if f, ok := withFlags[gv]; ok && !onlineOnly(p.value) {
+		if f, ok := withFlags[gv]; ok && (!onlineOnly(p.value) || !fits(gv, p.value)) {
 			gv = f
 		}
 		if cur == nil || cur.h.GV != gv || (!indexed && idx != last+1) {
@@ -276,6 +298,10 @@ func eventGV(e *bufEvent, requested uint8) app.GroupVariation {
 	return app.GV(ti.eventGroup, v)
 }
 
+// relativeOf maps the event variations with absolute time that have one
+// with relative time.
+var relativeOf = map[app.GroupVariation]app.GroupVariation{app.G2V2: app.G2V3, app.G4V2: app.G4V3}
+
 // relativeTime reports whether gv carries a time relative to a CTO.
 func relativeTime(gv app.GroupVariation) bool {
 	return gv == app.G2V3 || gv == app.G4V3
@@ -302,18 +328,26 @@ func (a *association) eventItems(sels []*eventSelector) []item {
 	var out []item
 	var cur *item
 	var cto app.Timestamp
+	ctoGV := app.G51V1
 	for i, e := range picked {
 		gv := eventGV(e, vars[i])
+		unsync := a.unsynchronizedAt(e.at)
+		// A binary or double-bit event recorded while the time was
+		// unsynchronized is reported with relative time under an
+		// unsynchronized CTO, unless the master asked for absolute time.
+		if r, ok := relativeOf[gv]; ok && unsync && vars[i] == 0 {
+			gv = r
+		}
 		ts := timeOf(e.value)
 		rel := relativeTime(gv)
-		if cur == nil || cur.h.GV != gv || (rel && (ts < cto || ts-cto > 0xFFFF)) {
+		eventCTO := app.G51V1
+		if unsync {
+			eventCTO = app.G51V2
+		}
+		if cur == nil || cur.h.GV != gv || (rel && (ts < cto || ts-cto > 0xFFFF || eventCTO != ctoGV)) {
 			it := item{h: app.Header{GV: gv, Qualifier: app.Qual2ByteIndexCount}}
 			if rel {
-				cto = ts
-				ctoGV := app.G51V1
-				if a.unsynchronized() {
-					ctoGV = app.G51V2
-				}
+				cto, ctoGV = ts, eventCTO
 				pre := app.Counted(ctoGV, app.CTO{Time: cto})
 				it.pre = &pre
 			}
@@ -342,6 +376,8 @@ var withFlags = map[app.GroupVariation]app.GroupVariation{
 	app.G21V10: app.G21V2,
 	app.G30V3:  app.G30V1,
 	app.G30V4:  app.G30V2,
+	app.G31V5:  app.G31V1,
+	app.G31V6:  app.G31V2,
 }
 
 // onlineOnly reports whether a point's flags are ONLINE alone.
@@ -358,6 +394,27 @@ func onlineOnly(v app.Value) bool {
 		f = x.Flags
 	}
 	return f == app.FlagOnline
+}
+
+// fits reports whether an analog value is carried exactly enough by an
+// integer variation without flag: NaN, infinities and values out of its
+// range need the variation with flags, which reports OVER_RANGE.
+func fits(gv app.GroupVariation, v app.Value) bool {
+	a, ok := v.(app.Analog)
+	if !ok {
+		return true
+	}
+	var lo, hi float64
+	switch gv {
+	case app.G30V3, app.G31V5:
+		lo, hi = math.MinInt32, math.MaxInt32
+	case app.G30V4, app.G31V6:
+		lo, hi = math.MinInt16, math.MaxInt16
+	default:
+		return true
+	}
+	r := math.Round(a.Value)
+	return !math.IsNaN(r) && r >= lo && r <= hi
 }
 
 // deadbandItems returns the deadbands of the analog inputs a READ of g34

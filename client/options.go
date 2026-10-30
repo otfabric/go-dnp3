@@ -68,11 +68,16 @@ type Link struct {
 }
 
 // Startup configures what the client does each time the channel is
-// established, before Connect returns.
+// established, before Connect returns. A step the outstation rejects (an
+// IINError, such as IIN2.0 from an outstation without unsolicited
+// responses) is logged and the sequence goes on; a step without a valid
+// response fails it.
 type Startup struct {
 	// DisableUnsolicited sends DISABLE_UNSOLICITED for classes 1..3 first.
 	DisableUnsolicited bool
-	// Integrity runs an integrity poll.
+	// Integrity runs an integrity poll. When the outstation has asked for
+	// the time (NEED_TIME) and WithTimeSync is set, the time is
+	// synchronized first, so that the poll's events carry synchronized time.
 	Integrity bool
 	// EnableUnsolicited sends ENABLE_UNSOLICITED for these classes last.
 	EnableUnsolicited []int
@@ -132,7 +137,7 @@ func defaultOptions() options {
 	return options{
 		local:            1,
 		remote:           10,
-		dialer:           &net.Dialer{},
+		dialer:           &net.Dialer{Timeout: dialTimeout},
 		responseTimeout:  5 * time.Second,
 		maxRxFragment:    transport.DefaultMaxFragment,
 		autoClearRestart: true,

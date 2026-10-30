@@ -206,13 +206,15 @@ func (s *Server) Serve(l net.Listener) error {
 			if s.isClosed() {
 				return nil
 			}
-			var ne net.Error
-			if errors.As(err, &ne) && ne.Timeout() {
-				delay = min(max(2*delay, 5*time.Millisecond), time.Second)
-				time.Sleep(delay)
-				continue
+			if errors.Is(err, net.ErrClosed) {
+				return err
 			}
-			return err
+			// Anything else, such as running out of file descriptors, may
+			// pass: keep accepting after a pause.
+			s.log.Warn("accept failed", "error", err)
+			delay = acceptDelay(delay)
+			time.Sleep(delay)
+			continue
 		}
 		delay = 0
 		if s.connections() >= s.opts.maxConns {
@@ -223,9 +225,39 @@ func (s *Server) Serve(l net.Listener) error {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
+			if err := handshake(c); err != nil {
+				s.log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
+				return
+			}
 			_ = s.ServeConn(c, c.RemoteAddr())
 		}()
 	}
+}
+
+// acceptDelay is the pause after an Accept error: doubling from 5 ms up to
+// a second.
+func acceptDelay(d time.Duration) time.Duration {
+	return min(max(2*d, 5*time.Millisecond), time.Second)
+}
+
+// handshakeTimeout bounds the TLS handshake of an accepted connection, so
+// that a peer that stalls it cannot hold a connection slot.
+var handshakeTimeout = 10 * time.Second
+
+// handshake completes the TLS handshake of an accepted connection within
+// handshakeTimeout, closing it on failure. Other connections pass.
+func handshake(c net.Conn) error {
+	tc, ok := c.(*tls.Conn)
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), handshakeTimeout)
+	defer cancel()
+	if err := tc.HandshakeContext(ctx); err != nil {
+		_ = c.Close()
+		return err
+	}
+	return nil
 }
 
 func (s *Server) connections() int {

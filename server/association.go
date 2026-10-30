@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -38,6 +39,7 @@ type association struct {
 	restartIIN bool
 	broadcast  bool
 	lastSync   time.Time
+	prevSync   time.Time // the sync before lastSync
 	lastReq    *lastRequest
 	selection  *selection
 	recorded   time.Time
@@ -219,7 +221,7 @@ func (a *association) restart() {
 	a.detach()
 	a.restartIIN = true
 	// The clock is unsynchronized again: NEED_TIME, and g51v2 CTOs.
-	a.lastSync = time.Time{}
+	a.lastSync, a.prevSync = time.Time{}, time.Time{}
 	a.nullDone = false
 	a.unsolMask = a.startupMask()
 	a.events.mu.Lock()
@@ -240,12 +242,25 @@ func (a *association) run() {
 			a.detach()
 			return
 		case f := <-a.fn:
-			f()
+			a.safely(f)
 		case <-a.wakeCh:
 		case <-a.timer.C:
-			a.onTimer()
+			a.safely(a.onTimer)
 		}
 	}
+}
+
+// safely runs f, recovering from a panic in it (a bug reached by a request,
+// or in the application's Handler): the request in hand goes unanswered, as
+// one lost on the line would, instead of the panic stopping every
+// association of the process.
+func (a *association) safely(f func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.log.Error("panic while serving a request", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	f()
 }
 
 // arm sets the timer to the earliest deadline.
@@ -362,13 +377,23 @@ func (a *association) needsTime() bool {
 	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n)
 }
 
-// unsynchronized reports whether the outstation's time counts as
-// unsynchronized, as the CTO of relative-time events says (g51v2): with
-// WithTimeSync, until the first synchronization since the start or a
-// restart, and once twice the interval has passed without one.
-func (a *association) unsynchronized() bool {
+// unsynchronizedAt reports whether the outstation's time counted as
+// unsynchronized at t, as the CTO of relative-time events says (g51v2):
+// with WithTimeSync, until the first synchronization since the start or a
+// restart, and once twice the interval has passed without one. The latest
+// two syncs are kept, so that an event buffered shortly before a periodic
+// sync still counts as synchronized.
+func (a *association) unsynchronizedAt(t time.Time) bool {
 	n := a.srv.opts.needTime
-	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > 2*n)
+	if n <= 0 {
+		return false
+	}
+	for _, s := range [...]time.Time{a.lastSync, a.prevSync} {
+		if !s.IsZero() && !t.Before(s) && t.Sub(s) <= 2*n {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *association) handle(in inbound) {

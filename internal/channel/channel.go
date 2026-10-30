@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -293,4 +294,13 @@ func (c *Channel) closedErr() error {
 		return err
 	}
 	return dnp3.ErrClosed
+}
+
+// DatagramErrorPasses reports whether a read or write error of a datagram
+// socket concerns one datagram only, such as the ICMP port unreachable a
+// connected UDP socket reports as ECONNREFUSED, or a send to a route that
+// went away: the socket keeps working, so the error must not end the
+// channel. A closed socket or an expired deadline does end it.
+func DatagramErrorPasses(err error) bool {
+	return !errors.Is(err, net.ErrClosed) && !errors.Is(err, os.ErrDeadlineExceeded)
 }

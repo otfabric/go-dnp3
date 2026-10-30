@@ -57,9 +57,11 @@ func (a *association) dispatch(req *app.Fragment, in inbound, broadcast bool) *r
 
 func (a *association) read(req *app.Fragment) *response {
 	db := a.srv.db
-	db.mu.RLock()
-	p := a.planRead(req)
-	db.mu.RUnlock()
+	p := func() readPlan {
+		db.mu.RLock()
+		defer db.mu.RUnlock()
+		return a.planRead(req)
+	}()
 	plans, dropped := pack(p.items, a.srv.opts.maxTxFragment)
 	if dropped > 0 {
 		a.log.Warn("objects too large for a fragment left out", "count", dropped)
@@ -113,7 +115,7 @@ func (a *association) write(req *app.Fragment) *response {
 					continue
 				}
 				d, isDeadband := o.Value.(app.AnalogDeadband)
-				if !isDeadband {
+				if !isDeadband || !validDeadband(d.Value) {
 					r.iin |= app.IINParameterError
 					continue
 				}
@@ -160,7 +162,7 @@ func (a *association) write(req *app.Fragment) *response {
 }
 
 func (a *association) synchronized(ctx context.Context, t time.Time) {
-	a.lastSync = time.Now()
+	a.lastSync, a.prevSync = time.Now(), a.lastSync
 	if th, ok := a.srv.opts.handler.(TimeHandler); ok {
 		th.SetTime(ctx, t)
 	}

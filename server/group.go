@@ -100,13 +100,13 @@ func (g *Group) Serve(l net.Listener) error {
 			if g.isClosed() {
 				return nil
 			}
-			var ne net.Error
-			if errors.As(err, &ne) && ne.Timeout() {
-				delay = min(max(2*delay, 5*time.Millisecond), time.Second)
-				time.Sleep(delay)
-				continue
+			if errors.Is(err, net.ErrClosed) {
+				return err
 			}
-			return err
+			g.servers[0].log.Warn("accept failed", "error", err)
+			delay = acceptDelay(delay)
+			time.Sleep(delay)
+			continue
 		}
 		delay = 0
 		g.mu.Lock()
@@ -123,7 +123,11 @@ func (g *Group) Serve(l net.Listener) error {
 		g.wg.Add(1)
 		go func() {
 			defer g.wg.Done()
-			_ = g.ServeConn(c, c.RemoteAddr())
+			if err := handshake(c); err != nil {
+				g.servers[0].log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
+			} else {
+				_ = g.ServeConn(c, c.RemoteAddr())
+			}
 			g.mu.Lock()
 			g.conns--
 			g.mu.Unlock()

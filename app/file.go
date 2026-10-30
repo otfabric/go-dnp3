@@ -2,7 +2,10 @@
 
 package app
 
-import "fmt"
+import (
+	"fmt"
+	"log/slog"
+)
 
 // FileMode is the operational mode of a file command.
 type FileMode uint16
@@ -114,6 +117,29 @@ func (p Permissions) String() string {
 type FileAuthentication struct {
 	UserName, Password string
 	AuthKey            uint32
+}
+
+// String formats the object without its password and key, so that
+// printing a decoded request does not reveal them.
+func (v FileAuthentication) String() string {
+	return fmt.Sprintf("{UserName:%q Password:%s AuthKey:%s}", v.UserName, redact(v.Password != ""), redact(v.AuthKey != 0))
+}
+
+// GoString is String, for %#v.
+func (v FileAuthentication) GoString() string { return "app.FileAuthentication" + v.String() }
+
+// LogValue logs the user name only, for log/slog.
+func (v FileAuthentication) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("user", v.UserName),
+		slog.String("password", redact(v.Password != "")), slog.String("auth_key", redact(v.AuthKey != 0)))
+}
+
+// redact stands for a secret in formatted output.
+func redact(set bool) string {
+	if set {
+		return "[REDACTED]"
+	}
+	return "[none]"
 }
 
 // FileCommand is a file command object (g70v3), sent with OPEN_FILE and
