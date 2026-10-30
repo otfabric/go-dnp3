@@ -28,7 +28,7 @@ COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/internal/c
 INTEROP_TAGS := interop
 
 # Reference implementations for 'make interop': otfabric/dnp3-interop
-# INTEROP_RELEASE (stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.1,
+# INTEROP_RELEASE (stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
 # dnp3py 0.6.0). The published images are pinned by multi-arch index
 # digest. The stepfunc image is not published (Step Function I/O's licence
 # does not allow redistributing its library, dnp3-interop#19): make
@@ -37,12 +37,12 @@ INTEROP_TAGS := interop
 # licence yourself. Keep in step with interop/harness.go. Override to test
 # other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev
-INTEROP_RELEASE := v0.5.1
-INTEROP_COMMIT  := f6ac6d346cc3d0224d0eae0f0dc772a213342286
+INTEROP_RELEASE := v0.6.0
+INTEROP_COMMIT  := 944476262140ce0ca19f7c718d553e320adffc70
 DNP3_INTEROP_STEPFUNC_IMAGE   ?= dnp3-interop-stepfunc:$(INTEROP_RELEASE)
-DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:abc0d87ef30aceff748cc513f1e5840618ea9a78cc8a4713ba67d06507089314
-DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:f8a5b14eb6ab0c60f1ef4a1499bb1dc2f9fe696bc4087c5fcfdef4252dda04c7
-DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:13ce4679287f50e485554a402320354728c56b974360826ee0c328c6be991cff
+DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a637998c28c60e6dcaaab51572fdf77e4290ce4e2939483a753a6ac0acd68cd2
+DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:ec0f25dfdcdbda12de259b6481d66e248da29ea817874f5f727b8a052fba8624
+DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:68bdf9637da43d16e1e76603fbf0fa32adb71c2d8b078c35ef7f29f2288455dc
 
 # The dnp3c runner for 'make conformance': dnp3-interop's image of Step
 # Function I/O's dnp3c (the DNP3 IED Certification Procedure), GPL-3.0-only

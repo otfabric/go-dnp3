@@ -47,7 +47,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against Step Function I/O's dnp3, opendnp3, DSC go-dnp3 and
   dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.5.1,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.6.0,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -85,9 +85,9 @@ you can pick the right one for your project.
 | Master and outstation | ✅ | ✅ | ✅ | ✅ |
 | Unsolicited responses, both roles | ✅ | ✅ | ✅ | ✅ |
 | Select-before-operate, direct operate | ✅ | ✅ | ✅ | ✅ |
-| Direct operate no-ack, as master | ✅ | — in 1.7.0 (added in 1.8.0-M1) | — | ✅ |
+| Direct operate no-ack, as master | ✅ | ✅ | — | ✅ |
 | LAN and non-LAN time synchronization | ✅ | ✅ | ✅ | ✅ |
-| Assign class, as outstation | ✅ | — | ✅ | ✅ |
+| Assign class, as outstation | ✅ | ✅ | ✅ | ✅ |
 | File transfer (g70) | ✅ both roles | master | — (codec only) | ✅ both roles |
 | Secure Authentication v5 | ✅ session key change, challenges, aggressive mode, statistics | — | — | symmetric subset with statistics, no aggressive mode |
 | Outstation that dials the master | ✅ dual end point (`DialAndServe`) | ✅ TCP and TLS client | ✅ on a TCP or TLS client channel | ✅ over a TCP client channel |
@@ -103,8 +103,8 @@ you can pick the right one for your project.
 | Tested against other stacks in CI | ✅ the three and dnp3py, the features of the [coverage matrix](INTEROPERABILITY.md#interop-coverage) | not documented | not documented | ✅ opendnp3 |
 | DNP Users Group IED conformance procedures (dnp3c) in CI | ✅ 3.1r1 subset levels 2 and 3, 2.7 level 2, against a [test outstation](internal/cmd/conformance) (not a certification) | ✅ 3.1r1 subset level 3, 2.7 level 2 | not documented | ✅ 3.1r1 subset level 3, 2.7 level 2 (not a certification) |
 
-✅ = available · — = not available. For stepfunc dnp3 1.7.0, opendnp3
-3.1.2 and DSC go-dnp3 v0.8.1, the versions go-dnp3 is tested against,
+✅ = available · — = not available. For stepfunc dnp3 1.8.0, opendnp3
+3.1.2 and DSC go-dnp3 v0.8.2, the versions go-dnp3 is tested against,
 from their source, documentation and licences and the
 [dnp3-interop capability records](https://github.com/otfabric/dnp3-interop),
 as of October 2026. If you spot an inaccuracy, please
@@ -335,7 +335,7 @@ Device Profile.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.5.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.5.1):
+of [otfabric/dnp3-interop v0.6.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.6.0):
 the published ones pinned by digest, and the stepfunc one built locally by
 `make interop-stepfunc` from dnp3-interop's source at that release. Step
 Function I/O's licence allows testing with its library but not
@@ -345,9 +345,9 @@ build fetches the crate from crates.io under that licence.
 
 | Reference | Version | Licence | Roles tested |
 |-----------|---------|---------|--------------|
-| Step Function I/O dnp3 | 1.7.0 | non-commercial, non-production | master and outstation |
+| Step Function I/O dnp3 | 1.8.0 | non-commercial, non-production | master and outstation |
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
-| DSC go-dnp3 | v0.8.1 | GPL-3.0-or-later | master and outstation |
+| DSC go-dnp3 | v0.8.2 | GPL-3.0-or-later | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
 
 Both directions cover the integrity poll against the fixture's values and

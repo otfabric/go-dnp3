@@ -13,7 +13,7 @@ survive transient errors, and panics contained to one request. The
 outstation keeps the quality and time quality of more values. The master
 synchronizes the time before its startup integrity poll and no longer
 fails the startup sequence on a step the outstation rejects. Interop runs
-against dnp3-interop v0.5.2 (stepfunc dnp3 1.8.0, DSC go-dnp3 v0.8.2).
+against dnp3-interop v0.6.0 (stepfunc dnp3 1.8.0, DSC go-dnp3 v0.8.2).
 
 ## Changes
 
@@ -43,7 +43,8 @@ against dnp3-interop v0.5.2 (stepfunc dnp3 1.8.0, DSC go-dnp3 v0.8.2).
 
 ### Tests
 
-- Interop against [otfabric/dnp3-interop v0.5.2](https://github.com/otfabric/dnp3-interop/releases/tag/v0.5.2): stepfunc dnp3 1.8.0 and DSC go-dnp3 v0.8.2.
+- Interop against [otfabric/dnp3-interop v0.6.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.6.0): stepfunc dnp3 1.8.0 and DSC go-dnp3 v0.8.2. The stepfunc image now offers what 1.8.0 added, so go-dnp3's master is tested against stepfunc's ASSIGN_CLASS and go-dnp3's outstation against its DIRECT_OPERATE_NO_ACK.
+- `TestDeferredReadTakesUnsolicitedEvents` gives the READ a second before the unsolicited confirm timeout, so a slow runner under the race detector no longer fails it.
 
 ---
 
