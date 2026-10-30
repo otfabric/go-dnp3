@@ -6,7 +6,7 @@
       "repo": "stepfunc/dnp3",
       "path": "dnp3/codegen/src/main/scala/dev/gridio/dnp3/codegen/model",
       "format": "stepfunc",
-      "reviewed": "620da562b99e4ce6b251b3b970484fc2cb927add"
+      "reviewed": "b68f2e018b9f6e0858771980ce3839ca880240e5"
     },
     {
       "name": "DSC go-dnp3",
