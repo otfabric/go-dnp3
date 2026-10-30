@@ -4,6 +4,7 @@ package server
 
 import (
 	"sync"
+	"time"
 
 	"github.com/otfabric/go-dnp3/app"
 )
@@ -21,6 +22,10 @@ type event struct {
 
 type bufEvent struct {
 	event
+	// at is when the event was buffered, on the monotonic clock: whether
+	// the outstation's time was synchronized then decides how its time is
+	// reported.
+	at time.Time
 	// selected marks an event written into a response that has not been
 	// confirmed yet.
 	selected bool
@@ -69,7 +74,7 @@ func (b *eventBuffer) add(evs []event) (discarded [4]int) {
 				b.overflow = true
 			}
 		}
-		b.events = append(b.events, &bufEvent{event: e})
+		b.events = append(b.events, &bufEvent{event: e, at: time.Now()})
 		b.count[e.typ]++
 	}
 	return discarded

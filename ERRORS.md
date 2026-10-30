@@ -77,7 +77,10 @@ a failed write, a keep-alive that went unanswered (that one wraps
 
 A `Connect` whose startup sequence fails (a refused session key change, an
 integrity poll without an answer) returns that error and closes the
-channel: the client is `StateDisconnected`. A channel the client
+channel: the client is `StateDisconnected`. A step the outstation answers
+with an error IIN (an `IINError`, such as IIN2.0 to DISABLE_UNSOLICITED from
+an outstation without unsolicited responses) does not fail it: it is logged
+(`startup step rejected`) and the sequence goes on. A channel the client
 re-established itself is kept even when its startup sequence failed.
 
 ## Codec errors
@@ -127,7 +130,8 @@ through:
 | Events discarded because the buffer was full | EVENT_BUFFER_OVERFLOW; `ServerMetrics.OnEventsDiscarded`; a warning |
 | An unsolicited response that was never confirmed | `ServerMetrics.OnUnsolicited` with an error wrapping `ErrTimeout`; the events are reported later |
 | A failed authentication, a late reply, a refused key change or aggressive mode request | an authentication error object to the master; a warning; the security statistics (g121, g122 events) |
-| `ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `ServeUDPTo` | return the listener's or stream's error; `nil` when `Close` ends them, `dnp3.ErrClosed` when called after `Close` |
+| `ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `ServeUDPTo` | return the listener's or stream's error; `nil` when `Close` ends them, `dnp3.ErrClosed` when called after `Close`. `Serve` keeps accepting after an `Accept` error other than a closed listener (running out of file descriptors, for one), after a pause; a UDP socket keeps serving after an error that concerns one datagram (an ICMP unreachable, a send to a route that went away) |
+| A TLS handshake of an accepted connection that takes longer than 10 s | the connection is closed and logged (`TLS handshake failed`); it does not hold a connection slot |
 | `DialAndServe` | returns `ctx.Err()` when ctx ends and `nil` after `Close`; failed dials, TLS handshakes and lost connections are retried, not returned |
 
 ## Detection patterns

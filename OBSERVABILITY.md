@@ -66,6 +66,7 @@ identifiers.
 | warn | `request failed, retrying` | `function`, `attempt`, `retry_in`, `error` |
 | warn | `automatic task failed` | `task`, `error` |
 | warn | `startup sequence failed` | `error` |
+| warn | `startup step rejected` (the outstation answered a startup step with an error IIN; the sequence goes on) | `step`, `error` |
 | warn | `event buffer overflow` | `master`, `class`, `discarded` |
 | warn | `keep-alive failed` | `remote_addr`, `error` |
 | warn | `authentication failed`, `challenge reply too late`, `aggressive mode request refused` | `user`, `csq` |
@@ -74,6 +75,8 @@ identifiers.
 | warn | `authentication error received` | `user`, `code` |
 | warn | `objects too large for a fragment left out` | `count` |
 | warn | `connection refused: limit reached` | `remote`, `limit` |
+| warn | `accept failed` (the listener keeps accepting after a pause) | `error` |
+| warn | `TLS handshake failed` (also when it took longer than 10 s) | `remote`, `error` |
 | warn | `fragment dropped` | `error` |
 | warn | `multi-fragment request ignored` | `control` |
 | warn | `frame with invalid FCV bit ignored` | `frame` |
@@ -81,6 +84,7 @@ identifiers.
 | info | `confirmed user data while the link is not reset ignored` | |
 | error | `no random challenge data`, `key status MAC` | `error` |
 | error | `response does not encode` | `fragment`, `error` |
+| error | `panic while serving a request`, `panic while receiving a fragment` (the request or fragment is lost; the association, client and process go on) | `panic`, `stack` |
 | debug | `challenge answered` | `csq`, `user` |
 | debug | `frame sent`, `frame received` | `frame` |
 | debug | `request sent`, `request received`, `response sent`, `fragment received` | `fragment` |

@@ -79,7 +79,7 @@ The master for one outstation.
 | `WithHandler(Handler)` | none | Receives the measurements of every response and unsolicited response |
 | `WithStateHandler(func(State, error))` | none | Channel state changes |
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
-| `WithDialer(Dialer)` | `net.Dialer` | TCP dialer |
+| `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer; the TLS handshake that follows is bounded to 10 s |
 | `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`), an outstation that connects (`Accept(net.Listener)`, the dual end point), a pipe |
 | `WithTLS(*tls.Config)` | off | TLS |
 | `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`) |
@@ -202,7 +202,7 @@ until `Close`); the variable `DefaultCritical`. `Class` is an event class
 | Symbol | Meaning |
 |--------|---------|
 | `PointType` | `BinaryInput`, `DoubleBitInput`, `BinaryOutput`, `Counter`, `FrozenCounter`, `AnalogInput`, `FrozenAnalogInput`, `AnalogOutput`, `OctetString`, `TimeAndInterval` (g50v4, no class); and, kept by the outstation and refused by `Add`, `SecurityStatistic` (per master, with secure authentication), `BinaryOutputCommand`, `AnalogOutputCommand` (command events) |
-| `PointConfig` | `Class`, `StaticVariation`, `EventVariation`, `Deadband`, `ExcludeFromClass0`; for outputs `CommandEventClass`, `CommandEventVariation` (g13v2, g43v3) |
+| `PointConfig` | `Class`, `StaticVariation`, `EventVariation`, `Deadband` (a finite number ≥ 0), `ExcludeFromClass0`; for outputs `CommandEventClass`, `CommandEventVariation` (g13v2, g43v3) |
 | `(*Database).Add`, `Remove`, `Get`, `Len` | Points |
 | `(*Database).Update(t, index, value, mode)` | `EventMode`: `EventOnChange`, `EventForce`, `EventSuppress` |
 | `(*Database).Batch(func(*Batch) error)` | Updates whose events are reported together (`Batch.Update` and the typed forms) |

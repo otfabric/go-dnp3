@@ -5,6 +5,9 @@ package server
 import (
 	"net"
 	"sync"
+	"time"
+
+	"github.com/otfabric/go-dnp3/internal/channel"
 )
 
 // ServeUDP serves DNP3 over UDP on pc until Close. Each datagram carries
@@ -35,12 +38,19 @@ type udpStream struct {
 	buf  []byte
 }
 
+// Read returns the octets of the datagrams received. An error that
+// concerns one datagram only (see channel.DatagramErrorPasses) is skipped:
+// it does not end the socket.
 func (u *udpStream) Read(b []byte) (int, error) {
-	if len(u.buf) == 0 {
+	for len(u.buf) == 0 {
 		dg := make([]byte, 65535)
 		n, addr, err := u.pc.ReadFrom(dg)
 		if err != nil {
-			return 0, err
+			if !channel.DatagramErrorPasses(err) {
+				return 0, err
+			}
+			time.Sleep(time.Millisecond) // a socket that keeps failing does not spin
+			continue
 		}
 		u.mu.Lock()
 		u.peer = addr
@@ -52,8 +62,9 @@ func (u *udpStream) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-// Write sends to the current peer. Without one the octets are dropped: a
-// datagram nobody can receive is lost, it does not end the socket.
+// Write sends to the current peer. Without one, or when the send fails for
+// this datagram only, the octets are dropped: a datagram nobody can receive
+// is lost, it does not end the socket.
 func (u *udpStream) Write(b []byte) (int, error) {
 	u.mu.Lock()
 	peer := u.peer
@@ -61,7 +72,11 @@ func (u *udpStream) Write(b []byte) (int, error) {
 	if peer == nil {
 		return len(b), nil
 	}
-	return u.pc.WriteTo(b, peer)
+	n, err := u.pc.WriteTo(b, peer)
+	if err != nil && channel.DatagramErrorPasses(err) {
+		return len(b), nil
+	}
+	return n, err
 }
 
 // Peer returns the address datagrams are sent to, nil before there is one.

@@ -4,6 +4,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"sync"
 	"time"
@@ -130,6 +131,18 @@ func (c *Client) onIIN(iin app.IIN) {
 	if iin.Has(app.IINDeviceRestart) && o.autoClearRestart {
 		c.enqueue(task{name: "clear-restart", run: c.ClearRestart})
 	}
+	c.needTime.Store(iin.Has(app.IINNeedTime))
+	// Time first, so that the integrity poll's events carry synchronized
+	// time.
+	if iin.Has(app.IINNeedTime) && o.timeSync != TimeSyncNone {
+		c.enqueue(task{name: "time-sync", run: func(ctx context.Context) error {
+			// The startup sequence may have synchronized it since.
+			if !c.needTime.Load() {
+				return nil
+			}
+			return c.SyncTime(ctx, o.timeSync)
+		}})
+	}
 	if o.autoIntegrity && (iin.Has(app.IINDeviceRestart) || iin.Has(app.IINEventBufferOverflow)) {
 		queued := time.Now()
 		c.enqueue(task{name: "integrity", run: func(ctx context.Context) error {
@@ -141,9 +154,6 @@ func (c *Client) onIIN(iin app.IIN) {
 			_, err := c.IntegrityPoll(ctx)
 			return err
 		}})
-	}
-	if iin.Has(app.IINNeedTime) && o.timeSync != TimeSyncNone {
-		c.enqueue(task{name: "time-sync", run: func(ctx context.Context) error { return c.SyncTime(ctx, o.timeSync) }})
 	}
 	if o.autoEventPoll && iin&app.IINClassEvents != 0 {
 		var classes []int
@@ -159,25 +169,47 @@ func (c *Client) onIIN(iin app.IIN) {
 	}
 }
 
-// runStartup runs the startup sequence of WithStartup.
+// runStartup runs the startup sequence of WithStartup. An outstation that
+// rejects a step (an IINError: one without unsolicited responses answers
+// DISABLE_UNSOLICITED with IIN2.0, for one) is logged and the sequence goes
+// on; only a step that gets no valid response fails it. When the outstation
+// needs the time and automatic time sync is on, the time is synchronized
+// before the integrity poll, so that its events carry synchronized time.
 func (c *Client) runStartup(ctx context.Context) error {
 	s := c.opts.startup
 	if s.DisableUnsolicited {
-		if err := c.DisableUnsolicited(ctx); err != nil {
+		if err := c.startupStep("disable unsolicited", c.DisableUnsolicited(ctx)); err != nil {
 			return err
 		}
 	}
 	if s.Integrity {
-		if _, err := c.IntegrityPoll(ctx); err != nil {
+		if c.needTime.Load() && c.opts.timeSync != TimeSyncNone {
+			if err := c.startupStep("time sync", c.SyncTime(ctx, c.opts.timeSync)); err != nil {
+				return err
+			}
+		}
+		_, err := c.IntegrityPoll(ctx)
+		if err := c.startupStep("integrity poll", err); err != nil {
 			return err
 		}
 	}
 	if len(s.EnableUnsolicited) > 0 {
-		if err := c.EnableUnsolicited(ctx, s.EnableUnsolicited...); err != nil {
+		if err := c.startupStep("enable unsolicited", c.EnableUnsolicited(ctx, s.EnableUnsolicited...)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// startupStep returns the error of a startup step that ends the sequence:
+// an IINError is logged instead.
+func (c *Client) startupStep(step string, err error) error {
+	var ie *dnp3.IINError
+	if errors.As(err, &ie) {
+		c.log.Warn("startup step rejected", "step", step, "error", err)
+		return nil
+	}
+	return err
 }
 
 // keyRetryDelay is how soon the session keys are changed again while a

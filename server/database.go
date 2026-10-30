@@ -138,7 +138,9 @@ type PointConfig struct {
 
 	// Deadband applies to counters, frozen counters and analog points: a
 	// change of the value produces an event only when it exceeds the
-	// deadband. Flag changes always produce one.
+	// deadband. Flag changes always produce one. It must be a finite number
+	// of at least zero; Add refuses NaN, infinity and negative deadbands, and
+	// a WRITE of one is answered with IIN2.2.
 	Deadband float64
 
 	// ExcludeFromClass0 leaves the point out of class 0 responses; it can
@@ -225,6 +227,9 @@ func (db *Database) Add(t PointType, index uint32, cfg PointConfig, initial app.
 	if cfg.Class > 3 {
 		return fmt.Errorf("%w: class %d", dnp3.ErrInvalidOption, cfg.Class)
 	}
+	if !validDeadband(cfg.Deadband) {
+		return fmt.Errorf("%w: deadband %v", dnp3.ErrInvalidOption, cfg.Deadband)
+	}
 	if err := checkVariation(t, cfg); err != nil {
 		return err
 	}
@@ -236,6 +241,13 @@ func (db *Database) Add(t PointType, index uint32, cfg PointConfig, initial app.
 		db.rebuildSorted(t)
 	}
 	return nil
+}
+
+// validDeadband reports whether d is a deadband: a finite number of at
+// least zero. A NaN deadband would never raise an event for a change, and
+// a negative one would raise one for every update.
+func validDeadband(d float64) bool {
+	return d >= 0 && !math.IsInf(d, 1)
 }
 
 func checkVariation(t PointType, cfg PointConfig) error {
@@ -459,6 +471,15 @@ func changed(last, v app.Value, deadband float64) bool {
 	}
 }
 
+// size returns the number of points of every type. The caller holds mu.
+func (db *Database) size() int {
+	n := 0
+	for t := range db.points {
+		n += len(db.points[t])
+	}
+	return n
+}
+
 // indexes returns the sorted indexes of type t. The caller holds mu (read
 // or write). The slice is rebuilt by Add and Remove under the write lock,
 // so reads never mutate shared state.
@@ -487,14 +508,20 @@ func (db *Database) assignClass(t PointType, all bool, start, stop uint32, c Cla
 		}
 		return true
 	}
-	ok := true
-	for i := uint64(start); i <= uint64(stop); i++ {
-		p, exists := db.points[t][uint32(i)]
-		if !exists {
-			ok = false
-			continue
-		}
-		p.cfg.Class = c
+	if stop < start {
+		return true
 	}
-	return ok
+	// Walk the points that exist rather than the range, which a request can
+	// make 2^32 long: the work is bounded by the size of the database.
+	idx := db.indexes(t)
+	from, _ := slices.BinarySearch(idx, start)
+	n := 0
+	for _, i := range idx[from:] {
+		if i > stop {
+			break
+		}
+		db.points[t][i].cfg.Class = c
+		n++
+	}
+	return uint64(n) == uint64(stop)-uint64(start)+1
 }

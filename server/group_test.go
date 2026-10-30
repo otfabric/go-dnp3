@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
+	"syscall"
 	"testing"
 	"time"
 
@@ -271,22 +273,26 @@ func (timeoutErr) Temporary() bool { return true }
 
 func (l *flakyListener) Accept() (net.Conn, error) {
 	l.calls++
-	if l.calls == 1 {
+	switch l.calls {
+	case 1:
 		return nil, timeoutErr{}
+	case 2:
+		return nil, syscall.EMFILE
 	}
-	return nil, errors.New("listener broken")
+	return nil, fmt.Errorf("listener broken: %w", net.ErrClosed)
 }
 
 func TestGroupListeners(t *testing.T) {
 	g, _ := groupOf(t, 50)
-	// A timeout is waited out; another error ends Serve with it.
+	// A timeout and running out of file descriptors are waited out; a
+	// closed listener ends Serve.
 	inner, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = inner.Close() }()
 	fl := &flakyListener{Listener: inner}
-	if err := g.Serve(fl); err == nil || err.Error() != "listener broken" || fl.calls != 2 {
+	if err := g.Serve(fl); !errors.Is(err, net.ErrClosed) || fl.calls != 3 {
 		t.Fatalf("Serve on a failing listener: %v after %d accepts", err, fl.calls)
 	}
 	// An address that does not parse; the default address, which is free

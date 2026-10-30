@@ -8,8 +8,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -69,6 +71,10 @@ type Client struct {
 	queued  map[string]bool
 	closeCh chan struct{}
 	wg      sync.WaitGroup
+
+	// needTime is the NEED_TIME indication of the outstation's latest
+	// response.
+	needTime atomic.Bool
 }
 
 // New returns a client for the outstation at addr ("host:port"; the port
@@ -193,7 +199,7 @@ func (c *Client) connect(ctx context.Context) error {
 		Retries:         c.opts.link.Retries,
 		KeepAlive:       max(ka, 0),
 		MaxFragment:     c.opts.maxRxFragment,
-		OnFragment:      func(frag []byte, _ link.Address) { c.receive(sess, frag) },
+		OnFragment:      func(frag []byte, _ link.Address) { c.safeReceive(sess, frag) },
 	})
 	c.mu.Lock()
 	if c.closed {
@@ -228,6 +234,13 @@ func (c *Client) connect(ctx context.Context) error {
 	return nil
 }
 
+// handshakeTimeout bounds the TLS handshake of a connection, so that an
+// outstation that stalls it fails the attempt instead of holding it.
+var handshakeTimeout = 10 * time.Second
+
+// dialTimeout is the TCP connect timeout of the default dialer.
+const dialTimeout = 10 * time.Second
+
 func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, err error) {
 	if c.opts.opener != nil {
 		return c.opts.opener(ctx)
@@ -243,7 +256,10 @@ func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, e
 			cfg.ServerName = host
 		}
 		tc := tls.Client(conn, cfg)
-		if err := tc.HandshakeContext(ctx); err != nil {
+		hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+		err := tc.HandshakeContext(hctx)
+		cancel()
+		if err != nil {
 			_ = conn.Close()
 			return nil, nil, fmt.Errorf("TLS handshake: %w", err)
 		}
@@ -390,6 +406,18 @@ func (c *Client) remoteAddr() net.Addr {
 }
 
 // receive handles a fragment from the outstation on the session's
+// safeReceive is receive, recovering from a panic in it (a bug reached by a
+// response, or in the application's handler): the fragment is lost, as one
+// lost on the line would be, instead of the panic stopping the process.
+func (c *Client) safeReceive(sess *channel.Session, frag []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.log.Error("panic while receiving a fragment", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	c.receive(sess, frag)
+}
+
 // goroutine.
 func (c *Client) receive(sess *channel.Session, data []byte) {
 	f, err := app.Decode(data)

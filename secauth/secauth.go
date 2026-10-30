@@ -22,6 +22,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"hash"
+	"log/slog"
 
 	"github.com/otfabric/go-dnp3/app"
 )
@@ -81,6 +82,29 @@ type User struct {
 	Key []byte
 	// MAC is the algorithm; zero selects HMAC-SHA-256 truncated to 16.
 	MAC app.MACAlgorithm
+}
+
+// String formats the user without its keys, so that printing options or
+// a configuration does not reveal them.
+func (u User) String() string {
+	return fmt.Sprintf("{Number:%d UpdateKey:%s Key:%s MAC:%v}", u.Number, redactKey(u.UpdateKey), redactKey(u.Key), u.MAC)
+}
+
+// GoString is String, for %#v.
+func (u User) GoString() string { return "secauth.User" + u.String() }
+
+// LogValue logs the user number and key lengths, for log/slog.
+func (u User) LogValue() slog.Value {
+	return slog.GroupValue(slog.Int("number", int(u.Number)),
+		slog.String("update_key", redactKey(u.UpdateKey)), slog.String("key", redactKey(u.Key)))
+}
+
+// redactKey stands for a key in formatted output: its length only.
+func redactKey(k []byte) string {
+	if len(k) == 0 {
+		return "[none]"
+	}
+	return fmt.Sprintf("[REDACTED %d octets]", len(k))
 }
 
 // KeyWrapAlgorithm returns the key wrap algorithm of the update key.

@@ -1,5 +1,52 @@
 # go-dnp3 Releases
 
+## v1.5.0
+
+**Date:** 2026-10-30
+**Previous release:** v1.4.1
+
+## Summary
+
+Hardening of both ends against hostile or unlucky peers: bounded READ and
+ASSIGN_CLASS work, TLS handshake timeouts, listeners and UDP sockets that
+survive transient errors, and panics contained to one request. The
+outstation keeps the quality and time quality of more values. The master
+synchronizes the time before its startup integrity poll and no longer
+fails the startup sequence on a step the outstation rejects. Interop runs
+against dnp3-interop v0.5.2 (stepfunc dnp3 1.8.0, DSC go-dnp3 v0.8.2).
+
+## Changes
+
+### Outstation
+
+- **Bounded READ work**: a READ plans at most four complete reads of the database (plus 1024 objects); headers beyond that, such as hundreds of repeated class 0 headers, are answered with IIN2.2 instead of holding the database for seconds.
+- **Bounded ASSIGN_CLASS work**: a range header walks the points that exist, not every index it names, so `0..0xFFFFFFFF` takes as long as the database is large instead of minutes under the database lock.
+- **Deadbands**: `Add` refuses a NaN, infinite or negative `PointConfig.Deadband` (`ErrInvalidOption`), and a WRITE of one (g34) is answered with IIN2.2. A NaN deadband silently stopped events for value changes, and a negative one raised an event for every update.
+- **Frozen analog inputs without flag** (g31v5, g31v6) whose flags are not ONLINE alone are reported with flags (g31v1, g31v2), like the other analog inputs. An ONLINE analog input whose value an integer variation without flag cannot carry (out of its range, NaN) is reported with flags too, which say OVER_RANGE, instead of as a clamped number.
+- **Events recorded while the time was unsynchronized**: binary and double-bit input events in the default or configured variation (g2v2, g4v2) are reported with relative time (g2v3, g4v3) under an unsynchronized CTO (g51v2), even when they are read after a time sync; a master that asks for g2v2 or g4v2 still gets them. The CTO of relative-time events now reflects when each event was recorded, not when it was read.
+- **TLS handshake timeout**: an accepted TLS connection must finish its handshake within 10 s, or it is closed (`TLS handshake failed`); a peer that stalls it no longer holds a connection slot. `DialAndServe` bounds its dial and handshake the same way.
+- **Accept errors**: `Serve` (and `Group.Serve`) keep accepting after an `Accept` error other than a closed listener, such as running out of file descriptors, with a pause that doubles up to a second; before, any error but a timeout stopped the listener for good.
+- **UDP**: `ServeUDP` keeps serving after a read or write error that concerns one datagram (an ICMP unreachable, a send to a route that went away); only a closed socket ends it.
+- **Panics**: a panic while serving a request, in go-dnp3 or in the application's `Handler`, is logged with its stack and the request goes unanswered; the association and the process go on.
+
+### Master
+
+- **Time sync before the integrity poll**: when the outstation asks for the time (NEED_TIME) and `WithTimeSync` is set, the startup sequence synchronizes it before its integrity poll, and the automatic tasks after a restart queue the time sync before the integrity poll, so the poll's events carry synchronized time.
+- **Startup steps the outstation rejects**: a step answered with an error IIN (an `IINError`, such as IIN2.0 to DISABLE_UNSOLICITED from an outstation without unsolicited responses) is logged (`startup step rejected`) and the sequence goes on; before, `Connect` failed and closed a working channel.
+- **Timeouts**: the default dialer has a 10 s connect timeout, and the TLS handshake is bounded to 10 s, so `Connect(context.Background())` against an outstation that stalls it fails instead of hanging.
+- **UDP**: a client on `UDP(addr)` keeps its socket after an ICMP port unreachable (an outstation not listening yet, or restarting), which a connected UDP socket reports as ECONNREFUSED; the request is repeated by the response timeout instead of the channel being lost.
+- **Panics**: a panic while receiving a fragment, in go-dnp3 or in the application's handler, is logged with its stack and the fragment is lost; the client and the process go on.
+
+### Security
+
+- **Secrets in formatted output**: `app.FileAuthentication` and `secauth.User` format and log (`String`, `GoString`, `LogValue`) without their password, authentication key or keys, so printing a decoded request or a configuration does not reveal them.
+
+### Tests
+
+- Interop against [otfabric/dnp3-interop v0.5.2](https://github.com/otfabric/dnp3-interop/releases/tag/v0.5.2): stepfunc dnp3 1.8.0 and DSC go-dnp3 v0.8.2.
+
+---
+
 ## v1.4.1
 
 **Date:** 2026-10-21
