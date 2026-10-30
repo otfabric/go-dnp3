@@ -1015,7 +1015,10 @@ func TestReadDeferredByUnsolicited(t *testing.T) {
 // unsolicited response with events reports those events once the confirm
 // timeout expires, and the unsolicited response is not repeated.
 func TestDeferredReadTakesUnsolicitedEvents(t *testing.T) {
-	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1}, Retries: 3}))
+	// The READ must reach the outstation before the confirm timeout of the
+	// unsolicited response, or that response is repeated instead: a second
+	// leaves room for a slow runner under the race detector.
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1}, Retries: 3}), WithConfirmTimeout(time.Second))
 	null := m.recvFunc(app.FuncUnsolicitedResponse)
 	m.send(confirm(null.Control.Seq, true))
 	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
