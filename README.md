@@ -51,7 +51,7 @@ The library provides:
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
-**Docs:** [API.md](API.md) (public API) · [ARCHITECTURE.md](ARCHITECTURE.md) (packages, goroutines, protocol machines) · [INTEROPERABILITY.md](INTEROPERABILITY.md) (what is implemented, clause by clause) · [ERRORS.md](ERRORS.md) (error semantics) · [OBSERVABILITY.md](OBSERVABILITY.md) (logging and metrics) · [LIMITATIONS.md](LIMITATIONS.md) · [SECURITY.md](SECURITY.md) · [RELEASE.md](RELEASE.md) (changelog)
+**Docs:** [API.md](API.md) (public API) · [ARCHITECTURE.md](ARCHITECTURE.md) (packages, goroutines, protocol machines) · [INTEROPERABILITY.md](INTEROPERABILITY.md) (what is implemented, clause by clause) · [ERRORS.md](ERRORS.md) (error semantics) · [OBSERVABILITY.md](OBSERVABILITY.md) (logging and metrics) · [TESTING.md](TESTING.md) (test tiers) · [docs/FEATURE-STATUS.md](docs/FEATURE-STATUS.md) (status and evidence per feature) · [LIMITATIONS.md](LIMITATIONS.md) · [SECURITY.md](SECURITY.md) · [RELEASE.md](RELEASE.md) (changelog)
 
 ## Table of contents
 
@@ -307,6 +307,9 @@ go run ./examples/quickstart
 ```sh
 make check   # format, lint, vet, vulnerability scan, race tests, coverage, examples
 make test    # the tests with the race detector
+make e2e     # the end-to-end suite only
+make coverage-check  # fail below the 90 % coverage floor
+make cross   # cross-compile for the supported platforms
 make fuzz    # the codec and outstation fuzz targets (FUZZTIME=30s each by default)
 make bench   # the codec benchmarks
 make generate        # regenerate the code and OBJECTS.md from app/catalog.json
