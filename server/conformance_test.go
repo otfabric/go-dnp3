@@ -971,13 +971,20 @@ func TestHeadersWithoutValuesDispatched(t *testing.T) {
 	}
 }
 
+// deferWindow is the confirm timeout of the tests of a request deferred by
+// an unconfirmed unsolicited response: the request must reach the outstation
+// before it expires, or the response is repeated instead and the request is
+// answered at once. A second leaves room for a slow runner under the race
+// detector.
+const deferWindow = time.Second
+
 // TestReadDeferredByUnsolicited: a READ that comes while an unsolicited
 // response waits for its confirmation is answered once the confirm timeout
 // expires, before the response is repeated; the repeat carries the
 // indications as they are then (IIN1.7 cleared meanwhile). A READ during
 // the repeat is answered as soon as it is confirmed.
 func TestReadDeferredByUnsolicited(t *testing.T) {
-	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}), WithConfirmTimeout(deferWindow))
 	null := m.recvFunc(app.FuncUnsolicitedResponse)
 	if !null.IIN.Has(app.IINDeviceRestart) {
 		t.Fatalf("null unsolicited IIN %s", null.IIN)
@@ -1015,10 +1022,7 @@ func TestReadDeferredByUnsolicited(t *testing.T) {
 // unsolicited response with events reports those events once the confirm
 // timeout expires, and the unsolicited response is not repeated.
 func TestDeferredReadTakesUnsolicitedEvents(t *testing.T) {
-	// The READ must reach the outstation before the confirm timeout of the
-	// unsolicited response, or that response is repeated instead: a second
-	// leaves room for a slow runner under the race detector.
-	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1}, Retries: 3}), WithConfirmTimeout(time.Second))
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Classes: []Class{1}, Retries: 3}), WithConfirmTimeout(deferWindow))
 	null := m.recvFunc(app.FuncUnsolicitedResponse)
 	m.send(confirm(null.Control.Seq, true))
 	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
@@ -1038,7 +1042,7 @@ func TestDeferredReadTakesUnsolicitedEvents(t *testing.T) {
 // not repeated while the response to a deferred READ waits for its
 // confirmation (300 ms here), and is repeated once it is confirmed.
 func TestUnsolicitedRepeatWaitsForResponse(t *testing.T) {
-	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}), WithConfirmTimeout(deferWindow))
 	null := m.recvFunc(app.FuncUnsolicitedResponse)
 	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
 	m.send(req(1, app.FuncRead, app.ClassHeaders(1)...))
@@ -1056,7 +1060,7 @@ func TestUnsolicitedRepeatWaitsForResponse(t *testing.T) {
 // TestDeferredReadSuperseded: a request that comes after a deferred READ is
 // answered at once, and the READ is not answered at all.
 func TestDeferredReadSuperseded(t *testing.T) {
-	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}))
+	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}), WithConfirmTimeout(deferWindow))
 	null := m.recvFunc(app.FuncUnsolicitedResponse)
 	m.send(req(1, app.FuncRead, app.ClassHeaders(0)...))
 	m.send(req(2, app.FuncWrite, app.Ranged(app.G80V1, 7, app.Binary{})))
