@@ -51,7 +51,7 @@ The library provides:
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
-**Docs:** [API.md](API.md) (public API) · [ARCHITECTURE.md](ARCHITECTURE.md) (packages, goroutines, protocol machines) · [INTEROPERABILITY.md](INTEROPERABILITY.md) (what is implemented, clause by clause) · [ERRORS.md](ERRORS.md) (error semantics) · [OBSERVABILITY.md](OBSERVABILITY.md) (logging and metrics) · [SECURITY.md](SECURITY.md) · [RELEASE.md](RELEASE.md) (changelog)
+**Docs:** [API.md](API.md) (public API) · [ARCHITECTURE.md](ARCHITECTURE.md) (packages, goroutines, protocol machines) · [INTEROPERABILITY.md](INTEROPERABILITY.md) (what is implemented, clause by clause) · [ERRORS.md](ERRORS.md) (error semantics) · [OBSERVABILITY.md](OBSERVABILITY.md) (logging and metrics) · [LIMITATIONS.md](LIMITATIONS.md) · [SECURITY.md](SECURITY.md) · [RELEASE.md](RELEASE.md) (changelog)
 
 ## Table of contents
 
@@ -379,6 +379,8 @@ The third-party code runs in its own container only: nothing of it is
 linked into go-dnp3.
 
 ## Limitations
+
+The full list is in [LIMITATIONS.md](LIMITATIONS.md).
 
 - **Secure Authentication**: update keys are configured out of band. The
   remote update key change, user management (certificates, user status
