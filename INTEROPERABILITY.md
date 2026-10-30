@@ -212,8 +212,8 @@ a pre-shared session key is used directly (outside the standard, see
 | DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against stepfunc dnp3 1.7.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.1 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.5.1 |
-| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.5.1 |
+| As master against stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.2 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.6.0 |
+| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.6.0 |
 | TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3, including a refused certificate of another CA |
 | UDP, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3 over a pseudo-terminal bridged to TCP |
@@ -235,20 +235,20 @@ the reference does not have or its dnp3-interop adapter does not expose
 (its capability document says which): the suite covers everything the
 images offer.
 
-| Feature | stepfunc 1.7.0 | opendnp3 3.1.2 | DSC go-dnp3 v0.8.1 | dnp3py 0.6.0 |
+| Feature | stepfunc 1.8.0 | opendnp3 3.1.2 | DSC go-dnp3 v0.8.2 | dnp3py 0.6.0 |
 |---|:---:|:---:|:---:|:---:|
 | Integrity poll: values and flags of every point type of the baseline fixture | M O | M O | M O | O |
 | Reads of ranges and variations | M O | M O | M O | O |
 | Read of all objects of a group | M O | M O | M | O |
 | Direct operate, select-before-operate, set-points, ranges, refused codes and points | M O | M O | M O | O |
-| Direct operate no ack | M | M | M O | O |
+| Direct operate no ack | M O | M | M O | O |
 | Events, their confirmation, event polls | M O | M O | M O | O |
 | Unsolicited responses, enable and disable | M O | M O | M O | O |
 | Time synchronization, LAN and non-LAN | M O | M O | M O | O |
 | Cold and warm restart with the delay | M O | M O | M O | O |
 | Freeze and freeze-and-clear | M O | M O | M O | O |
 | Freeze and clear no ack | M | M | M | O |
-| Assign class | O | M O | M | O |
+| Assign class | M O | M O | M | O |
 | TLS with mutual authentication | M O | M O | M O | |
 | UDP | M O | M O | M O | |
 | Serial line | M O | M O | M O | |
@@ -275,7 +275,7 @@ images offer.
 | The dnp3py fixture (integrity poll, a control and its target) | M | M | M | M |
 
 Known bugs of a reference that the fixture shows (dnp3-interop's
-`tests/known-bugs.tsv`) are logged, not failed: DSC go-dnp3 v0.8.1 leaves a
+`tests/known-bugs.tsv`) are logged, not failed: DSC go-dnp3 v0.8.2 leaves a
 counter without a frozen counter uncleared by FREEZE AND CLEAR. Two more
 known bugs touch the contract 1.3 tests, which avoid them: DSC go-dnp3
 refuses FREEZE AT TIME with time 0 (the tests use a time to come), and
