@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch interop-stepfunc conformance conformance-image print-conformance-image
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet cross vuln test e2e coverage coverage-check cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch interop-stepfunc conformance conformance-image print-conformance-image
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -26,6 +26,9 @@ COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/internal/c
 
 # Build tag of the interop package (excluded from default ./... builds).
 INTEROP_TAGS := interop
+
+# Coverage floor: the coverage-min of .github/workflows/ci.yml.
+COVER_MIN := 90
 
 # Reference implementations for 'make interop': otfabric/dnp3-interop
 # INTEROP_RELEASE (stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
@@ -99,6 +102,12 @@ vet: ## Run go vet (includes -tags=interop compile of ./interop)
 	@echo "Running go vet"
 	@go vet -tags=$(INTEROP_TAGS) ./...
 
+cross: ## Cross-compile every package without cgo for the supported platforms
+	@for p in linux/amd64 linux/arm64 linux/arm darwin/arm64 windows/amd64; do \
+		echo "Building $$p"; \
+		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} go build ./... || exit 1; \
+	done
+
 vuln: ## Run govulncheck
 	@echo "Running govulncheck"
 	@govulncheck ./...
@@ -107,10 +116,18 @@ test: ## Run the tests with the race detector
 	@echo "Running tests"
 	@go test -count=1 -race $(TEST_PKGS)
 
+e2e: ## Run the end-to-end suite (master against outstation over loopback) with the race detector
+	@echo "Running the e2e suite"
+	@go test -count=1 -race ./e2e/...
+
 coverage: ## Run tests with coverage across the library packages (writes coverage.out)
 	@echo "Running coverage"
 	@go test -count=1 -race -covermode=atomic -coverpkg=$(COVER_PKGS) -coverprofile=coverage.out $(TEST_PKGS)
 	@go tool cover -func=coverage.out | tail -1
+
+coverage-check: coverage ## Fail when coverage.out is below COVER_MIN
+	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%","",$$3); print $$3}'); \
+	awk -v t="$$total" -v m="$(COVER_MIN)" 'BEGIN { if (t+0 < m+0) { printf "coverage %.1f%% < %s%%\n", t, m; exit 1 } else printf "coverage %.1f%% >= %s%%\n", t, m }'
 
 cover: coverage ## Open coverage report in browser
 	@echo "Opening coverage report"
