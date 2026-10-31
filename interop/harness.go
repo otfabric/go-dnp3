@@ -520,7 +520,12 @@ func freePort(t testing.TB) int {
 func requireDocker(t testing.TB) {
 	t.Helper()
 	if _, _, err := docker("version", "--format", "{{.Server.Version}}"); err != nil {
-		t.Skip("Docker is not available")
+		// The job that provisions Docker sets it, so that it cannot pass
+		// without having run the suite.
+		if os.Getenv("DNP3_REQUIRE_INTEROP") == "1" {
+			t.Fatalf("DNP3_REQUIRE_INTEROP=1 and Docker is not available: %v", err)
+		}
+		t.Skipf("Docker is not available (set DNP3_REQUIRE_INTEROP=1 to fail instead): %v", err)
 	}
 }
 

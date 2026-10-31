@@ -11,6 +11,7 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 | Unit and component tests, with the race detector | `make test` | Go | `CI`, Go 1.23 to 1.26, on every push and pull request |
 | End-to-end: go-dnp3's master against its outstation over loopback, including chaos and stress (`e2e/`) | `make e2e` | Go | part of `make test` |
 | Coverage gate | `make coverage-check` | Go | `CI` (`coverage-min: "90"`) |
+| Per-package coverage floor | `make coverage-pkg-check` | Go | `CI` (`Per-package coverage`) |
 | Fuzzing | `make fuzz` | Go | `CI`, 10 s per target |
 | Benchmarks of the codecs (`link`, `transport`, `app`) | `make bench` | Go | no |
 | Examples: each self-contained one must exit successfully | `make examples` | Go | `CI` |
@@ -20,9 +21,9 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 | DNP Users Group IED certification procedures with dnp3c | `make conformance` | Go, Docker | `Conformance`, on every push and pull request |
 | Catalog against the upstream object definitions | `make upstream-watch` | network | `Upstream watch`, weekly |
 
-`make check` is the local gate. It runs `make coverage`, which reports
-coverage without failing on it; run `make coverage-check` for the gate. It
-does not run `make fuzz`, `make e2e` on its own (`make test` includes the
+`make check` is the local gate. It runs `make coverage-pkg-check`, which fails
+when a package is below `COVER_PKG_MIN`; run `make coverage-check` for the
+gate on the total. It does not run `make fuzz`, `make e2e` on its own (`make test` includes the
 suite), `make interop` or `make conformance`.
 
 All tests run on Linux in CI. No tier uses DNP3 hardware or a real serial
@@ -54,8 +55,10 @@ how the images are obtained; the peers and results are in
 | `DNP3_INTEROP_STEPFUNC_IMAGE`, `DNP3_INTEROP_OPENDNP3_IMAGE`, `DNP3_INTEROP_DSCSYSTEMS_IMAGE`, `DNP3_INTEROP_DNP3PY_IMAGE` | Use another image of that peer |
 | `DNP3_INTEROP_ADAPTERS` | Comma-separated subset of `stepfunc`, `opendnp3`, `dscsystems`, `dnp3py` |
 
-There is no `*_REQUIRE_*` switch, and none is needed for Docker itself:
-without Docker or an image the suite fails, it does not skip. A subtest skips
+| `DNP3_REQUIRE_INTEROP=1` | Fail instead of skip when Docker is not available. `make interop` and the `Interop` workflow set it |
+
+Run with plain `go test -tags=interop` and without Docker, a test skips and
+says so. An image that cannot be run fails the test in either case. Otherwise a subtest skips
 only when a peer's image declares that it lacks the role or feature, or (one
 frozen counter case in `interop/v13_test.go`) when the test's precondition
 does not hold.
@@ -76,6 +79,8 @@ The floor is 90 %, set by `coverage-min` in
 `make coverpkg-check` keeps CI's `coverpkg` equal to the Makefile's
 `COVER_PKGS`. Coverage is measured over all library packages at once, so the
 e2e suite and the client and server tests count for each other's packages.
+Each package has a floor of its own, `COVER_PKG_MIN` (90 %), checked by
+`make coverage-pkg-check` on the same profile.
 
 Left out of `COVER_PKGS`, and why:
 
