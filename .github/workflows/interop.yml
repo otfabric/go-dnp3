@@ -30,6 +30,8 @@ permissions:
   packages: read
 
 env:
+  # This job has Docker: a missing Docker fails the suite, it does not skip it.
+  DNP3_REQUIRE_INTEROP: "1"
   # otfabric/dnp3-interop v0.6.0: stepfunc dnp3 1.8.0, opendnp3 3.1.2,
   # DSC go-dnp3 v0.8.2, dnp3py 0.6.0.
   # Keep in step with the Makefile and interop/harness.go.

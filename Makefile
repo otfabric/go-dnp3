@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet cross vuln test e2e coverage coverage-check cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch interop-stepfunc conformance conformance-image print-conformance-image
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet cross vuln test e2e coverage coverage-check coverage-pkg-check cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch interop-stepfunc conformance conformance-image print-conformance-image
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -29,6 +29,9 @@ INTEROP_TAGS := interop
 
 # Coverage floor: the coverage-min of .github/workflows/ci.yml.
 COVER_MIN := 90
+# Per-package floor (TEST-012): the lowest package measures 93.2 %. Needs the
+# -coverpkg coverage.out of `make coverage`.
+COVER_PKG_MIN := 90
 
 # Reference implementations for 'make interop': otfabric/dnp3-interop
 # INTEROP_RELEASE (stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
@@ -129,6 +132,11 @@ coverage-check: coverage ## Fail when coverage.out is below COVER_MIN
 	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%","",$$3); print $$3}'); \
 	awk -v t="$$total" -v m="$(COVER_MIN)" 'BEGIN { if (t+0 < m+0) { printf "coverage %.1f%% < %s%%\n", t, m; exit 1 } else printf "coverage %.1f%% >= %s%%\n", t, m }'
 
+coverage-pkg-check: coverage ## Fail when a package is below COVER_PKG_MIN
+	@awk -v m="$(COVER_PKG_MIN)" 'NR > 1 { n[$$1] = $$2; if ($$3 > 0) h[$$1] = 1 } \
+	END { for (k in n) { p = k; sub(/\/[^\/]*$$/, "", p); s[p] += n[k]; if (k in h) c[p] += n[k] } \
+	for (p in s) { v = 100 * c[p] / s[p]; if (v < m) { printf "%s: %.1f%% < %s%%\n", p, v, m; bad = 1 } } exit bad }' coverage.out
+
 cover: coverage ## Open coverage report in browser
 	@echo "Opening coverage report"
 	@go tool cover -html=coverage.out
@@ -159,7 +167,8 @@ interop-stepfunc: ## Build the stepfunc reference image from dnp3-interop's sour
 
 test-interop: interop-stepfunc ## Run the interop suite against the stepfunc, opendnp3, dscsystems and dnp3py reference images (needs Docker)
 	@echo "Running interop tests against dnp3-interop $(INTEROP_RELEASE): stepfunc, opendnp3, dscsystems, dnp3py"
-	@DNP3_INTEROP_STEPFUNC_IMAGE="$(DNP3_INTEROP_STEPFUNC_IMAGE)" \
+	@DNP3_REQUIRE_INTEROP=1 \
+		DNP3_INTEROP_STEPFUNC_IMAGE="$(DNP3_INTEROP_STEPFUNC_IMAGE)" \
 		DNP3_INTEROP_OPENDNP3_IMAGE="$(DNP3_INTEROP_OPENDNP3_IMAGE)" \
 		DNP3_INTEROP_DSCSYSTEMS_IMAGE="$(DNP3_INTEROP_DSCSYSTEMS_IMAGE)" \
 		DNP3_INTEROP_DNP3PY_IMAGE="$(DNP3_INTEROP_DNP3PY_IMAGE)" \
@@ -196,7 +205,7 @@ upstream-watch: ## Compare app/catalog.json with the upstream object definitions
 coverpkg-check: ## Fail when CI's coverpkg (.github/workflows/ci.yml) is not COVER_PKGS
 	@grep -qF -- "$(COVER_PKGS)" .github/workflows/ci.yml || { echo "coverpkg in .github/workflows/ci.yml must be: $(COVER_PKGS)"; exit 1; }
 
-check: generate-check coverpkg-check fmt fmt-check lint lint-ci vet vuln test coverage examples ## Run generate-check + coverpkg-check + format + lint + vet + vuln + test
+check: generate-check coverpkg-check fmt fmt-check lint lint-ci vet vuln test coverage-pkg-check examples ## Run generate-check + coverpkg-check + format + lint + vet + vuln + test + per-package coverage
 
 clean: ## Remove generated binaries and coverage artifacts
 	@echo "Cleaning up"

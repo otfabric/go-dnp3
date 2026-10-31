@@ -88,8 +88,7 @@ re-established itself is kept even when its startup sequence failed.
 The codecs report what they cannot parse or encode with their own
 sentinels: `app.ErrMalformed`, `app.ErrUnknownObject`,
 `app.ErrInvalidQualifier`, `app.ErrUnknownFunction`, `app.ErrInvalidValue`;
-`transport.ErrSequence` and friends; `link.ErrFraming` and the specific
-framing errors it is wrapped together with. A master never returns them
+the `transport` and `link` sentinels of the table below. A master never returns them
 for what it receives: a fragment it cannot decode is dropped and reported
 to `Metrics.OnDecodeError` (`ListDirectory` wraps the codec error of a
 listing that does not decode together with `ErrProtocol`). A request whose
@@ -97,6 +96,22 @@ own headers do not encode fails with the codec error itself. An outstation
 answers a request it cannot decode with the IIN2 bit the standard prescribes (OBJECT_UNKNOWN for
 `ErrUnknownObject`, NO_FUNC_CODE_SUPPORT for `ErrUnknownFunction`,
 PARAMETER_ERROR otherwise).
+
+| Sentinel | Meaning |
+|----------|---------|
+| `link.ErrFraming` | Wrapped by every error for a damaged or invalid frame, together with one of the five below. The stream stays usable |
+| `link.ErrInvalidStart` | The frame does not begin with 0x05 0x64; `link.Reader` also reports the octets it skipped to resynchronize |
+| `link.ErrInvalidLength` | A length octet below 5, more user data than a frame holds, or a length that does not fit the function |
+| `link.ErrCRC` | The CRC of the header or of a data block does not match |
+| `link.ErrInvalidFunction` | A function code the standard does not define for the frame's direction (primary or secondary) |
+| `link.ErrShortBuffer` | The buffer holds only part of a frame: more input can complete it |
+| `transport.ErrEmpty` | A segment without a header octet |
+| `transport.ErrNoFirst` | A segment without FIR while no fragment was being assembled |
+| `transport.ErrSequence` | A segment whose sequence number does not follow the previous one; the partial fragment is discarded |
+| `transport.ErrTooLarge` | A fragment grew beyond the reassembler's limit and is discarded |
+| `secauth.ErrKeyWrap` | Wrapped key data does not unwrap: a wrong key, damaged data, a failed integrity check, a wrong session key length, or a key status message that differs from the last one sent |
+
+`Reassembler.Add` stays usable after each `transport` error.
 
 ## Context and timeouts
 
