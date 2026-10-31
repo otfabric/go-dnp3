@@ -1,5 +1,16 @@
 # go-dnp3 Releases
 
+## v1.5.1
+
+**Date:** 2026-10-31
+**Previous release:** v1.5.0
+
+### Changed
+
+- Policy 1.2: build output in `bin/` and `release/`, a per-package coverage floor, and more tests and CI. No change in behaviour.
+
+---
+
 ## v1.5.0
 
 **Date:** 2026-10-30
