@@ -720,10 +720,13 @@ func (a *association) send(f *app.Fragment) []byte {
 // e.g. over UDP before a master's first datagram.
 func (a *association) sendUnsolicited(u *pendingUnsol) {
 	peer := a.peer()
+	// Before sending: the master may answer before the send returns, and
+	// what it sends then did not come first.
+	at := time.Now()
 	if data := a.send(u.frag); data == nil || !a.sentOK || peer == nil {
 		return
 	}
-	u.sent, u.peer = time.Now(), peer.String()
+	u.sent, u.peer = at, peer.String()
 }
 
 // peer is where the current session's fragments go.

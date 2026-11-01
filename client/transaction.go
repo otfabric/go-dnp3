@@ -87,9 +87,9 @@ func (c *Client) acquire(ctx context.Context) error {
 		c.mu.Unlock()
 		return dnp3.ErrClosed
 	}
-	if c.waiting >= c.opts.queueLimit {
+	if n := c.waiting; n >= c.opts.queueLimit {
 		c.mu.Unlock()
-		return fmt.Errorf("%w: %d requests waiting", dnp3.ErrBusy, c.waiting)
+		return fmt.Errorf("%w: %d requests waiting", dnp3.ErrBusy, n)
 	}
 	c.waiting++
 	c.mu.Unlock()

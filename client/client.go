@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"runtime/debug"
@@ -330,15 +331,12 @@ func (c *Client) reconnectLoop() {
 		if c.isClosed() {
 			return
 		}
+		if !errors.Is(err, dnp3.ErrConnectFailed) {
+			return // the dial succeeded, only the startup sequence failed: that channel's watch reconnects
+		}
 		c.mu.Lock()
-		connected := c.ch != nil
-		if !connected {
-			c.dialing = true
-		}
+		c.dialing = true
 		c.mu.Unlock()
-		if connected {
-			return // the channel is up; only the startup sequence failed
-		}
 		c.setState(dnp3.StateConnecting, err)
 		c.log.Warn("reconnect failed", "retry_in", delay.String(), "error", err)
 		delay = min(delay*2, c.opts.reconnect.MaxDelay)
