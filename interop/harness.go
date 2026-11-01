@@ -22,14 +22,14 @@ import (
 )
 
 // adapter is one reference implementation, as a container image that follows
-// the dnp3-interop container contract 1.3.
+// the dnp3-interop container contract 1.4.
 type adapter struct {
 	name  string
 	image string
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.6.0 (stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC
+// otfabric/dnp3-interop v0.8.0 (stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC
 // go-dnp3 v0.8.2, dnp3py 0.6.0). The published images are pinned by
 // multi-arch index digest so that a run is reproducible. The stepfunc
 // image is not published, as Step Function I/O's licence does not allow
@@ -38,11 +38,11 @@ type adapter struct {
 // Moving to another release of dnp3-interop means changing these
 // constants; the Makefile and the interop workflow follow.
 const (
-	interopRelease         = "v0.6.0"
+	interopRelease         = "v0.8.0"
 	defaultStepfuncImage   = "dnp3-interop-stepfunc:" + interopRelease
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:a637998c28c60e6dcaaab51572fdf77e4290ce4e2939483a753a6ac0acd68cd2"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:ec0f25dfdcdbda12de259b6481d66e248da29ea817874f5f727b8a052fba8624"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:68bdf9637da43d16e1e76603fbf0fa32adb71c2d8b078c35ef7f29f2288455dc"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:2ce7bf8bbc1714f49d27889defac6bef64dff28a8d2cd9be3d282344ed865b6d"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:df79c30786282a84626b76c4d1d6c348cba45d5d53a697e40ddf1ca3cdb71677"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:bc8349e8f7a1dd6f31ee66a5e4d90e262658dbfa7dc651a8480c9188d4a4099e"
 )
 
 // adapters returns the reference implementations to test against. The image
@@ -100,6 +100,9 @@ type capabilities struct {
 	// ServerFeatures are the features of the server role where they differ
 	// from Features (contract 1.2).
 	ServerFeatures map[string]bool `json:"serverFeatures"`
+	// FrozenEventPolicies are what the outstation can do for a freeze that
+	// leaves a frozen value as it was, its default first (contract 1.4).
+	FrozenEventPolicies []string `json:"frozenEventPolicies"`
 }
 
 var capabilitiesCache sync.Map // image -> *capabilities

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -367,5 +368,252 @@ func TestFittingSmallRoom(t *testing.T) {
 		if dropped != 0 || n != 5 {
 			t.Fatalf("slack %d: %d objects in %d fragments, %d dropped", slack, n, len(plans), dropped)
 		}
+	}
+}
+
+// frozenEvents polls class 3 and returns the frozen counter events (g23), by
+// index, with the counter events of the same response. It confirms what it
+// got, so that the next poll sees only new events.
+func frozenEvents(m *master, seq uint8) (map[uint32]app.Counter, []app.Header) {
+	m.t.Helper()
+	m.send(req(seq, app.FuncRead, app.AllObjects(app.G60V4)))
+	f := m.recvFunc(app.FuncResponse)
+	got := map[uint32]app.Counter{}
+	for _, h := range f.Headers {
+		if h.GV.Group() != 23 {
+			continue
+		}
+		for _, o := range h.Objects {
+			if _, again := got[o.Index]; again {
+				m.t.Fatalf("two frozen counter events of point %d in one response: %v", o.Index, f.Headers)
+			}
+			got[o.Index] = o.Value.(app.Counter)
+		}
+	}
+	if f.Control.CON {
+		m.send(confirm(seq, false))
+	}
+	return got, f.Headers
+}
+
+// TestFrozenCounterEventsOnChange: a freeze raises a frozen counter event for
+// a frozen value (or flags) that changed, and none for one that stayed as it
+// was. That is go-dnp3's policy, not a statement of the standard: see
+// INTEROPERABILITY.md.
+func TestFrozenCounterEventsOnChange(t *testing.T) {
+	m := newMaster(t)
+	db := m.srv.Database()
+	on := app.FlagOnline
+	if err := db.AddCounter(1, PointConfig{}, app.Counter{Value: 7, Flags: on}); err != nil {
+		t.Fatal(err)
+	}
+	for i := uint32(0); i < 2; i++ {
+		if err := db.AddFrozenCounter(i, PointConfig{Class: 3}, app.Counter{Flags: on}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	freeze := func(seq uint8, fc app.FunctionCode) {
+		t.Helper()
+		m.send(req(seq, fc, app.AllObjects(app.G20V0)))
+		if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINParameterError) {
+			t.Fatalf("freeze: %v", f)
+		}
+	}
+	frozen := func(i uint32) app.Counter {
+		t.Helper()
+		v, ok := db.Get(FrozenCounter, i)
+		if !ok {
+			t.Fatalf("no frozen counter %d", i)
+		}
+		return v.(app.Counter)
+	}
+
+	// The first freeze changes both frozen values, from 0.
+	freeze(1, app.FuncImmediateFreeze)
+	got, hs := frozenEvents(m, 2)
+	if len(got) != 2 || got[0].Value != 1 || got[1].Value != 7 {
+		t.Fatalf("first freeze: %v", hs)
+	}
+	stamped := frozen(0).Time
+
+	// Nothing changed: the point is frozen again, at a new time, but no event.
+	time.Sleep(5 * time.Millisecond)
+	freeze(3, app.FuncImmediateFreeze)
+	if got, hs := frozenEvents(m, 4); len(got) != 0 {
+		t.Fatalf("a freeze of unchanged counters raised events: %v", hs)
+	}
+	if f := frozen(0); f.Value != 1 || f.Time <= stamped {
+		t.Fatalf("a second freeze left %+v, frozen before at %d", f, stamped)
+	}
+
+	// One counter changed: its event, with the time of the freeze, and no other.
+	if err := db.UpdateCounter(0, app.Counter{Value: 6, Flags: on}); err != nil {
+		t.Fatal(err)
+	}
+	if got, hs := frozenEvents(m, 5); len(got) != 0 {
+		t.Fatalf("a change of a counter raised a frozen counter event before a freeze: %v", hs)
+	}
+	if f := frozen(0); f.Value != 1 {
+		t.Fatalf("a change of a counter reached the frozen value before a freeze: %+v", f)
+	}
+	before := app.Now()
+	freeze(6, app.FuncImmediateFreeze)
+	after := app.Now()
+	got, hs = frozenEvents(m, 7)
+	if len(got) != 1 || got[0].Value != 6 {
+		t.Fatalf("a freeze with one change: %v", hs)
+	}
+	if at := got[0].Time; at < before || at > after {
+		t.Fatalf("frozen counter event at %d, freeze between %d and %d", at, before, after)
+	}
+
+	// Flags count as a change, as for any point.
+	if err := db.UpdateCounter(1, app.Counter{Value: 7, Flags: on | app.FlagRestart}); err != nil {
+		t.Fatal(err)
+	}
+	freeze(8, app.FuncImmediateFreeze)
+	if got, hs := frozenEvents(m, 9); len(got) != 1 || got[1].Value != 7 || got[1].Flags != on|app.FlagRestart {
+		t.Fatalf("a freeze of new flags: %v", hs)
+	}
+
+	// FREEZE AND CLEAR of unchanged frozen values: no frozen counter event,
+	// the counters' own clear events. The next freeze carries the clear over.
+	freeze(10, app.FuncFreezeClear)
+	got, hs = frozenEvents(m, 11)
+	if len(got) != 0 {
+		t.Fatalf("freeze and clear of unchanged frozen values: %v", hs)
+	}
+	if !slices.ContainsFunc(hs, func(h app.Header) bool { return h.GV.Group() == 22 }) {
+		t.Fatalf("no counter event of the clear: %v", hs)
+	}
+	freeze(12, app.FuncImmediateFreeze)
+	if got, hs := frozenEvents(m, 13); len(got) != 2 || got[0].Value != 0 || got[1].Value != 0 {
+		t.Fatalf("a freeze after a clear: %v", hs)
+	}
+}
+
+// frozenSetup adds a frozen counter over the counter of newMaster, at index 0.
+func frozenSetup(t *testing.T, cfg PointConfig) (*master, *Database) {
+	t.Helper()
+	m := newMaster(t)
+	db := m.srv.Database()
+	if err := db.AddFrozenCounter(0, cfg, app.Counter{Flags: app.FlagOnline}); err != nil {
+		t.Fatal(err)
+	}
+	return m, db
+}
+
+// TestFrozenCounterEventClass: the event goes in the frozen counter's class,
+// and a frozen counter without a class raises none, whatever the value does.
+func TestFrozenCounterEventClass(t *testing.T) {
+	groupsOf := func(f *app.Fragment) (n int) {
+		for _, h := range f.Headers {
+			if h.GV.Group() == 23 {
+				n += len(h.Objects)
+			}
+		}
+		return n
+	}
+	m, _ := frozenSetup(t, PointConfig{Class: 2})
+	m.send(req(1, app.FuncImmediateFreeze, app.AllObjects(app.G20V0)))
+	m.recvFunc(app.FuncResponse)
+	for seq, class := range map[uint8]app.GroupVariation{2: app.G60V2, 3: app.G60V4} {
+		m.send(req(seq, app.FuncRead, app.AllObjects(class)))
+		if f := m.recvFunc(app.FuncResponse); groupsOf(f) != 0 {
+			t.Fatalf("frozen counter event of class 2 in a poll of %s: %v", class, f.Headers)
+		}
+	}
+	m.send(req(4, app.FuncRead, app.AllObjects(app.G60V3)))
+	if f := m.recvFunc(app.FuncResponse); groupsOf(f) != 1 {
+		t.Fatalf("poll of class 2: %v", f.Headers)
+	}
+
+	m, _ = frozenSetup(t, PointConfig{})
+	m.send(req(1, app.FuncImmediateFreeze, app.AllObjects(app.G20V0)))
+	m.recvFunc(app.FuncResponse)
+	m.send(req(2, app.FuncRead, app.AllObjects(app.G60V2), app.AllObjects(app.G60V3), app.AllObjects(app.G60V4)))
+	if f := m.recvFunc(app.FuncResponse); groupsOf(f) != 0 {
+		t.Fatalf("frozen counter without a class: %v", f.Headers)
+	}
+}
+
+// TestFrozenCounterEventConfirm: an event comes again, the same, until it is
+// confirmed, and never after.
+func TestFrozenCounterEventConfirm(t *testing.T) {
+	m, _ := frozenSetup(t, PointConfig{Class: 3})
+	m.send(req(1, app.FuncImmediateFreeze, app.AllObjects(app.G20V0)))
+	m.recvFunc(app.FuncResponse)
+	read := func(seq uint8) (*app.Fragment, app.Counter) {
+		t.Helper()
+		m.send(req(seq, app.FuncRead, app.AllObjects(app.G23V0)))
+		f := m.recvFunc(app.FuncResponse)
+		if len(f.Headers) != 1 || len(f.Headers[0].Objects) != 1 {
+			t.Fatalf("read of g23: %v", f.Headers)
+		}
+		return f, f.Headers[0].Objects[0].Value.(app.Counter)
+	}
+	f, first := read(2)
+	if !f.Control.CON {
+		t.Fatalf("an event without a confirm request: %+v", f.Control)
+	}
+	_, again := read(3) // not confirmed
+	if again != first {
+		t.Fatalf("resent as %+v, was %+v", again, first)
+	}
+	m.send(confirm(3, false))
+	m.send(req(4, app.FuncRead, app.AllObjects(app.G23V0)))
+	if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 0 {
+		t.Fatalf("a confirmed event came again: %v", f.Headers)
+	}
+}
+
+// TestFrozenCounterTimes: each variation with a time carries the time of the
+// freeze, in the event and in the static object; the variations without one
+// carry none. A freeze that raises no event still moves the static time.
+func TestFrozenCounterTimes(t *testing.T) {
+	for _, tc := range []struct {
+		evar     uint8
+		gv       app.GroupVariation
+		withTime bool
+	}{{5, app.G23V5, true}, {6, app.G23V6, true}, {1, app.G23V1, false}, {2, app.G23V2, false}} {
+		t.Run(tc.gv.String(), func(t *testing.T) {
+			m, _ := frozenSetup(t, PointConfig{Class: 3, EventVariation: tc.evar})
+			before := app.Now()
+			m.send(req(1, app.FuncImmediateFreeze, app.AllObjects(app.G20V0)))
+			m.recvFunc(app.FuncResponse)
+			after := app.Now()
+			m.send(req(2, app.FuncRead, app.AllObjects(app.G23V0)))
+			f := m.recvFunc(app.FuncResponse)
+			if len(f.Headers) != 1 || f.Headers[0].GV != tc.gv {
+				t.Fatalf("event: %v", f.Headers)
+			}
+			at := f.Headers[0].Objects[0].Value.(app.Counter).Time
+			if tc.withTime && (at < before || at > after) {
+				t.Fatalf("event at %d, freeze between %d and %d", at, before, after)
+			}
+			if !tc.withTime && at != 0 {
+				t.Fatalf("a time in %s: %d", tc.gv, at)
+			}
+			m.send(confirm(2, false))
+
+			time.Sleep(5 * time.Millisecond)
+			before = app.Now()
+			m.send(req(3, app.FuncImmediateFreeze, app.AllObjects(app.G20V0)))
+			m.recvFunc(app.FuncResponse)
+			after = app.Now()
+			m.send(req(4, app.FuncRead, app.AllObjects(app.G23V0)))
+			if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 0 {
+				t.Fatalf("an unchanged freeze raised %v", f.Headers)
+			}
+			m.send(req(5, app.FuncRead, app.AllObjects(app.G21V5)))
+			f = m.recvFunc(app.FuncResponse)
+			if len(f.Headers) != 1 || f.Headers[0].GV != app.G21V5 {
+				t.Fatalf("static: %v", f.Headers)
+			}
+			c := f.Headers[0].Objects[0].Value.(app.Counter)
+			if c.Value != 1 || c.Time < before || c.Time > after {
+				t.Fatalf("static %+v, newer freeze between %d and %d", c, before, after)
+			}
+		})
 	}
 }

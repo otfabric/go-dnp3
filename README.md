@@ -47,7 +47,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against Step Function I/O's dnp3, opendnp3, DSC go-dnp3 and
   dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.6.0,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.8.0,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -338,7 +338,7 @@ Device Profile.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.6.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.6.0):
+of [otfabric/dnp3-interop v0.8.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.8.0):
 the published ones pinned by digest, and the stepfunc one built locally by
 `make interop-stepfunc` from dnp3-interop's source at that release. Step
 Function I/O's licence allows testing with its library but not

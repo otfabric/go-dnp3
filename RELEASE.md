@@ -1,5 +1,18 @@
 # go-dnp3 Releases
 
+## v1.5.2
+
+**Date:** 2026-11-01
+**Previous release:** v1.5.1
+
+### Changed
+
+- Interop runs against dnp3-interop v0.8.0 (contract 1.4), pinned by digest. No change in the library.
+- Regression tests of the outstation's frozen counter events (`EventOnChange`, unchanged): a freeze of an unchanged counter sets the snapshot and its time and raises no event; value and flag changes raise theirs; event classes, time stamps in g23v5, g23v6 and g21v5, confirmation and replay. `interop/counters_test.go` runs them against reference masters, and a go-dnp3 master against outstations whose counters really change.
+- `INTEROPERABILITY.md`: this is go-dnp3's policy. What IEEE 1815 says of it has not been read, and nothing here claims the standard permits or prohibits it.
+
+---
+
 ## v1.5.1
 
 **Date:** 2026-10-31
