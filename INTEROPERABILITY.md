@@ -15,6 +15,7 @@ of a device profile, and how it has been verified.
 - [Secure Authentication](#secure-authentication)
 - [Deviations and choices](#deviations-and-choices)
 - [Verification status](#verification-status)
+- [Frozen counter events](#frozen-counter-events)
 - [Interop coverage](#interop-coverage)
 - [Feature completeness and the remaining gaps](#feature-completeness-and-the-remaining-gaps)
 
@@ -152,7 +153,7 @@ reference outstations do.
 | Time synchronization, LAN and non-LAN procedures | ✅ automatic on NEED_TIME | ✅ NEED_TIME at start and after an interval |
 | Restart, delay announced | ✅ | ✅ |
 | Clear of DEVICE_RESTART | ✅ automatic | ✅ |
-| Freeze, freeze-and-clear | ✅ | ✅ unchanged frozen values produce no event |
+| Freeze, freeze-and-clear | ✅ | ✅ a freeze of an unchanged counter sets the frozen snapshot and its time and raises no event (`EventOnChange`, see [Frozen counter events](#frozen-counter-events)) |
 | Assign class | ✅ | ✅ |
 | File transfer: read, write, append (`FileOptions.Append`), directory, info, delete, authenticate, abort | ✅ | ✅ |
 | Device attributes | ✅ | ✅ |
@@ -212,8 +213,8 @@ a pre-shared session key is used directly (outside the standard, see
 | DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.2 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.6.0 |
-| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.6.0 |
+| As master against stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.2 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.8.0 |
+| As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.8.0 |
 | TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3, including a refused certificate of another CA |
 | UDP, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3 over a pseudo-terminal bridged to TCP |
@@ -225,6 +226,21 @@ a pre-shared session key is used directly (outside the standard, see
 | Dual end point, both roles, TCP and TLS | ✅ against stepfunc, opendnp3 and DSC go-dnp3 (stepfunc's master listens over TCP only) |
 | Frozen analog inputs, command events, time and interval | ✅ as master against DSC go-dnp3's outstation; as outstation against the masters that decode them (stepfunc, opendnp3, DSC go-dnp3) |
 | Aggressive mode | ✅ between go-dnp3's own ends; no reference in dnp3-interop has it |
+
+## Frozen counter events
+
+go-dnp3's outstation raises a frozen counter event when a freeze changes the
+frozen value or its flags (`EventOnChange`). A freeze of an unchanged counter
+still sets the frozen snapshot and its time of freeze, which g21v5 and g21v6
+report, and raises no event. Every event stays buffered until confirmed.
+
+This is go-dnp3's policy, and it is covered by `server/freeze_test.go` and
+`interop/counters_test.go`. Whether IEEE 1815 asks for it is not established:
+the text of the standard on this has not been read, so nothing here says the
+standard permits or prohibits this or the other behaviour. Reference
+outstations differ, and both are accepted if consistent; dnp3-interop's
+docs/COMPATIBILITY.md records what each does, what was checked and what is
+still needed.
 
 ## Interop coverage
 
