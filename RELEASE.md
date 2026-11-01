@@ -1,5 +1,20 @@
 # go-dnp3 Releases
 
+## v1.5.3
+
+**Date:** 2026-11-01
+**Previous release:** v1.5.2
+
+### Fixed
+
+- **Data race when a client turns a request away with `ErrBusy`.** The error read the queue length after the lock was released, while another request could leave the queue. Found by the race detector in `TestChaos`, once.
+
+### Tests
+
+- A regression test that forces a full queue, under the race detector.
+
+---
+
 ## v1.5.2
 
 **Date:** 2026-11-01
