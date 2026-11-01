@@ -8,10 +8,12 @@
 ### Fixed
 
 - **Data race when a client turns a request away with `ErrBusy`.** The error read the queue length after the lock was released, while another request could leave the queue. Found by the race detector in `TestChaos`, once.
+- **A client no longer runs two reconnects at once.** A reconnect whose session key change failed while the channel was lost took that for a failed dial and went on dialling, next to the reconnect of the lost channel. An outstation serves one connection per master, so each dial closed the other's and the reconnects fed each other, also after the faults had stopped: requests failed with `ErrBusy`, and a response could reach the request of another channel. Seen with secure authentication.
+- **An outstation holds back a READ that follows an unsolicited response.** The time of sending was taken after the send returned, so a READ from a fast master could count as sent first, and was answered while the response waited for its confirmation.
 
 ### Tests
 
-- A regression test that forces a full queue, under the race detector.
+- Regression tests: a full queue under the race detector, and one reconnect when the key change fails on a lost channel.
 
 ---
 
