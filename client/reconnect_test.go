@@ -23,7 +23,7 @@ func TestOneReconnectAfterStartupFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	var dials atomic.Int64
 	var breaking atomic.Bool
@@ -85,7 +85,7 @@ func TestOneReconnectAfterStartupFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	// The client comes up as a reconnect does: this test has no outstation
 	// that completes the Connect.
 	c.mu.Lock()
