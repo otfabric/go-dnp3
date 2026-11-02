@@ -55,6 +55,9 @@ func attrValue(a app.Attribute) string {
 	case app.AttrSignedInt:
 		v, err := a.Int()
 		return fmt.Sprintf("int %d %v", v, err)
+	case app.AttrFloat:
+		v, err := a.Float()
+		return fmt.Sprintf("float %g %v", v, err)
 	default:
 		return fmt.Sprintf("%s %q", a.Type, a.Data)
 	}
