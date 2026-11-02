@@ -160,8 +160,26 @@ func (m *unsCounter) OnFragmentReceived(_ net.Addr, f *app.Fragment, _ int) {
 
 func (m *unsCounter) get() int { m.mu.Lock(); defer m.mu.Unlock(); return m.uns }
 
+// solicitedConfirms counts the confirmations of solicited responses the
+// client sends.
+type solicitedConfirms struct {
+	dnp3.NopMetrics
+	mu sync.Mutex
+	n  int
+}
+
+func (m *solicitedConfirms) OnFragmentSent(_ net.Addr, f *app.Fragment, _ int) {
+	if f.Function == app.FuncConfirm && !f.Control.UNS {
+		m.mu.Lock()
+		m.n++
+		m.mu.Unlock()
+	}
+}
+
+func (m *solicitedConfirms) count() int { m.mu.Lock(); defer m.mu.Unlock(); return m.n }
+
 func TestWithoutSolicitedConfirm(t *testing.T) {
-	m := &countingMetrics{}
+	m := &solicitedConfirms{}
 	p := newPair(t, fullDatabase, []server.Option{server.WithConfirmTimeout(200 * time.Millisecond)},
 		client.WithSolicitedConfirm(false), client.WithMetrics(m))
 	if _, err := p.c.IntegrityPoll(ctx(t)); err != nil {
@@ -178,9 +196,11 @@ func TestWithoutSolicitedConfirm(t *testing.T) {
 			t.Fatalf("poll %d: events %v", i, got)
 		}
 	}
-	// The client sent requests only, no confirmation.
-	if sent, done := m.get(&m.fragsSent), m.get(&m.requestsDone); sent != done {
-		t.Fatalf("%d fragments sent for %d requests", sent, done)
+	// The client confirmed no response. The confirmation of the
+	// outstation's unsolicited null response may come at any time, so it
+	// is not counted.
+	if n := m.count(); n != 0 {
+		t.Fatalf("%d solicited confirmations sent", n)
 	}
 
 	// A multi-fragment response stalls after its first fragment.
