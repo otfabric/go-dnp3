@@ -30,7 +30,7 @@ How failures are reported, and how to tell them apart.
 | An authentication error from the peer | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
 | A challenge without secure authentication configured, for another MAC algorithm, or before the session keys were changed | wraps `dnp3.ErrAuthentication` (with an update key, the client then changes the keys at once) | `errors.Is` |
 | An aggressive mode request, or a challenge reply that came too late, refused | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
-| A response that does not fit the request (a control echo that differs, a missing or unexpected object, a wrong file block) | wraps `dnp3.ErrProtocol`; a fragment with an unexpected sequence number is ignored, so the request times out | `errors.Is` |
+| A response that does not fit the request (a control echo that differs, a missing or unexpected object, a wrong file block, an `ActivateConfig` response without a valid g91v1 status) | wraps `dnp3.ErrProtocol`; a fragment with an unexpected sequence number is ignored, so the request times out | `errors.Is` |
 | Headers of a request that do not encode | the `app` codec error (for example `app.ErrInvalidValue`) | `errors.Is` |
 | An option or argument that cannot be used | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
 | `Client.Broadcast` | only local errors: `ErrInvalidOption` (not a broadcast address, a function that needs an answer), `ErrNotConnected`, send errors; the outstations answer nothing, IIN1.0 shows in their next response | `errors.Is` |
@@ -91,7 +91,13 @@ sentinels: `app.ErrMalformed`, `app.ErrUnknownObject`,
 the `transport` and `link` sentinels of the table below. A master never returns them
 for what it receives: a fragment it cannot decode is dropped and reported
 to `Metrics.OnDecodeError` (`ListDirectory` wraps the codec error of a
-listing that does not decode together with `ErrProtocol`). A request whose
+listing that does not decode together with `ErrProtocol`, and
+`ActivateConfig` the `app.ErrMalformed` of a g91v1 status that does not
+parse). `app.ParseActivateConfigStatus` fails with `app.ErrMalformed`, and
+`app.ActivateConfigStatus.Raw` with `app.ErrInvalidValue` for a status that
+does not fit the object; an outstation answers an `ActivateConfigHandler`
+status that does not encode, or does not fit a fragment, with
+PARAMETER_ERROR. A request whose
 own headers do not encode fails with the codec error itself. An outstation
 answers a request it cannot decode with the IIN2 bit the standard prescribes (OBJECT_UNKNOWN for
 `ErrUnknownObject`, NO_FUNC_CODE_SUPPORT for `ErrUnknownFunction`,

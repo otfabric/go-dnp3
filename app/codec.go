@@ -267,8 +267,9 @@ func (d *desc) decodeObjects(h *Header, b []byte, c *codecCtx) (int, error) {
 	}
 	// The least each object occupies, to bound n before allocating.
 	least := uint64(max(size, 1)) + uint64(q.prefixWidth())
-	if d.selfSized() {
-		least = 2 + uint64(q.prefixWidth())
+	// A free-format object's size is given; only an attribute's is checked.
+	if d.fam == fAttribute || (d.selfSized() && !q.IsFreeFormat()) {
+		least = uint64(d.leastSize()) + uint64(q.prefixWidth())
 	}
 	if n*least > uint64(len(b)) {
 		return 0, truncated("%s: %d objects in %d octets", gv, n, len(b))
@@ -314,9 +315,7 @@ func (d *desc) decodeObjects(h *Header, b []byte, c *codecCtx) (int, error) {
 		var err error
 		switch {
 		case d.selfSized() && !q.IsFreeFormat():
-			var a Attribute
-			a, objLen, err = decodeAttribute(b[p:])
-			v = a
+			v, objLen, err = d.decodeSelfSized(b[p:])
 		default:
 			if !q.IsFreeFormat() {
 				objLen = size
@@ -324,7 +323,7 @@ func (d *desc) decodeObjects(h *Header, b []byte, c *codecCtx) (int, error) {
 			if len(b)-p < objLen {
 				return p, truncated("%s: object %d", gv, i)
 			}
-			if d.selfSized() {
+			if d.fam == fAttribute {
 				var a Attribute
 				var m int
 				a, m, err = decodeAttribute(b[p : p+objLen])
@@ -477,9 +476,16 @@ func (h *Header) appendEncode(b []byte, c *codecCtx) ([]byte, error) {
 			setUint(b[at:], uint32(l), pw)
 			continue
 		}
+		at := len(b)
 		var err error
 		if b, err = d.encodeValue(b, h.GV, o.Value, c); err != nil {
 			return b, err
+		}
+		if d.fam == fActivation {
+			// Without a size prefix, the object must delimit itself.
+			if n, err := activationLen(b[at:]); err != nil || n != len(b)-at {
+				return b, invalid("%s object of %d octets is not one activation status", h.GV, len(b)-at)
+			}
 		}
 	}
 	return b, nil

@@ -86,6 +86,7 @@ const (
 	fSecStat
 	fAttribute
 	fRaw
+	fActivation // g91v1: carried as Raw, sized by its own count and lengths
 	fFileAuth
 	fFileCommand
 	fFileCommandStatus
@@ -251,7 +252,29 @@ func (d *desc) bits() int {
 }
 
 // selfSized reports whether each object carries its own length.
-func (d *desc) selfSized() bool { return d.fam == fAttribute }
+func (d *desc) selfSized() bool { return d.fam == fAttribute || d.fam == fActivation }
+
+// leastSize returns the fewest octets one object of a self-sized
+// variation occupies.
+func (d *desc) leastSize() int {
+	if d.fam == fActivation {
+		return activationHeaderSize
+	}
+	return 2
+}
+
+// decodeSelfSized reads one object of a self-sized variation from the
+// start of b and returns it with the octets consumed.
+func (d *desc) decodeSelfSized(b []byte) (Value, int, error) {
+	if d.fam == fActivation {
+		n, err := activationLen(b)
+		if err != nil {
+			return nil, 0, err
+		}
+		return Raw{Data: clone(b[:n])}, n, nil
+	}
+	return decodeAttribute(b)
+}
 
 // freeFormat reports whether objects of this variation are only sent with
 // a free-format qualifier (each object preceded by its size).
@@ -365,7 +388,7 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		v := SecurityStatistic{Flags: Flags(r.u8()), Association: r.u16(), Value: r.u32()}
 		v.Time, _ = d.readTime(&r, c)
 		return v, r.done()
-	case fRaw:
+	case fRaw, fActivation:
 		return Raw{Data: clone(b)}, nil
 	case fFileAuth:
 		return decFileAuth(b)
@@ -596,7 +619,7 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 			return mismatch()
 		}
 		return encodeAttribute(b, o)
-	case fRaw:
+	case fRaw, fActivation:
 		o, ok := v.(Raw)
 		if !ok {
 			return mismatch()

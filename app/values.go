@@ -444,7 +444,8 @@ type SecurityStatistic struct {
 // Raw is a free-format object that this package carries without
 // decoding: the obsolete g70v1, private registration objects (group 83),
 // the data set objects of groups 85..88 but the characteristics (g86v2), the application identifier (g90v1) and
-// the status of requested operation (g91v1).
+// the status of requested operation (g91v1). The data of a g91v1 object
+// are read with [ParseActivateConfigStatus].
 type Raw struct {
 	Data []byte
 }

@@ -92,6 +92,8 @@ The master for one outstation.
 | `WithAutoClearRestart(bool)` | on | Clear DEVICE_RESTART when reported |
 | `WithAutoIntegrity(bool)` | on | Integrity poll on restart and overflow |
 | `WithAutoEventPoll(bool)` | off | Poll the classes the IIN reports events for |
+| `WithSolicitedConfirm(bool)` | on | Confirm solicited responses that ask for it. Off is for tests and diagnostics only: the outstation keeps the events it sent, and a multi-fragment response stalls after its first fragment |
+| `WithUnsolicitedConfirm(bool)` | on | Confirm unsolicited responses that ask for it. Off is for tests and diagnostics only: the outstation repeats them; a repeat reaches the `Handler` once |
 | `WithPoll(Poll)` | none | A periodic READ (`Interval`, `Headers`); repeatable |
 | `WithQueueLimit(n)` | 64 | Requests that may wait for their turn |
 | `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key (on connect, at the interval, and again soon after an authentication failure, with a backoff from 1 s while there are no keys), challenge replies |
@@ -116,6 +118,7 @@ Every request takes a `context.Context` and returns a `*Result` (its fields
 | `SyncTime(ctx, procedure)` | RECORD_CURRENT_TIME + WRITE g50v3, or DELAY_MEASURE + WRITE g50v1 |
 | `DelayMeasure(ctx)` | DELAY_MEASURE |
 | `ColdRestart(ctx)`, `WarmRestart(ctx)` | COLD_RESTART, WARM_RESTART; return the delay |
+| `ActivateConfig(ctx, headers...)` | ACTIVATE_CONFIG with file specifications (g70v8) or octet strings (g110); returns the `app.ActivateConfigStatus` of each g91v1 object of the response, `ErrProtocol` without one; never retried |
 | `EnableUnsolicited(ctx, classes...)`, `DisableUnsolicited` | ENABLE_UNSOLICITED, DISABLE_UNSOLICITED |
 | `AssignClass(ctx, class, headers...)` | ASSIGN_CLASS |
 | `Freeze(ctx, clear, noAck, headers...)` | IMMED_FREEZE, FREEZE_CLEAR and their `_NR` forms |
@@ -215,7 +218,8 @@ until `Close`); the variable `DefaultCritical`. `Class` is an event class
 | `Handler` | `Select(ctx, Command)`, `Operate(ctx, Command, OperateType)` return the status |
 | `RestartHandler` | COLD_RESTART, WARM_RESTART |
 | `TimeHandler` | Every time synchronization |
-| `ApplicationHandler` | INITIALIZE_DATA, the application functions, SAVE_CONFIG, ACTIVATE_CONFIG |
+| `ApplicationHandler` | INITIALIZE_DATA, the application functions, SAVE_CONFIG, ACTIVATE_CONFIG; returns IIN2 bits only |
+| `ActivateConfigHandler` | ACTIVATE_CONFIG, instead of `ApplicationHandler`: `ActivateConfig(ctx, headers)` returns an `app.ActivateConfigStatus` and IIN2 bits; without an error bit the response carries the status in one g91v1 object, qualifier 0x07 |
 | `WriteHandler` | WRITE of device attributes of set 0 and octet strings |
 | `AttributeSetWriteHandler` | WRITE of a writable attribute of a `WithAttributeSet` set, before it is stored |
 
@@ -246,6 +250,7 @@ directories.
 | Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD`, `UnsignedInteger`, `DataSetCharacteristics` (g86v2, `Flags DataSetFlags`), `SecurityStatistic`, `Raw` |
 | Enumerations | `Flags`, `DoubleBit`, `CommandStatus`, `OpType`, `TripClose`, `IntervalUnit`, `DataSetFlags` (`DataSetReadable` ... `DataSetMasterDefined`) |
 | Attributes | `Attribute`, `AttrType`, `Attr*` variations, `StringAttribute`, `UintAttribute`, `IntAttribute`, `FloatAttribute`, `TimeAttribute`, `ListAttribute`, `AttributeListEntry`; read with `Text`, `Uint`, `Int`, `Float`, `List` |
+| Activation status (g91v1) | `ActivateConfigStatus{Delay, Results}`, `ActivateConfigResult{Code, Text}`; `ParseActivateConfigStatus(data)` reads the data of the `Raw` that `Decode` returns for g91v1, `ActivateConfigStatus.Raw()` makes one. g91v1 decodes with a count, range or free-format qualifier |
 | Files | `FileAuthentication`, `FileCommand`, `FileCommandStatus`, `FileTransport`, `FileTransportStatus`, `FileDescriptor`, `FileSpecification`, `FileMode`, `FileStatus`, `FileType`, `Permissions`, `AppendFileDescriptor`, `DecodeFileDescriptors` |
 | Authentication | `AuthChallenge` ... `AuthUpdateKeyChangeConfirmation`, `MACAlgorithm`, `KeyWrap`, `KeyStatus`, `AuthErrorCode`, `ChallengeReason` |
 | Errors | `ErrMalformed`, `ErrUnknownObject`, `ErrInvalidQualifier`, `ErrInvalidValue`, `ErrUnknownFunction` |

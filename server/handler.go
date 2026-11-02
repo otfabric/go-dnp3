@@ -120,6 +120,22 @@ type ApplicationHandler interface {
 	Application(ctx context.Context, fc app.FunctionCode, headers []app.Header) app.IIN
 }
 
+// ActivateConfigHandler is an optional interface of the [Handler] for
+// ACTIVATE_CONFIG (function code 31). When the handler implements it,
+// ACTIVATE_CONFIG goes to ActivateConfig instead of [ApplicationHandler].
+//
+// headers are the request's objects: file specifications (g70v8, as
+// app.FileSpecification) or octet strings (g110) that name the
+// configurations to activate. ActivateConfig returns the status of
+// requested operation and the IIN2 error bits of the response. Without an
+// error bit the response carries the status in one g91v1 object with
+// qualifier 0x07 (count 1); with one, the response has no object. A status
+// that does not encode (app.ActivateConfigStatus.Raw) or does not fit the
+// largest response fragment is answered with IIN2.2 (PARAMETER_ERROR).
+type ActivateConfigHandler interface {
+	ActivateConfig(ctx context.Context, headers []app.Header) (app.ActivateConfigStatus, app.IIN)
+}
+
 // AttributeSetWriteHandler is an optional interface of the [Handler]: it is
 // told of a write of a writable device attribute of a set of
 // WithAttributeSet before the outstation stores it, and refuses it with an

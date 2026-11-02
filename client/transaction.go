@@ -184,7 +184,11 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 				continue
 			}
 			if f.Control.CON {
-				c.confirm(sess, f.Control.Seq, false)
+				if c.opts.noSolConfirm {
+					c.log.Debug("response not confirmed (WithSolicitedConfirm)", "seq", f.Control.Seq)
+				} else {
+					c.confirm(sess, f.Control.Seq, false)
+				}
 			}
 			res.Fragments = append(res.Fragments, f)
 			res.IIN = f.IIN

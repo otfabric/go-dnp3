@@ -126,6 +126,8 @@ type options struct {
 	autoClearRestart bool
 	autoEventPoll    bool
 	autoIntegrity    bool
+	noSolConfirm     bool
+	noUnsConfirm     bool
 	polls            []Poll
 	queueLimit       int
 	auth             *secauth.User
@@ -316,6 +318,28 @@ func WithAutoEventPoll(enabled bool) Option {
 // on by default.
 func WithAutoIntegrity(enabled bool) Option {
 	return func(o *options) error { o.autoIntegrity = enabled; return nil }
+}
+
+// WithSolicitedConfirm controls whether the client confirms a solicited
+// response that asks for confirmation (CON). It is on by default, as IEEE
+// 1815-2012 requires. It is a test and diagnostic option, to see what an
+// outstation does without the confirmation: it keeps the events it sent
+// (the next poll gets them again) and sends no further fragment of a
+// multi-fragment response, so such a response ends in dnp3.ErrTimeout.
+// Unsolicited responses are still confirmed; see WithUnsolicitedConfirm.
+func WithSolicitedConfirm(enabled bool) Option {
+	return func(o *options) error { o.noSolConfirm = !enabled; return nil }
+}
+
+// WithUnsolicitedConfirm controls whether the client confirms an
+// unsolicited response that asks for confirmation (CON). It is on by
+// default, as IEEE 1815-2012 requires. It is a test and diagnostic option,
+// to see the outstation repeat an unconfirmed unsolicited response: the
+// client passes the events of a repeat to the Handler only once. An
+// outstation may answer no request until its null unsolicited response at
+// startup is confirmed.
+func WithUnsolicitedConfirm(enabled bool) Option {
+	return func(o *options) error { o.noUnsConfirm = !enabled; return nil }
 }
 
 // WithPoll adds a periodic READ.

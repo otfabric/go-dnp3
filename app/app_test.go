@@ -204,6 +204,16 @@ func sample(gv GroupVariation, d *desc, i int) Value {
 		return StringAttribute("go-dnp3")
 	case fRaw:
 		return Raw{Data: []byte{1, 2, 3}}
+	case fActivation:
+		r, err := ActivateConfigStatus{Delay: time.Duration(i) * time.Second,
+			Results: make([]ActivateConfigResult, i)}.Raw()
+		if err != nil {
+			panic(err)
+		}
+		if i > 0 {
+			r.Data[activationHeaderSize+1] = 3 // a status code
+		}
+		return r
 	case fFileAuth:
 		return FileAuthentication{UserName: "user", Password: "secret", AuthKey: 0xDEADBEEF}
 	case fFileCommand:
@@ -332,7 +342,7 @@ func TestRoundTripEveryVariation(t *testing.T) {
 			roundTrip(t, FuncResponse, with(norm(Indexed(gv, objs...)))...)
 			roundTrip(t, FuncResponse, with(norm(Indexed(gv, objs[:2]...)))...)
 			roundTrip(t, FuncResponse, with(norm(Counted(gv, vals...)))...)
-			if !d.selfSized() {
+			if d.fam != fAttribute {
 				roundTrip(t, FuncResponse, with(norm(FreeFormat(gv, vals...)))...)
 			}
 		}
@@ -624,6 +634,10 @@ func FuzzDecode(f *testing.F) {
 		"C0 81 00 00 33 01 07 01 00 00 00 00 00 00 02 03 17 01 01 01 0A 00",
 		"C0 81 00 00 46 05 5B 01 0C 00 34 12 00 00 07 00 00 80 64 61 74 61",
 		"C0 81 00 00 00 FF 00 00 00 FE 04 01 00 02 01",
+		// g91v1 with a count qualifier (DSC go-dnp3's ACTIVATE_CONFIG answer)
+		// and free format; the corpus in testdata/fuzz/FuzzDecode has more.
+		dscActivateConfigResponse,
+		"C0 81 00 00 5B 01 5B 01 07 00 00 00 00 00 01 01 00",
 	}
 	for _, s := range seeds {
 		f.Add(unhex(f, s))
