@@ -364,8 +364,8 @@ func (a *association) eventItems(sels []*eventSelector) []item {
 // the counters and analog inputs without flag) to the variation of the same
 // value with flags. A point whose flags are anything but ONLINE alone is
 // reported in that variation instead, so that its quality is not hidden, as
-// opendnp3 and stepfunc do and the DNP3 IED certification procedure
-// requires (3.1r1 8.24).
+// opendnp3 does and the DNP3 IED certification procedure requires (3.1r1
+// 8.24).
 var withFlags = map[app.GroupVariation]app.GroupVariation{
 	app.G1V1:   app.G1V2,
 	app.G3V1:   app.G3V2,

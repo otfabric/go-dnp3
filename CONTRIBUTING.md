@@ -44,7 +44,7 @@ make bench
 # Regenerate the object table, Measurements' points and OBJECTS.md from app/catalog.json
 make generate
 
-# Compare the catalog with stepfunc dnp3 and DSC go-dnp3, and look for a new dnp3-interop release
+# Compare the catalog with DSC go-dnp3, and look for a new dnp3-interop release
 make upstream-watch
 
 # Run the interop tests against the dnp3-interop reference images (needs Docker)
@@ -74,7 +74,7 @@ make build
 
 A weekly workflow (`.github/workflows/upstream-watch.yml`) runs `internal/cmd/upstreamwatch`. It reports, in one issue labelled `upstream-watch`:
 
-- commits to the object definitions of stepfunc dnp3 or DSC go-dnp3 since the commit recorded as reviewed in `.github/upstream.json`;
+- commits to the object definitions of DSC go-dnp3 since the commit recorded as reviewed in `.github/upstream.json`;
 - an object they define with a fixed layout whose size differs from `app/catalog.json`, or that the catalog lacks;
 - a dnp3-interop release newer than the one the interop harness pins.
 
@@ -101,11 +101,7 @@ something to happen.
 
 The interop tests consume the images of
 [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop). This
-repository holds no reference code. The stepfunc image is not published
-(Step Function I/O's licence does not allow redistributing its library):
-`make interop` builds it first with `make interop-stepfunc`, from
-dnp3-interop's source at the pinned commit, and the interop workflow does
-the same. Never push that image anywhere. A reference that deviates from the
+repository holds no reference code. A reference that deviates from the
 fixture's behaviour is recorded in dnp3-interop's `tests/known-bugs.tsv`
 and mirrored in `interop/harness.go`'s `knownBugs`, so that the test checks
 the behaviour and logs the deviation.

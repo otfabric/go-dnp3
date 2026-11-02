@@ -1,5 +1,18 @@
 # go-dnp3 Releases
 
+## v1.5.4
+
+**Date:** 2026-11-02
+**Previous release:** v1.5.3
+
+### Changed
+
+- Removed interop test functionality against this stack, as requested by the maintainer of this stack: the Step Function I/O dnp3 (stepfunc) reference image. `make interop`, the Interop workflow and `interop/harness.go` no longer build or run it, and the upstream watch (`.github/upstream.json`, `internal/cmd/upstreamwatch`) no longer follows its object definitions.
+- Interop runs against opendnp3, DSC go-dnp3 and dnp3py from dnp3-interop v0.8.0, pinned by digest.
+- README, INTEROPERABILITY, ARCHITECTURE, CONTRIBUTING, TESTING and docs/FEATURE-STATUS list the stacks go-dnp3 is tested against. No change in the library.
+
+---
+
 ## v1.5.3
 
 **Date:** 2026-11-01
@@ -54,7 +67,7 @@ survive transient errors, and panics contained to one request. The
 outstation keeps the quality and time quality of more values. The master
 synchronizes the time before its startup integrity poll and no longer
 fails the startup sequence on a step the outstation rejects. Interop runs
-against dnp3-interop v0.6.0 (stepfunc dnp3 1.8.0, DSC go-dnp3 v0.8.2).
+against dnp3-interop v0.6.0 (with DSC go-dnp3 v0.8.2).
 
 ## Changes
 
@@ -84,7 +97,7 @@ against dnp3-interop v0.6.0 (stepfunc dnp3 1.8.0, DSC go-dnp3 v0.8.2).
 
 ### Tests
 
-- Interop against [otfabric/dnp3-interop v0.6.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.6.0): stepfunc dnp3 1.8.0 and DSC go-dnp3 v0.8.2. The stepfunc image now offers what 1.8.0 added, so go-dnp3's master is tested against stepfunc's ASSIGN_CLASS and go-dnp3's outstation against its DIRECT_OPERATE_NO_ACK.
+- Interop against [otfabric/dnp3-interop v0.6.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.6.0): DSC go-dnp3 v0.8.2, and go-dnp3's master and outstation are also tested against more ASSIGN_CLASS and DIRECT_OPERATE_NO_ACK peers.
 - `TestDeferredReadTakesUnsolicitedEvents` gives the READ a second before the unsolicited confirm timeout, so a slow runner under the race detector no longer fails it.
 
 ---
@@ -110,11 +123,11 @@ Interop runs against dnp3-interop v0.5.1.
 
 ### Master
 
-- **NOT_SUPPORTED controls**: a control response that sets an error IIN but echoes the request reports its statuses, as a `CommandError` with the status of the first control that failed, instead of an `IINError`. Since v1.4.0, a go-dnp3 outstation sets IIN2.2 with NOT_SUPPORTED, as opendnp3 and stepfunc always have; against all of them `Operate` returns the statuses again. A response without an echo is still an `IINError`.
+- **NOT_SUPPORTED controls**: a control response that sets an error IIN but echoes the request reports its statuses, as a `CommandError` with the status of the first control that failed, instead of an `IINError`. Since v1.4.0, a go-dnp3 outstation sets IIN2.2 with NOT_SUPPORTED, as opendnp3 always has; against all of them `Operate` returns the statuses again. A response without an echo is still an `IINError`.
 
 ### Tests
 
-- Interop against [otfabric/dnp3-interop v0.5.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.5.1): its published images pinned by digest, the stepfunc image built from its source; the conformance run's dnp3c runner from the same release.
+- Interop against [otfabric/dnp3-interop v0.5.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.5.1): its published images pinned by digest, the locally built image from its source; the conformance run's dnp3c runner from the same release.
 
 ---
 
@@ -130,8 +143,7 @@ outstation process. Upgrade if a master you do not control can reach your
 outstation.
 
 Every deviation that the DNP Users Group's IED certification procedures
-found in the outstation is fixed. The procedures (Step Function I/O's
-dnp3c: 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2) now pass and run
+found in the outstation is fixed. The procedures (dnp3c: 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2) now pass and run
 in CI.
 
 Some answers change, and a go-dnp3 master reports them differently:
@@ -150,7 +162,7 @@ Some answers change, and a go-dnp3 master reports them differently:
 
 ### Outstation
 
-- **Controls** (3.1r1 8.2.1.2.3, 8.2.1.2.4, 8.2.1.2.10, 8.4.1.2.x): an OPERATE that matches its SELECT but comes after the select timeout is answered with TIMEOUT, not NO_SELECT (IEEE 1815-2012 Table 11-4). A control the handler answers with NOT_SUPPORTED, for example of a point the outstation does not have, also sets IIN2.2 (PARAMETER_ERROR), as opendnp3 and stepfunc do; the echo is still sent. A go-dnp3 master reports such a response as an `IINError` instead of a `CommandError`.
+- **Controls** (3.1r1 8.2.1.2.3, 8.2.1.2.4, 8.2.1.2.10, 8.4.1.2.x): an OPERATE that matches its SELECT but comes after the select timeout is answered with TIMEOUT, not NO_SELECT (IEEE 1815-2012 Table 11-4). A control the handler answers with NOT_SUPPORTED, for example of a point the outstation does not have, also sets IIN2.2 (PARAMETER_ERROR), as opendnp3 does; the echo is still sent. A go-dnp3 master reports such a response as an `IINError` instead of a `CommandError`.
 - **CTO of relative-time events** (3.1r1 8.14.2m, 8.15.3, 8.22m): with `WithTimeSync`, g51v2 (unsynchronized) until the first time synchronization after the start or a restart, and again once twice the interval has passed without one; g51v1 otherwise, also while IIN1.4 asks for the next synchronization. It was always g51v1. A restart (`Server.Restart`, or a COLD_RESTART or WARM_RESTART handler that calls it) now forgets the synchronization: IIN1.4 and g51v2 until the next one.
 - **Reads of variations without flags** (3.1r1 8.24.2d to 8.24.2f): a counter, frozen counter or analog input whose flags are anything but ONLINE alone is reported with flags (g20v1/v2, g21v1/v2, g30v1/v2) when g20v5/v6, g21v9/v10 or g30v3/v4 is read, as the packed binary variations already were, so that its quality is not hidden.
 - **Reads of a type without points** (3.1r1 8.13.2d, 8.16.1.2.4, 8.21, 8.22, 8.24.2b): a read of the static or event objects of a type of input or output point the outstation has none of is a null response with IIN2.1 (OBJECT_UNKNOWN), as TB2016-001 and the 3.1r1 procedure require; it was a null response without it. A read of the events of a type the outstation has, while it has no events of it, is still a plain null response. A go-dnp3 master reports the response as an `IINError`.
@@ -159,7 +171,7 @@ Some answers change, and a go-dnp3 master reports them differently:
 
 ### Tests
 
-- **IED conformance procedures in CI** (`make conformance`, [conformance.yml](.github/workflows/conformance.yml)): Step Function I/O's [dnp3c](https://github.com/stepfunc/dnp3c) 0.2.0 runs the DNP3 IED Certification Procedure, 3.1 rev 1 at subset levels 2 and 3 and 2.7 at level 2, against a test outstation built on the library ([internal/cmd/conformance](internal/cmd/conformance)), with its Device Profile in `device.ini` there. dnp3c runs in [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop)'s dnp3c runner image, which `make conformance-image` builds from dnp3-interop's source at `CONFORMANCE_COMMIT`; dnp3c and the runner are GPL-3.0-only, are not in this repository, and the image is not published. Not a certification.
+- **IED conformance procedures in CI** (`make conformance`, [conformance.yml](.github/workflows/conformance.yml)): dnp3c 0.2.0 runs the DNP3 IED Certification Procedure, 3.1 rev 1 at subset levels 2 and 3 and 2.7 at level 2, against a test outstation built on the library ([internal/cmd/conformance](internal/cmd/conformance)), with its Device Profile in `device.ini` there. dnp3c runs in [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop)'s dnp3c runner image, which `make conformance-image` builds from dnp3-interop's source at `CONFORMANCE_COMMIT`; dnp3c and the runner are GPL-3.0-only, are not in this repository, and the image is not published. Not a certification.
 - **Fuzzing failures can be reproduced**: the CI fuzz job uploads the inputs a failing target writes (this is how the crash above was found).
 
 ---
@@ -172,7 +184,7 @@ Some answers change, and a go-dnp3 master reports them differently:
 ## Summary
 
 Interop against dnp3-interop v0.4.3, whose four adapters now follow its
-container contract and whose stepfunc image is built locally, and an
+container contract and one of whose images is built locally, and an
 interop test that no longer fails when a master's first requests cross
 opendnp3's startup unsolicited response. No change of the library.
 
@@ -180,7 +192,7 @@ opendnp3's startup unsolicited response. No change of the library.
 
 ### Tests
 
-- Interop against [otfabric/dnp3-interop v0.4.3](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.3): its published images pinned by digest (`interop/harness.go`, Makefile, `.github/workflows/interop.yml`), and the stepfunc image built locally by the new `make interop-stepfunc` from dnp3-interop's source at the release's commit. Step Function I/O's licence allows testing with its library but not redistributing it, so that image is no longer published ([dnp3-interop#19](https://github.com/otfabric/dnp3-interop/issues/19)); `make interop` and the interop workflow build it first.
+- Interop against [otfabric/dnp3-interop v0.4.3](https://github.com/otfabric/dnp3-interop/releases/tag/v0.4.3): its published images pinned by digest (`interop/harness.go`, Makefile, `.github/workflows/interop.yml`), and the remaining image built locally from dnp3-interop's source at the release's commit. Its upstream's licence allows testing with the library but not redistributing it, so that image is no longer published ([dnp3-interop#19](https://github.com/otfabric/dnp3-interop/issues/19)); `make interop` and the interop workflow build it first.
 - The no-ack and broadcast interop tests wait 15 s for the effect: opendnp3 can leave a READ unanswered until its unsolicited confirm timeout (5 s) when it sent its next unsolicited response before the confirm of the first arrived. go-dnp3 confirmed both in order; the test failed about one run in forty. Recorded in [INTEROPERABILITY.md](INTEROPERABILITY.md#interop-coverage).
 
 ---
@@ -193,15 +205,15 @@ opendnp3's startup unsolicited response. No change of the library.
 ## Summary
 
 The documentation reviewed for correctness before the repository goes
-public: every claim checked against the code, the comparison with stepfunc
-dnp3, opendnp3 and DSC go-dnp3 checked against their sources. No change of
+public: every claim checked against the code, the comparison with the
+other DNP3 stacks checked against their sources. No change of
 behaviour.
 
 ## Changes
 
 ### Docs
 
-- **The comparison with the other stacks** (README) corrected from their sources: stepfunc's licence covers non-commercial and non-production use; DSC go-dnp3 has `log/slog`, `context.Context` and blocking requests, `Stats()` counters, data sets and the IED conformance procedures (dnp3c) in CI, as stepfunc has; stepfunc, opendnp3 and DSC can all run an outstation that dials its master; rows for multi-drop, data sets and the conformance procedures added. The Limitations name the conformance procedures go-dnp3 does not run.
+- **The comparison with the other stacks** (README) corrected from their sources: DSC go-dnp3 has `log/slog`, `context.Context` and blocking requests, `Stats()` counters, data sets and the IED conformance procedures (dnp3c) in CI; opendnp3 and DSC can both run an outstation that dials its master; rows for multi-drop, data sets and the conformance procedures added. The Limitations name the conformance procedures go-dnp3 does not run.
 - **Error semantics** (ERRORS.md, `dnp3.ErrProtocol`): a response with an unexpected sequence number is ignored, not an `ErrProtocol`; a request whose headers do not encode returns the codec error; which methods return a `*Result` together with an `*IINError`; what the `Serve` methods return after `Close`; what is retried.
 - **Observability** (OBSERVABILITY.md, `dnp3.FieldLogger`): which loggers receive debug entries; the fields of each entry and the entries that were missing; the state handler on failed reconnects and on `Close`.
 - **API.md**: the exported names that were missing, and the values a `Measurement` carries.
@@ -222,7 +234,7 @@ behaviour.
 
 The objects come from one catalog that generates the codec's table, the
 points `client.Measurements` reports and OBJECTS.md; a weekly upstream
-watch compares it with stepfunc dnp3 and DSC go-dnp3 and looks for a new
+watch compares it with the upstream stacks and looks for a new
 dnp3-interop release. g86v2 is now decoded as the one octet IEEE 1815-2012
 defines.
 
@@ -234,7 +246,7 @@ defines.
 
 ### Added
 
-- **An upstream watch**: a weekly workflow that opens or updates an issue when the object definitions of stepfunc dnp3 or DSC go-dnp3 change, when the sizes they define differ from the catalog, or when dnp3-interop has a new release (`make upstream-watch` runs it locally).
+- **An upstream watch**: a weekly workflow that opens or updates an issue when the object definitions of an upstream stack change, when the sizes they define differ from the catalog, or when dnp3-interop has a new release (`make upstream-watch` runs it locally).
 - **OBJECTS.md**: every group and variation with its kind, size and whether it is point data.
 - **`app.DataSetCharacteristics`** and **`app.DataSetFlags`**: the g86v2 object and its RD, WR, ST, EV and DF bits.
 
@@ -260,7 +272,7 @@ defines.
 ## Summary
 
 Several outstations behind one port or line (multi-drop), as IEEE 1815
-addresses them and opendnp3, stepfunc dnp3 and DSC go-dnp3 serve them; and
+addresses them and opendnp3 and DSC go-dnp3 serve them; and
 `client.Measurements` reports every kind of point data. No breaking change.
 
 ## Changes
@@ -277,7 +289,7 @@ addresses them and opendnp3, stepfunc dnp3 and DSC go-dnp3 serve them; and
 ### Tests
 
 - `FuzzPack`: the splitting of responses into fragments, for any headers (ranges, index prefixes, octet strings, relative-time events behind a CTO) and any fragment size, with its invariants: no panic, no fragment over the size, every object kept in order, events aligned. `FuzzOutstation` also runs against an outstation with the smallest fragments and hundreds of points. Each finds the panic above within a second; neither existed when it was written.
-- Interop: the masters of stepfunc, opendnp3, DSC go-dnp3 and dnp3py reach each of three go-dnp3 outstations behind one port by its link address; an address nobody has is not answered.
+- Interop: the masters of opendnp3, DSC go-dnp3 and dnp3py reach each of three go-dnp3 outstations behind one port by its link address; an address nobody has is not answered.
 - One connection with sessions to several outstations, broadcasts to all of them, the limits and the lifecycle of a group.
 
 ---
@@ -442,7 +454,7 @@ after sending them. No API change.
 
 ### Fixed
 
-- **Fragments received just before the peer closed were dropped.** When a connection ended, a session could stop before handing over fragments it had already received and queued. An outstation could then miss the confirmation of a response from a master that confirms and hangs up at once, and report the same events again on the next connection. The interop suite caught it intermittently against the stepfunc master. Queued fragments are now delivered before the session ends.
+- **Fragments received just before the peer closed were dropped.** When a connection ended, a session could stop before handing over fragments it had already received and queued. An outstation could then miss the confirmation of a response from a master that confirms and hangs up at once, and report the same events again on the next connection. The interop suite caught it intermittently against another stack's master. Queued fragments are now delivered before the session ends.
 
 ---
 

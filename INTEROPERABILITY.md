@@ -100,7 +100,7 @@ the standard allows for it (start-stop 0x00..0x02, virtual 0x03..0x05, all
 others are used by the procedures. [OBJECTS.md](OBJECTS.md) lists each
 variation with its size and whether it is point data, generated from the
 catalog `app/catalog.json`, whose sizes are compared weekly with those of
-stepfunc dnp3 and DSC go-dnp3.
+DSC go-dnp3.
 
 | Groups | Objects | Outstation database |
 |--------|---------|---------------------|
@@ -213,18 +213,18 @@ a pre-shared session key is used directly (outside the standard, see
 | DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against stepfunc dnp3 1.8.0, opendnp3 3.1.2, DSC go-dnp3 v0.8.2 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.8.0 |
+| As master against opendnp3 3.1.2, DSC go-dnp3 v0.8.2 and dnp3py 0.6.0 outstations | ✅ `make interop`, dnp3-interop v0.8.0 |
 | As outstation against the same masters | ✅ `make interop`, dnp3-interop v0.8.0 |
-| TLS with mutual authentication, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3, including a refused certificate of another CA |
-| UDP, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
-| Serial, both roles | ✅ against stepfunc, opendnp3 and DSC go-dnp3 over a pseudo-terminal bridged to TCP |
+| TLS with mutual authentication, both roles | ✅ against opendnp3 and DSC go-dnp3, including a refused certificate of another CA |
+| UDP, both roles | ✅ against opendnp3 and DSC go-dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
+| Serial, both roles | ✅ against opendnp3 and DSC go-dnp3 over a pseudo-terminal bridged to TCP |
 | File transfer: master | ✅ against DSC go-dnp3's file server: read, write of several blocks, append, AUTHENTICATE_FILE, list, info, delete, missing files |
-| File transfer: outstation | ✅ against the masters of stepfunc (get, put, append, list, info, authenticate) and DSC go-dnp3 (get, put, list, info, delete, authenticate; no append) |
+| File transfer: outstation | ✅ against the master of DSC go-dnp3 (get, put, list, info, delete, authenticate; no append) |
 | Contract 1.3 (device attributes, several controls, freeze at time, analog freeze, deadbands, event buffer overflow, link confirms and keep-alive, broadcast, management, several outstations) | ✅ against every reference that has each, see [Interop coverage](#interop-coverage) |
 | Secure Authentication, both roles | ✅ against DSC go-dnp3 (HMAC-SHA-256-16, AES-128 key wrap): key change at connect, challenged controls, periodic key change in a session, a second connection, a wrong update key refused, security statistics read both ways; the other references do not implement it |
-| Requests without a response | ✅ DIRECT OPERATE NO ACK and FREEZE AND CLEAR NO ACK as master against stepfunc, opendnp3 and DSC go-dnp3; as outstation from DSC go-dnp3's and dnp3py's masters |
-| Dual end point, both roles, TCP and TLS | ✅ against stepfunc, opendnp3 and DSC go-dnp3 (stepfunc's master listens over TCP only) |
-| Frozen analog inputs, command events, time and interval | ✅ as master against DSC go-dnp3's outstation; as outstation against the masters that decode them (stepfunc, opendnp3, DSC go-dnp3) |
+| Requests without a response | ✅ DIRECT OPERATE NO ACK and FREEZE AND CLEAR NO ACK as master against opendnp3 and DSC go-dnp3; as outstation from DSC go-dnp3's and dnp3py's masters |
+| Dual end point, both roles, TCP and TLS | ✅ against opendnp3 and DSC go-dnp3 |
+| Frozen analog inputs, command events, time and interval | ✅ as master against DSC go-dnp3's outstation; as outstation against the masters that decode them (opendnp3, DSC go-dnp3) |
 | Aggressive mode | ✅ between go-dnp3's own ends; no reference in dnp3-interop has it |
 
 ## Frozen counter events
@@ -251,52 +251,50 @@ the reference does not have or its dnp3-interop adapter does not expose
 (its capability document says which): the suite covers everything the
 images offer.
 
-| Feature | stepfunc 1.8.0 | opendnp3 3.1.2 | DSC go-dnp3 v0.8.2 | dnp3py 0.6.0 |
-|---|:---:|:---:|:---:|:---:|
-| Integrity poll: values and flags of every point type of the baseline fixture | M O | M O | M O | O |
-| Reads of ranges and variations | M O | M O | M O | O |
-| Read of all objects of a group | M O | M O | M | O |
-| Direct operate, select-before-operate, set-points, ranges, refused codes and points | M O | M O | M O | O |
-| Direct operate no ack | M O | M | M O | O |
-| Events, their confirmation, event polls | M O | M O | M O | O |
-| Unsolicited responses, enable and disable | M O | M O | M O | O |
-| Time synchronization, LAN and non-LAN | M O | M O | M O | O |
-| Cold and warm restart with the delay | M O | M O | M O | O |
-| Freeze and freeze-and-clear | M O | M O | M O | O |
-| Freeze and clear no ack | M | M | M | O |
-| Assign class | M O | M O | M | O |
-| TLS with mutual authentication | M O | M O | M O | |
-| UDP | M O | M O | M O | |
-| Serial line | M O | M O | M O | |
-| File transfer: read, write, list, info | O | | M O | |
-| File transfer: delete | | | M O | |
-| Secure Authentication: key change, challenges, re-key, wrong key | | | M O | |
-| Security statistics, reads and g122 events | | | M O | |
-| Device attributes, other sets, read and write (contract 1.3) | M O | | M O | |
-| Several controls in one request, the limit per request (TOO_MANY_OBJS) | M O | M O | M O | O |
-| FREEZE AT TIME, scheduled | M O | | M O | O |
-| Analog freeze into frozen analog inputs | O | O | M | O |
-| Deadbands (g34): write; read back | M O | | M O (write) | |
-| File append, AUTHENTICATE_FILE | O | | M O | |
-| Event buffer overflow (IIN2.3) | M O | M O | M O | M O |
-| Link confirms; keep-alive | O (keep-alive) | O (keep-alive) | M O | |
-| Broadcast | M | M | M O | |
-| Management functions (INITIALIZE, START, STOP, SAVE) | | O | M | |
-| Several outstations behind one port | O | M O | M O | O |
-| Dual end point, TCP | M O | M O | M O | |
-| Dual end point, TLS | M | M O | M O | |
-| Frozen analog inputs (g31) | O | | M O | |
-| Command events (g13, g43) | O | O | M O | |
-| Time and interval (g50v4) | | O | M | |
-| The dnp3py fixture (integrity poll, a control and its target) | M | M | M | M |
+| Feature | opendnp3 3.1.2 | DSC go-dnp3 v0.8.2 | dnp3py 0.6.0 |
+|---|:---:|:---:|:---:|
+| Integrity poll: values and flags of every point type of the baseline fixture | M O | M O | O |
+| Reads of ranges and variations | M O | M O | O |
+| Read of all objects of a group | M O | M | O |
+| Direct operate, select-before-operate, set-points, ranges, refused codes and points | M O | M O | O |
+| Direct operate no ack | M | M O | O |
+| Events, their confirmation, event polls | M O | M O | O |
+| Unsolicited responses, enable and disable | M O | M O | O |
+| Time synchronization, LAN and non-LAN | M O | M O | O |
+| Cold and warm restart with the delay | M O | M O | O |
+| Freeze and freeze-and-clear | M O | M O | O |
+| Freeze and clear no ack | M | M | O |
+| Assign class | M O | M | O |
+| TLS with mutual authentication | M O | M O | |
+| UDP | M O | M O | |
+| Serial line | M O | M O | |
+| File transfer: read, write, list, info | | M O | |
+| File transfer: delete | | M O | |
+| Secure Authentication: key change, challenges, re-key, wrong key | | M O | |
+| Security statistics, reads and g122 events | | M O | |
+| Device attributes, other sets, read and write (contract 1.3) | | M O | |
+| Several controls in one request, the limit per request (TOO_MANY_OBJS) | M O | M O | O |
+| FREEZE AT TIME, scheduled | | M O | O |
+| Analog freeze into frozen analog inputs | O | M | O |
+| Deadbands (g34): write; read back | | M O (write) | |
+| File append, AUTHENTICATE_FILE | | M O | |
+| Event buffer overflow (IIN2.3) | M O | M O | M O |
+| Link confirms; keep-alive | O (keep-alive) | M O | |
+| Broadcast | M | M O | |
+| Management functions (INITIALIZE, START, STOP, SAVE) | O | M | |
+| Several outstations behind one port | M O | M O | O |
+| Dual end point, TCP | M O | M O | |
+| Dual end point, TLS | M O | M O | |
+| Frozen analog inputs (g31) | | M O | |
+| Command events (g13, g43) | O | M O | |
+| Time and interval (g50v4) | O | M | |
+| The dnp3py fixture (integrity poll, a control and its target) | M | M | M |
 
 Known bugs of a reference that the fixture shows (dnp3-interop's
 `tests/known-bugs.tsv`) are logged, not failed: DSC go-dnp3 v0.8.2 leaves a
-counter without a frozen counter uncleared by FREEZE AND CLEAR. Two more
-known bugs touch the contract 1.3 tests, which avoid them: DSC go-dnp3
-refuses FREEZE AT TIME with time 0 (the tests use a time to come), and
-stepfunc's master decodes a one-octet signed attribute without its sign
-(go-dnp3 sends four octets). Four
+counter without a frozen counter uncleared by FREEZE AND CLEAR. One more
+known bug touches the contract 1.3 tests, which avoid it: DSC go-dnp3
+refuses FREEZE AT TIME with time 0 (the tests use a time to come). Four
 findings about the references that the suite works with: opendnp3's UDP
 outstation answers only the fixed peer it is given, so go-dnp3's master
 runs in a container on its network for that test; DSC go-dnp3's
@@ -314,19 +312,19 @@ roles, including file transfer, the dual end point and Secure
 Authentication version 5 with session key change, aggressive mode and
 statistics. Against the references:
 
-| Capability | go-dnp3 | stepfunc dnp3 | opendnp3 | DSC go-dnp3 | Triangle MicroWorks SCL |
-|---|:---:|:---:|:---:|:---:|:---:|
-| File transfer, outstation | ✅ | — | — | ✅ | ✅ |
-| Time and interval (g50v4) from the outstation | ✅ | — | ✅ | ✅ | ✅ |
-| File transfer, master | ✅ | ✅ (no delete) | — | ✅ | ✅ |
-| SAv5 challenge-reply, session key change | ✅ | — | — (removed in 2016) | ✅ | ✅ |
-| SAv5 aggressive mode | ✅ | — | — | — | ✅ |
-| SAv5 security statistics | ✅ | — | — | ✅ | ✅ |
-| SAv5 remote update key change, user management | — | — | — | — | ✅ |
-| AES-GMAC | — | — | — | — | ✅ |
-| Dual end point | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Command events (g13, g43) from the outstation | ✅ | — | — | ✅ | ✅ |
-| Virtual terminal (g112, g113), data sets (g85..g88) | — codec only | not documented | not documented | ✅ outstation data set backend, terminals | ✅ |
+| Capability | go-dnp3 | opendnp3 | DSC go-dnp3 | Triangle MicroWorks SCL |
+|---|:---:|:---:|:---:|:---:|
+| File transfer, outstation | ✅ | — | ✅ | ✅ |
+| Time and interval (g50v4) from the outstation | ✅ | ✅ | ✅ | ✅ |
+| File transfer, master | ✅ | — | ✅ | ✅ |
+| SAv5 challenge-reply, session key change | ✅ | — (removed in 2016) | ✅ | ✅ |
+| SAv5 aggressive mode | ✅ | — | — | ✅ |
+| SAv5 security statistics | ✅ | — | ✅ | ✅ |
+| SAv5 remote update key change, user management | — | — | — | ✅ |
+| AES-GMAC | — | — | — | ✅ |
+| Dual end point | ✅ | ✅ | ✅ | ✅ |
+| Command events (g13, g43) from the outstation | ✅ | — | ✅ | ✅ |
+| Virtual terminal (g112, g113), data sets (g85..g88) | — codec only | not documented | ✅ outstation data set backend, terminals | ✅ |
 
 The Triangle MicroWorks column is from its public product descriptions;
 it is not in the interop suite (its adapter is on hold in dnp3-interop),

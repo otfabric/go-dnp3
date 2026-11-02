@@ -3,8 +3,7 @@
 // Command upstreamwatch tells whether the upstreams go-dnp3 follows have
 // moved, and whether they still agree with it:
 //
-//   - the object definitions of stepfunc dnp3 (its codegen model) and of
-//     DSC go-dnp3 (its object YAML): a commit since the one recorded in
+//   - the object definitions of DSC go-dnp3 (its object YAML): a commit since the one recorded in
 //     .github/upstream.json as reviewed, and the size of every object they
 //     define with a fixed layout compared with app/catalog.json;
 //   - otfabric/dnp3-interop: a release newer than the one the interop
@@ -41,7 +40,7 @@ type source struct {
 	Repo string `json:"repo"`
 	// Path is the file or directory with the object definitions.
 	Path   string `json:"path"`
-	Format string `json:"format"` // "stepfunc" or "dsc"
+	Format string `json:"format"` // "dsc"
 	// Reviewed is the commit whose definitions were last compared and
 	// accepted.
 	Reviewed string `json:"reviewed"`
@@ -274,33 +273,6 @@ func definitions(s source, ref string) (map[key]int, int, error) {
 		}
 		defs, skipped := parseDSC(string(b))
 		return defs, skipped, nil
-	case "stepfunc":
-		b, err := get(fmt.Sprintf("https://api.github.com/repos/%s/contents/%s/groups?ref=%s", s.Repo, s.Path, ref), true)
-		if err != nil {
-			return nil, 0, err
-		}
-		var files []struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(b, &files); err != nil {
-			return nil, 0, err
-		}
-		defs, skipped := map[key]int{}, 0
-		for _, f := range files {
-			if !strings.HasSuffix(f.Name, ".scala") {
-				continue
-			}
-			src, err := get(fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/groups/%s", s.Repo, ref, s.Path, f.Name), false)
-			if err != nil {
-				return nil, 0, err
-			}
-			d, n := parseStepfunc(string(src))
-			for k, v := range d {
-				defs[k] = v
-			}
-			skipped += n
-		}
-		return defs, skipped, nil
 	default:
 		return nil, 0, fmt.Errorf("unknown format %q", s.Format)
 	}
@@ -364,107 +336,6 @@ func dscEntries(src string) []string {
 		}
 		out = append(out, src[i:min(j+1, len(src))])
 		i = j
-	}
-	return out
-}
-
-// stepfunc dnp3's Scala model: "object GroupNVarM extends FixedSize(GroupN,
-// M, ...)(field, field, ...)", the fields named or built inline.
-var (
-	sfObject = regexp.MustCompile(`object Group(\d+)Var(\d+) extends (\w+)\(`)
-	sfFields = map[string]int{
-		"flags": 1, "time16": 2, "time48": 6, "count16": 2, "count32": 4, "value16": 2, "value32": 4,
-		"float32": 4, "float64": 8, "valueU16": 2, "valueU32": 4, "commandStatus": 1, "unsignedByte": 1,
-	}
-	sfTypes = map[string]int{
-		"UInt8Field": 1, "UInt16Field": 2, "UInt32Field": 4, "S16Field": 2, "S32Field": 4,
-		"Float32Field": 4, "Float64Field": 8, "TimestampField": 6, "EnumFieldType": 1, "CustomFieldTypeU8": 1,
-	}
-)
-
-func parseStepfunc(src string) (map[key]int, int) {
-	defs, skipped := map[key]int{}, 0
-	for _, loc := range sfObject.FindAllStringSubmatchIndex(src, -1) {
-		g, _ := strconv.Atoi(src[loc[2]:loc[3]])
-		v, _ := strconv.Atoi(src[loc[4]:loc[5]])
-		if src[loc[6]:loc[7]] != "FixedSize" {
-			if v != 0 {
-				skipped++
-			}
-			continue
-		}
-		_, rest := balanced(src[loc[1]-1:])
-		rest = strings.TrimLeft(rest, " \t\n")
-		if !strings.HasPrefix(rest, "(") {
-			skipped++
-			continue
-		}
-		fields, _ := balanced(rest)
-		size, ok := 0, true
-		for _, f := range splitTop(fields) {
-			f = strings.TrimSpace(f)
-			switch {
-			case strings.HasPrefix(f, "FixedSizeField("):
-				w := 0
-				for t, n := range sfTypes {
-					if strings.Contains(f, t) {
-						w = n
-					}
-				}
-				ok = ok && w > 0
-				size += w
-			default:
-				w, known := sfFields[f]
-				ok = ok && known
-				size += w
-			}
-		}
-		if !ok || size == 0 {
-			skipped++
-			continue
-		}
-		defs[key{g, v}] = size
-	}
-	return defs, skipped
-}
-
-// balanced returns the inside of the parenthesis s starts with, and what
-// follows it.
-func balanced(s string) (inside, rest string) {
-	depth := 0
-	for i, c := range s {
-		switch c {
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 {
-				return s[1:i], s[i+1:]
-			}
-		}
-	}
-	return "", ""
-}
-
-// splitTop splits at the commas outside parentheses.
-func splitTop(s string) []string {
-	var out []string
-	depth, start := 0, 0
-	for i, c := range s {
-		switch c {
-		case '(':
-			depth++
-		case ')':
-			depth--
-		case ',':
-			if depth == 0 {
-				out = append(out, s[start:i])
-				start = i + 1
-			}
-		}
-	}
-	if strings.TrimSpace(s[start:]) != "" {
-		out = append(out, s[start:])
 	}
 	return out
 }
