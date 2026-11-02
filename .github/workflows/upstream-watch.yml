@@ -1,10 +1,10 @@
 name: Upstream watch
 run-name: "Upstream watch (${{ github.event_name }}) by @${{ github.actor }}"
 
-# Weekly: have the object definitions of stepfunc dnp3 or DSC go-dnp3 moved
-# since their reviewed commit (.github/upstream.json), do they still agree
-# with app/catalog.json, and is there a dnp3-interop release newer than the
-# one the interop harness pins? When something needs attention the report
+# Weekly: have the object definitions of DSC go-dnp3 moved since their
+# reviewed commit (.github/upstream.json), do they still agree with
+# app/catalog.json, and is there a dnp3-interop release newer than the one
+# the interop harness pins? When something needs attention the report
 # goes to one open issue, labelled upstream-watch, created or updated; when
 # nothing does, that issue is closed.
 

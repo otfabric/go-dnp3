@@ -45,9 +45,8 @@ The library provides:
   overflow), periodic polls, structured logging, metrics hooks, TCP, TLS,
   UDP and serial (any byte stream)
 - **Verified against third-party stacks**: as master and as outstation
-  against Step Function I/O's dnp3, opendnp3, DSC go-dnp3 and
-  dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.8.0,
+  against opendnp3, DSC go-dnp3 and dnp3py, in the containers of
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.9.0,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -55,7 +54,7 @@ The library provides:
 
 ## Table of contents
 
-- [go-dnp3 vs stepfunc dnp3, opendnp3 and DSC go-dnp3](#go-dnp3-vs-stepfunc-dnp3-opendnp3-and-dsc-go-dnp3)
+- [go-dnp3 vs opendnp3 and DSC go-dnp3](#go-dnp3-vs-opendnp3-and-dsc-go-dnp3)
 - [Install](#install)
 - [Project structure](#project-structure)
 - [Client quickstart](#client-quickstart)
@@ -70,41 +69,41 @@ The library provides:
 - [Limitations](#limitations)
 - [License](#license)
 
-## go-dnp3 vs stepfunc dnp3, opendnp3 and DSC go-dnp3
+## go-dnp3 vs opendnp3 and DSC go-dnp3
 
-go-dnp3 is tested against four other implementations, three of which this
+go-dnp3 is tested against three other implementations, two of which this
 table compares (see [Interop tests](#interop-tests)). Each suits different
 needs; the table shows where they differ, from their public sources, so
 you can pick the right one for your project.
 
-| Capability | otfabric/go-dnp3 | stepfunc dnp3 | opendnp3 | DSC go-dnp3 |
-|---|:---:|:---:|:---:|:---:|
-| Language | Go | Rust (C, C++, .NET, Java bindings) | C++ (Java, .NET bindings) | Go |
-| Licence | MIT | proprietary: non-commercial, non-production use; commercial licence otherwise | Apache-2.0 | GPL-3.0-or-later (copyleft: a program linking it is GPL) |
-| Status | maintained, v1 (semantic versioning) | maintained, v1, commercial support | end of life: archived 2022, 3.1.2 final | maintained, pre-1.0 ("API not yet stable") |
-| Master and outstation | ✅ | ✅ | ✅ | ✅ |
-| Unsolicited responses, both roles | ✅ | ✅ | ✅ | ✅ |
-| Select-before-operate, direct operate | ✅ | ✅ | ✅ | ✅ |
-| Direct operate no-ack, as master | ✅ | ✅ | — | ✅ |
-| LAN and non-LAN time synchronization | ✅ | ✅ | ✅ | ✅ |
-| Assign class, as outstation | ✅ | ✅ | ✅ | ✅ |
-| File transfer (g70) | ✅ both roles | master | — (codec only) | ✅ both roles |
-| Secure Authentication v5 | ✅ session key change, challenges, aggressive mode, statistics | — | — | symmetric subset with statistics, no aggressive mode |
-| Outstation that dials the master | ✅ dual end point (`DialAndServe`) | ✅ TCP and TLS client | ✅ on a TCP or TLS client channel | ✅ over a TCP client channel |
-| Several outstations behind one port or line | ✅ by link address (`server.Group`) | several outstations per TCP server, chosen by the master's IP address | ✅ several stacks per channel | ✅ `multidrop` package |
-| Device attributes (g0) | ✅ both roles, any set | ✅ | — | ✅ |
-| Data sets (g85..g88) | — (generic requests) | — | — | ✅ outstation backend, master handler |
-| TLS, UDP, serial | ✅ (`crypto/tls`; serial as any byte stream) | ✅ | ✅ | ✅ |
-| Request methods that return the response | ✅ | — async (futures) | — callbacks | ✅ controls, attributes, files; polls to a handler |
-| Cancellation and deadlines per call | ✅ `context.Context` | futures | — | ✅ `context.Context` |
-| Structured logging | ✅ `log/slog` | ✅ `tracing` | own logger | ✅ `log/slog` |
-| Metrics | ✅ callbacks (`dnp3.Metrics`) | not documented | — | `Stats()` counters |
-| Dependencies | none (standard library) | Tokio, tracing; rustls for TLS, tokio-serial for serial | ASIO, exe4cpp, ser4cpp; OpenSSL for TLS | standard library; go.bug.st/serial for serial |
-| Tested against other stacks in CI | ✅ the three and dnp3py, the features of the [coverage matrix](INTEROPERABILITY.md#interop-coverage) | not documented | not documented | ✅ opendnp3 |
-| DNP Users Group IED conformance procedures (dnp3c) in CI | ✅ 3.1r1 subset levels 2 and 3, 2.7 level 2, against a [test outstation](internal/cmd/conformance) (not a certification) | ✅ 3.1r1 subset level 3, 2.7 level 2 | not documented | ✅ 3.1r1 subset level 3, 2.7 level 2 (not a certification) |
+| Capability | otfabric/go-dnp3 | opendnp3 | DSC go-dnp3 |
+|---|:---:|:---:|:---:|
+| Language | Go | C++ (Java, .NET bindings) | Go |
+| Licence | MIT | Apache-2.0 | GPL-3.0-or-later (copyleft: a program linking it is GPL) |
+| Status | maintained, v1 (semantic versioning) | end of life: archived 2022, 3.1.2 final | maintained, pre-1.0 ("API not yet stable") |
+| Master and outstation | ✅ | ✅ | ✅ |
+| Unsolicited responses, both roles | ✅ | ✅ | ✅ |
+| Select-before-operate, direct operate | ✅ | ✅ | ✅ |
+| Direct operate no-ack, as master | ✅ | — | ✅ |
+| LAN and non-LAN time synchronization | ✅ | ✅ | ✅ |
+| Assign class, as outstation | ✅ | ✅ | ✅ |
+| File transfer (g70) | ✅ both roles | — (codec only) | ✅ both roles |
+| Secure Authentication v5 | ✅ session key change, challenges, aggressive mode, statistics | — | symmetric subset with statistics, no aggressive mode |
+| Outstation that dials the master | ✅ dual end point (`DialAndServe`) | ✅ on a TCP or TLS client channel | ✅ over a TCP client channel |
+| Several outstations behind one port or line | ✅ by link address (`server.Group`) | ✅ several stacks per channel | ✅ `multidrop` package |
+| Device attributes (g0) | ✅ both roles, any set | — | ✅ |
+| Data sets (g85..g88) | — (generic requests) | — | ✅ outstation backend, master handler |
+| TLS, UDP, serial | ✅ (`crypto/tls`; serial as any byte stream) | ✅ | ✅ |
+| Request methods that return the response | ✅ | — callbacks | ✅ controls, attributes, files; polls to a handler |
+| Cancellation and deadlines per call | ✅ `context.Context` | — | ✅ `context.Context` |
+| Structured logging | ✅ `log/slog` | own logger | ✅ `log/slog` |
+| Metrics | ✅ callbacks (`dnp3.Metrics`) | — | `Stats()` counters |
+| Dependencies | none (standard library) | ASIO, exe4cpp, ser4cpp; OpenSSL for TLS | standard library; go.bug.st/serial for serial |
+| Tested against other stacks in CI | ✅ the two and dnp3py, the features of the [coverage matrix](INTEROPERABILITY.md#interop-coverage) | not documented | ✅ opendnp3 |
+| DNP Users Group IED conformance procedures (dnp3c) in CI | ✅ 3.1r1 subset levels 2 and 3, 2.7 level 2, against a [test outstation](internal/cmd/conformance) (not a certification) | not documented | ✅ 3.1r1 subset level 3, 2.7 level 2 (not a certification) |
 
-✅ = available · — = not available. For stepfunc dnp3 1.8.0, opendnp3
-3.1.2 and DSC go-dnp3 v0.8.2, the versions go-dnp3 is tested against,
+✅ = available · — = not available. For opendnp3 3.1.2 and DSC go-dnp3
+v0.8.2, the versions go-dnp3 is tested against,
 from their source, documentation and licences and the
 [dnp3-interop capability records](https://github.com/otfabric/dnp3-interop),
 as of October 2026. If you spot an inaccuracy, please
@@ -313,7 +312,7 @@ make cross   # cross-compile for the supported platforms
 make fuzz    # the codec and outstation fuzz targets (FUZZTIME=30s each by default)
 make bench   # the codec benchmarks
 make generate        # regenerate the code and OBJECTS.md from app/catalog.json
-make upstream-watch  # compare the catalog with stepfunc dnp3, DSC go-dnp3 and dnp3-interop
+make upstream-watch  # compare the catalog with DSC go-dnp3 and dnp3-interop
 ```
 
 Tests need nothing but Go: master and outstation run against each other
@@ -338,17 +337,11 @@ Device Profile.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.8.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.8.0):
-the published ones pinned by digest, and the stepfunc one built locally by
-`make interop-stepfunc` from dnp3-interop's source at that release. Step
-Function I/O's licence allows testing with its library but not
-redistributing it, so its image is not published
-([dnp3-interop#19](https://github.com/otfabric/dnp3-interop/issues/19)); the
-build fetches the crate from crates.io under that licence.
+of [otfabric/dnp3-interop v0.9.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.9.0),
+pinned by digest.
 
 | Reference | Version | Licence | Roles tested |
 |-----------|---------|---------|--------------|
-| Step Function I/O dnp3 | 1.8.0 | non-commercial, non-production | master and outstation |
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
 | DSC go-dnp3 | v0.8.2 | GPL-3.0-or-later | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
@@ -375,8 +368,7 @@ functions and several outstations behind one port. The
 [coverage matrix](INTEROPERABILITY.md#interop-coverage) shows each feature
 per reference and direction. Deviations a reference has from the
 fixture are those dnp3-interop records as known bugs. Docker is needed; the
-images are consumed as published, except stepfunc's, which is built from
-dnp3-interop's source as described above.
+images are consumed as published.
 
 The third-party code runs in its own container only: nothing of it is
 linked into go-dnp3.

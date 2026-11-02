@@ -98,8 +98,8 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 				allOK = false
 			}
 			// A control of a point the outstation does not have, or does
-			// not support, also sets IIN2.2, as opendnp3 and stepfunc do
-			// and the DNP3 IED certification procedure requires.
+			// not support, also sets IIN2.2, as opendnp3 does and the
+			// DNP3 IED certification procedure requires.
 			if status == app.StatusNotSupported {
 				r.iin |= app.IINParameterError
 			}
