@@ -41,7 +41,7 @@ COVER_PKG_MIN := 90
 # other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev
 INTEROP_RELEASE := v0.10.0
-INTEROP_COMMIT  := d7e3b7bb39aa8e64d71712a17af328d14f4451cc
+INTEROP_COMMIT  := 50432d115ae529ea69e1a1856819011f0dfbc723
 DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:e4615455c017ceb22559e080e900f96becf25797033bb4b13526f7a1aaaad2f2
 DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:d351a7854238960fedf815b9245b2a2bce87b0354204f29bde0c9b963ab77f5c
 DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6630a6433357e450b6340b83c1c6ffe535c762f2e0d6af6c0cdd97a020e704eb
