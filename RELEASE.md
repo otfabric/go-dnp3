@@ -8,7 +8,7 @@
 ### Changed
 
 - Removed interop test functionality against this stack, as requested by the maintainer of this stack: the Step Function I/O dnp3 (stepfunc) reference image. `make interop`, the Interop workflow and `interop/harness.go` no longer build or run it, and the upstream watch (`.github/upstream.json`, `internal/cmd/upstreamwatch`) no longer follows its object definitions.
-- Interop runs against opendnp3, DSC go-dnp3 and dnp3py from dnp3-interop v0.8.0, pinned by digest.
+- Interop runs against opendnp3, DSC go-dnp3 and dnp3py from [dnp3-interop v0.9.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.9.0), pinned by digest; the conformance run's dnp3c runner from the same release.
 - README, INTEROPERABILITY, ARCHITECTURE, CONTRIBUTING, TESTING and docs/FEATURE-STATUS list the stacks go-dnp3 is tested against. No change in the library.
 
 ---

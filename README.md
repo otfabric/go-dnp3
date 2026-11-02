@@ -46,7 +46,7 @@ The library provides:
   UDP and serial (any byte stream)
 - **Verified against third-party stacks**: as master and as outstation
   against opendnp3, DSC go-dnp3 and dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.8.0,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.9.0,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -337,7 +337,7 @@ Device Profile.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.8.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.8.0),
+of [otfabric/dnp3-interop v0.9.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.9.0),
 pinned by digest.
 
 | Reference | Version | Licence | Roles tested |

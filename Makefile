@@ -40,11 +40,11 @@ COVER_PKG_MIN := 90
 # runner. Keep in step with interop/harness.go. Override to test
 # other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev
-INTEROP_RELEASE := v0.8.0
-INTEROP_COMMIT  := afee5b973bfc953126b29ae40774c4e94ae617a0
-DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:2ce7bf8bbc1714f49d27889defac6bef64dff28a8d2cd9be3d282344ed865b6d
-DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:df79c30786282a84626b76c4d1d6c348cba45d5d53a697e40ddf1ca3cdb71677
-DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:bc8349e8f7a1dd6f31ee66a5e4d90e262658dbfa7dc651a8480c9188d4a4099e
+INTEROP_RELEASE := v0.9.0
+INTEROP_COMMIT  := d7e3b7bb39aa8e64d71712a17af328d14f4451cc
+DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:968fb610e66ad248fa210604d7ed2a9bb4369d04c94c549c974f201346208c67
+DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:9826a5744603c83207965812a23f5634a799b2a498367c23881f3b9fcc472afc
+DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:f0a171e6e3b707fdcd65988c858a327c07ba0b90f0a46c84d1de6eff4c34f7f9
 
 # The dnp3c runner for 'make conformance': dnp3-interop's image of Step
 # Function I/O's dnp3c (the DNP3 IED Certification Procedure), GPL-3.0-only
