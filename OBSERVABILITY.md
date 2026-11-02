@@ -74,6 +74,7 @@ identifiers.
 | warn | `session key change failed` | `user`, `error` |
 | warn | `authentication error received` | `user`, `code` |
 | warn | `objects too large for a fragment left out` | `count` |
+| warn | `activation status does not encode`, `activation status too large for a fragment` (the `ActivateConfigHandler`'s status; answered with PARAMETER_ERROR) | `error`, `size` |
 | warn | `connection refused: limit reached` | `remote`, `limit` |
 | warn | `accept failed` (the listener keeps accepting after a pause) | `error` |
 | warn | `TLS handshake failed` (also when it took longer than 10 s) | `remote`, `error` |
@@ -89,6 +90,7 @@ identifiers.
 | debug | `frame sent`, `frame received` | `frame` |
 | debug | `request sent`, `request received`, `response sent`, `fragment received` | `fragment` |
 | debug | `broadcast sent` | `fragment`, `dest` |
+| debug | `response not confirmed (WithSolicitedConfirm)`, `unsolicited response not confirmed (WithUnsolicitedConfirm)` | `seq` |
 | debug | framing, transport and decode errors; ignored frames and fragments | `error`, ... |
 
 ## Metrics

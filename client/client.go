@@ -442,7 +442,11 @@ func (c *Client) receive(sess *channel.Session, data []byte) {
 		}
 	case app.FuncUnsolicitedResponse:
 		if f.Control.CON {
-			c.confirm(sess, f.Control.Seq, true)
+			if c.opts.noUnsConfirm {
+				c.log.Debug("unsolicited response not confirmed (WithUnsolicitedConfirm)", "seq", f.Control.Seq)
+			} else {
+				c.confirm(sess, f.Control.Seq, true)
+			}
 		}
 		c.mu.Lock()
 		repeat := bytes.Equal(c.lastUns, data)

@@ -1126,3 +1126,48 @@ func TestControlWithRequestStatus(t *testing.T) {
 		t.Fatal("a control with a request status was carried out")
 	}
 }
+
+// activateHandler answers ACTIVATE_CONFIG with the names of the file
+// specifications as status texts, and a delay of 2 s.
+type activateHandler struct{ NopHandler }
+
+func (activateHandler) ActivateConfig(_ context.Context, hs []app.Header) (app.ActivateConfigStatus, app.IIN) {
+	st := app.ActivateConfigStatus{Delay: 2 * time.Second}
+	for _, h := range hs {
+		for _, o := range h.Objects {
+			fs, ok := o.Value.(app.FileSpecification)
+			if !ok {
+				return app.ActivateConfigStatus{}, app.IINParameterError
+			}
+			st.Results = append(st.Results, app.ActivateConfigResult{Code: 0, Text: fs.Name})
+		}
+	}
+	return st, 0
+}
+
+func TestActivateConfigResponse(t *testing.T) {
+	m := newMaster(t, WithHandler(activateHandler{}))
+	// ACTIVATE_CONFIG, g70v8 free format (0x5B): "cfg".
+	m.sendRaw([]byte{0xC3, 0x1F, 0x46, 0x08, 0x5B, 0x01, 0x03, 0x00, 'c', 'f', 'g'})
+	f := m.recvFunc(app.FuncResponse)
+	if f.Control.Seq != 3 || f.IIN&app.IINRequestErrors != 0 || len(f.Headers) != 1 {
+		t.Fatalf("response %s", f)
+	}
+	h := f.Headers[0]
+	if h.GV != app.G91V1 || h.Qualifier != app.Qual1ByteCount || h.Count != 1 || len(h.Objects) != 1 {
+		t.Fatalf("header %s %s count %d", h.GV, h.Qualifier, h.Count)
+	}
+	// Time delay 2000 ms, one status: length 4, code 0, "cfg".
+	want := []byte{0xD0, 0x07, 0x00, 0x00, 0x01, 0x04, 0x00, 'c', 'f', 'g'}
+	if got := h.Objects[0].Value.(app.Raw).Data; !bytes.Equal(got, want) {
+		t.Fatalf("g91v1 % X, want % X", got, want)
+	}
+	// An object the handler refuses: PARAMETER_ERROR, no status.
+	m.send(req(4, app.FuncActivateConfig, app.Counted(app.G50V1, app.AbsoluteTime{})))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) || len(f.Headers) != 0 {
+		t.Fatalf("refused: %s", f)
+	}
+	// Broadcast: executed, not answered.
+	m.sendBroadcast(req(5, app.FuncActivateConfig, app.FreeFormat(app.G70V8, app.FileSpecification{Name: "x"})))
+	m.none(200 * time.Millisecond)
+}

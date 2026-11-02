@@ -365,7 +365,7 @@ var table = map[GroupVariation]*desc{
 	G87V1:   {name: "Data Set - Present Value", fam: fRaw},
 	G88V1:   {name: "Data Set Event - Snapshot", fam: fRaw, event: true},
 	G90V1:   {name: "Application - Identifier", fam: fRaw},
-	G91V1:   {name: "Status of Requested Operation - Active Configuration", fam: fRaw},
+	G91V1:   {name: "Status of Requested Operation - Active Configuration", fam: fActivation},
 	G101V1:  {name: "Binary-Coded Decimal Integer - Small", fam: fBCD},
 	G101V2:  {name: "Binary-Coded Decimal Integer - Medium", fam: fBCD},
 	G101V3:  {name: "Binary-Coded Decimal Integer - Large", fam: fBCD},

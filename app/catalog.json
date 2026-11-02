@@ -1533,7 +1533,7 @@
       "group": 91,
       "variation": 1,
       "name": "Status of Requested Operation - Active Configuration",
-      "family": "raw",
+      "family": "activation",
       "size": null
     },
     {

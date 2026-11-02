@@ -65,6 +65,8 @@ the feature rests on that one implementation.
 | Time and interval (g50v4) | ✅ | `server/commandevents_test.go` | opendnp3: O; DSC go-dnp3: M |
 | Broadcast | ✅ | `client`, `server`, `internal/channel` | opendnp3: M; DSC go-dnp3: M O |
 | Management functions (INITIALIZE, START, STOP, SAVE) | ✅ | `server/conformance_test.go` (refusal without a handler) | opendnp3: O; DSC go-dnp3: M |
+| ACTIVATE_CONFIG with its status (g91v1) | ✅ | `e2e/activateconfig_test.go`, `TestActivateConfigResponse`, `client/activate_test.go`, `app/activation_test.go` (DSC go-dnp3's answer as a known vector) | not yet in `make interop` |
+| Withheld application confirmations (`WithSolicitedConfirm`, `WithUnsolicitedConfirm`), test options | ✅ | `e2e/activateconfig_test.go` | not yet in `make interop` |
 | Several outstations behind one port | ✅ | `server/group_test.go` | opendnp3, DSC go-dnp3: M O; dnp3py: O |
 | Master for several outstations on one shared channel | — | | |
 | File transfer, master | ✅ | `TestFiles`, `client/file_test.go` | DSC go-dnp3 |

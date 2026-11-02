@@ -407,6 +407,45 @@ func (c *Client) restart(ctx context.Context, fc app.FunctionCode) (time.Duratio
 	return 0, fmt.Errorf("%w: restart response without a time delay object", dnp3.ErrProtocol)
 }
 
+// ActivateConfig sends ACTIVATE_CONFIG (function code 31) with the given
+// headers, which name the configurations to activate: file specifications
+// (g70v8), for example
+//
+//	c.ActivateConfig(ctx, app.FreeFormat(app.G70V8, app.FileSpecification{Name: "config.xml"}))
+//
+// or octet strings (g110). It returns the status of requested operation
+// of every g91v1 object of the response, usually one. A response without
+// g91v1, or with one that is not a valid status, fails with
+// dnp3.ErrProtocol; an outstation that refuses the request fails it with
+// a *dnp3.IINError. The request is never repeated (WithRetry).
+func (c *Client) ActivateConfig(ctx context.Context, headers ...app.Header) ([]app.ActivateConfigStatus, error) {
+	if len(headers) == 0 {
+		return nil, fmt.Errorf("%w: ACTIVATE_CONFIG without headers", dnp3.ErrInvalidOption)
+	}
+	res, err := c.request(ctx, app.FuncActivateConfig, false, headers...)
+	if err != nil {
+		return nil, err
+	}
+	var out []app.ActivateConfigStatus
+	for _, h := range res.Headers() {
+		if h.GV != app.G91V1 {
+			continue
+		}
+		for _, o := range h.Objects {
+			r, _ := o.Value.(app.Raw)
+			s, err := app.ParseActivateConfigStatus(r.Data)
+			if err != nil {
+				return nil, fmt.Errorf("%w: activation status: %w", dnp3.ErrProtocol, err)
+			}
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%w: ACTIVATE_CONFIG response without an activation status (g91v1)", dnp3.ErrProtocol)
+	}
+	return out, nil
+}
+
 // EnableUnsolicited enables unsolicited responses for the given classes
 // (1..3); no classes means all three.
 func (c *Client) EnableUnsolicited(ctx context.Context, classes ...int) error {

@@ -59,9 +59,9 @@ of a device profile, and how it has been verified.
 | Item | Master | Outstation |
 |------|--------|------------|
 | Requests of one fragment | ✅ | ✅ |
-| Responses of several fragments with confirmation | ✅ receives, confirms each | ✅ sends, waits for each confirmation |
+| Responses of several fragments with confirmation | ✅ receives, confirms each; `WithSolicitedConfirm(false)` confirms none, for tests and diagnostics only (such a response stalls after its first fragment) | ✅ sends, waits for each confirmation |
 | Application confirmation of events | ✅ | ✅ events removed on confirmation, reported again otherwise |
-| Unsolicited responses, UNS confirmation | ✅ confirms, ignores repeats | ✅ |
+| Unsolicited responses, UNS confirmation | ✅ confirms, ignores repeats; `WithUnsolicitedConfirm(false)` confirms none, for tests and diagnostics only | ✅ |
 | Sequence numbers: solicited and unsolicited spaces | ✅ | ✅ |
 | Repeated request (same sequence and octets) | — | ✅ answered with the previous response, not executed again; READ executed again |
 | Multi-fragment requests | — not sent | — ignored |
@@ -85,7 +85,7 @@ of a device profile, and how it has been verified.
 | 23 | DELAY_MEASURE | ✅ | ✅ |
 | 24 | RECORD_CURRENT_TIME | ✅ | ✅ |
 | 25..30 | OPEN_FILE, CLOSE_FILE, DELETE_FILE, GET_FILE_INFO, AUTHENTICATE_FILE, ABORT_FILE | ✅ | ✅ with `WithFileServer` |
-| 31 | ACTIVATE_CONFIG | `Request` | ✅ with `ApplicationHandler` |
+| 31 | ACTIVATE_CONFIG | ✅ `ActivateConfig`, returns the g91v1 status | ✅ with `ActivateConfigHandler`, answered with one g91v1 object (qualifier 0x07); with `ApplicationHandler`, IIN bits only |
 | 32, 33 | AUTHENTICATE_REQ, AUTH_REQ_NO_ACK | ✅ 32; 33 not sent | ✅ with `WithSecureAuthentication` |
 | 129, 130, 131 | RESPONSE, UNSOLICITED_RESPONSE, AUTHENTICATE_RESP | ✅ | ✅ |
 
@@ -129,7 +129,8 @@ DSC go-dnp3.
 | 112, 113 | virtual terminal | codec |
 | 120 | authentication v1..v15 | secure authentication |
 | 121, 122 | security statistics, events | ✅ per association with secure authentication |
-| 83, 85..88, 90, 91 | private registration, data sets, application identifier, status of requested operation | raw payload in the codec, except the data set characteristics g86v2 (`app.DataSetCharacteristics`, one octet) |
+| 83, 85..88, 90 | private registration, data sets, application identifier | raw payload in the codec, except the data set characteristics g86v2 (`app.DataSetCharacteristics`, one octet) |
+| 91 | status of requested operation (g91v1): time delay, count, then length, status code and text per entry | ACTIVATE_CONFIG; carried as `app.Raw`, read with `app.ParseActivateConfigStatus`. The object delimits itself, so it decodes with a count (0x07, as DSC go-dnp3 sends it and the outstation answers), range or free-format qualifier; a free-format object is carried as it is, whatever its content |
 
 Default variations of the outstation (configurable per point): static
 g1v2, g3v2, g10v2, g20v1, g21v1, g30v1, g31v1, g40v1, g50v4, g110, g121v1; events g2v2,

@@ -1,5 +1,41 @@
 # go-dnp3 Releases
 
+## v1.6.0
+
+**Date:** 2026-11-02
+**Previous release:** v1.5.4
+
+## Summary
+
+ACTIVATE_CONFIG with its answer, the status of requested operation (g91v1),
+at both ends, and two client options to withhold application confirmations
+for tests. The codec decodes g91v1 with a count qualifier, as DSC go-dnp3
+sends it, where it took only free format: a master dropped such an answer
+and timed out. Public API additions only.
+
+## Changes
+
+### Codec
+
+- **g91v1 with a count or range qualifier**: the object delimits itself (time delay, count, then length, status code and text per entry; IEEE 1815-2012 Annex A, group 91), so `app.Decode` now takes it with a count (0x07, 0x08), range or free-format qualifier. `Decode` of DSC go-dnp3's answer `C0 81 00 00 5B 01 07 01 00 00 00 00 01 01 00` failed with `app: invalid qualifier: 0x07 for free-format g91v1`. A g91v1 object is still an `app.Raw`, and a free-format one is still carried as it is, whatever its content; one sent without a size must be a valid status (`app.ErrInvalidValue` otherwise).
+- **`app.ActivateConfigStatus`** (`Delay`, `Results`) and **`app.ActivateConfigResult`** (`Code`, `Text`): `app.ParseActivateConfigStatus(data)` reads the data of a g91v1 object (`app.ErrMalformed`), `ActivateConfigStatus.Raw()` encodes one (`app.ErrInvalidValue`).
+
+### Outstation
+
+- **`server.ActivateConfigHandler`**, an optional interface of the `Handler`: `ActivateConfig(ctx, headers) (app.ActivateConfigStatus, app.IIN)`. When the handler implements it, ACTIVATE_CONFIG goes to it instead of `ApplicationHandler`, and the response carries the status in one g91v1 object with qualifier 0x07; an IIN2 error bit answers without it. A status that does not encode or fit a fragment is answered with PARAMETER_ERROR. `ApplicationHandler` is unchanged and still answers ACTIVATE_CONFIG with IIN bits only when the handler has no `ActivateConfig`.
+
+### Master
+
+- **`Client.ActivateConfig(ctx, headers...)`** sends ACTIVATE_CONFIG with file specifications (g70v8) or octet strings (g110) and returns the status of every g91v1 object of the response; `dnp3.ErrProtocol` when there is none or it does not parse. It is never retried.
+- **`client.WithSolicitedConfirm(bool)`** and **`client.WithUnsolicitedConfirm(bool)`**, on by default: off, the client confirms no solicited, or no unsolicited, response. They are test and diagnostic options, to watch an outstation keep unconfirmed events or repeat an unconfirmed unsolicited response; a multi-fragment response stalls after its first fragment without confirmations.
+
+### Tests
+
+- Known vectors, error paths and round trips of g91v1 in count, range and free-format qualifiers, with DSC go-dnp3's answer; the vectors are seeds of `FuzzDecode` and its corpus in `app/testdata/fuzz/FuzzDecode`.
+- A scripted master with the exact ACTIVATE_CONFIG request and its g91v1 answer (`server/conformance_test.go`), a client against scripted outstations, and e2e tests of ACTIVATE_CONFIG and of both confirmation options (`e2e/activateconfig_test.go`).
+
+---
+
 ## v1.5.4
 
 **Date:** 2026-11-02

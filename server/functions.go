@@ -40,6 +40,9 @@ func (a *association) dispatch(req *app.Fragment, in inbound, broadcast bool) *r
 		return a.assignClass(req)
 	case app.FuncInitializeData, app.FuncInitializeApplication, app.FuncStartApplication,
 		app.FuncStopApplication, app.FuncSaveConfiguration, app.FuncActivateConfig:
+		if h, ok := a.srv.opts.handler.(ActivateConfigHandler); ok && req.Function == app.FuncActivateConfig {
+			return a.activateConfig(h, req)
+		}
 		h, ok := a.srv.opts.handler.(ApplicationHandler)
 		if !ok {
 			return &response{iin: app.IINNoFuncCodeSupport}
@@ -53,6 +56,28 @@ func (a *association) dispatch(req *app.Fragment, in inbound, broadcast bool) *r
 	default:
 		return &response{iin: app.IINNoFuncCodeSupport}
 	}
+}
+
+// activateConfig answers ACTIVATE_CONFIG with the handler's status of
+// requested operation (g91v1).
+func (a *association) activateConfig(h ActivateConfigHandler, req *app.Fragment) *response {
+	ctx, cancel := a.srv.handlerContext()
+	defer cancel()
+	st, iin := h.ActivateConfig(ctx, req.Headers)
+	if iin &= app.IINRequestErrors; iin != 0 {
+		return &response{iin: iin}
+	}
+	raw, err := st.Raw()
+	if err != nil {
+		a.log.Warn("activation status does not encode", "error", err)
+		return &response{iin: app.IINParameterError}
+	}
+	// Response header (4), object header with a one-octet count (4).
+	if n := 8 + len(raw.Data); n > a.srv.opts.maxTxFragment {
+		a.log.Warn("activation status too large for a fragment", "size", n)
+		return &response{iin: app.IINParameterError}
+	}
+	return headers(app.Counted(app.G91V1, raw))
 }
 
 func (a *association) read(req *app.Fragment) *response {
