@@ -346,6 +346,11 @@ pinned by digest.
 | DSC go-dnp3 | v0.8.2 | GPL-3.0-or-later | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
 
+The Self-interop workflow, run by hand, runs a commit against the latest
+published go-dnp3 (`dnp3-interop-otfabric:latest`). It finds a change on the
+wire that breaks an earlier release. A pass is not independent verification: it
+is go-dnp3 on both sides.
+
 Both directions cover the integrity poll against the fixture's values and
 flags, reads of ranges and variations, every control case of the fixture
 (select-before-operate, select-required outputs, set-point ranges,
