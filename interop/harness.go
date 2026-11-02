@@ -47,6 +47,12 @@ const (
 //	DNP3_INTEROP_DNP3PY_IMAGE
 //
 // DNP3_INTEROP_ADAPTERS restricts the run to a comma-separated subset.
+//
+// otfabric is go-dnp3 itself, as published by otfabric/dnp3-interop. It is
+// not a reference: it runs only when DNP3_INTEROP_OTFABRIC_IMAGE names an
+// image, and what it shows is compatibility between releases of this library,
+// not independent verification.
+//
 // Not every image has both roles: a test asks the image (see
 // [adapter.needRole]) and skips what it lacks.
 func adapters(t testing.TB) []adapter {
@@ -55,18 +61,26 @@ func adapters(t testing.TB) []adapter {
 		{"opendnp3", getenv("DNP3_INTEROP_OPENDNP3_IMAGE", defaultOpendnp3Image)},
 		{"dscsystems", getenv("DNP3_INTEROP_DSCSYSTEMS_IMAGE", defaultDscsystemsImage)},
 		{"dnp3py", getenv("DNP3_INTEROP_DNP3PY_IMAGE", defaultDnp3pyImage)},
+		{"otfabric", os.Getenv("DNP3_INTEROP_OTFABRIC_IMAGE")},
 	}
 	only := os.Getenv("DNP3_INTEROP_ADAPTERS")
-	if only == "" {
-		return all
-	}
 	var out []adapter
 	for _, a := range all {
+		selected := only == ""
 		for _, want := range strings.Split(only, ",") {
-			if strings.TrimSpace(want) == a.name {
-				out = append(out, a)
-			}
+			selected = selected || strings.TrimSpace(want) == a.name
 		}
+		switch {
+		case !selected:
+		case a.image != "":
+			out = append(out, a)
+		case only != "":
+			t.Fatalf("DNP3_INTEROP_ADAPTERS selects %s, which has no image: set DNP3_INTEROP_%s_IMAGE",
+				a.name, strings.ToUpper(a.name))
+		}
+	}
+	if only == "" {
+		return out
 	}
 	if len(out) == 0 {
 		t.Fatalf("DNP3_INTEROP_ADAPTERS=%q selects no adapter", only)

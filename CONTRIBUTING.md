@@ -50,6 +50,9 @@ make upstream-watch
 # Run the interop tests against the dnp3-interop reference images (needs Docker)
 make interop
 
+# Against the latest published go-dnp3 (the Self-interop workflow, run by hand)
+DNP3_INTEROP_ADAPTERS=otfabric DNP3_INTEROP_OTFABRIC_IMAGE=ghcr.io/otfabric/dnp3-interop-otfabric:latest make interop
+
 # Run the IED certification procedures (dnp3c) against the conformance outstation (needs Docker)
 make conformance
 
