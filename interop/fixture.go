@@ -73,6 +73,25 @@ func (a fixtureAttribute) attribute() app.Attribute {
 		var v int32
 		_ = json.Unmarshal(a.Value, &v)
 		return app.IntAttribute(v)
+	// Contract 1.5: float, octet and bit strings as lower-case hex, time.
+	case "float":
+		var v float64
+		_ = json.Unmarshal(a.Value, &v)
+		return app.FloatAttribute(v)
+	case "octetString", "bitString":
+		var v string
+		_ = json.Unmarshal(a.Value, &v)
+		b, _ := hex.DecodeString(v)
+		t := app.AttrOctetString
+		if a.Type == "bitString" {
+			t = app.AttrBitString
+		}
+		return app.Attribute{Type: t, Data: b}
+	case "time":
+		var v string
+		_ = json.Unmarshal(a.Value, &v)
+		at, _ := time.Parse("2006-01-02T15:04:05.000Z", v)
+		return app.TimeAttribute(app.TimestampOf(at))
 	default:
 		var v string
 		_ = json.Unmarshal(a.Value, &v)
