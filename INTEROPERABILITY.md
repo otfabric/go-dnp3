@@ -59,9 +59,9 @@ of a device profile, and how it has been verified.
 | Item | Master | Outstation |
 |------|--------|------------|
 | Requests of one fragment | ✅ | ✅ |
-| Responses of several fragments with confirmation | ✅ receives, confirms each; `WithSolicitedConfirm(false)` confirms none, for tests and diagnostics only (such a response stalls after its first fragment) | ✅ sends, waits for each confirmation |
+| Responses of several fragments with confirmation | ✅ receives, confirms each fragment that asks for it (CON) once it has parsed the whole fragment: one whose parse stopped early is dropped unconfirmed, so that the outstation keeps its events; `WithSolicitedConfirm(false)` confirms none, for tests and diagnostics only (such a response stalls after its first fragment) | ✅ sends, waits for each confirmation |
 | Application confirmation of events | ✅ | ✅ events removed on confirmation, reported again otherwise |
-| Unsolicited responses, UNS confirmation | ✅ confirms, ignores repeats; `WithUnsolicitedConfirm(false)` confirms none, for tests and diagnostics only | ✅ |
+| Unsolicited responses, UNS confirmation | ✅ confirms those that ask for it and parsed whole, ignores repeats; `WithUnsolicitedConfirm(false)` confirms none, for tests and diagnostics only | ✅ |
 | Sequence numbers: solicited and unsolicited spaces | ✅ | ✅ |
 | Repeated request (same sequence and octets) | — | ✅ answered with the previous response, not executed again; READ executed again |
 | Multi-fragment requests | — not sent | — ignored |
@@ -145,7 +145,7 @@ reference outstations do.
 
 | Procedure | Master | Outstation |
 |-----------|--------|------------|
-| Integrity poll, event poll, read of ranges, index lists, counts | ✅ | ✅ |
+| Integrity poll, event poll, read of ranges, index lists, counts | ✅ | ✅ an event header with a count qualifier (0x07..0x09: g60v2..v4 or an event group) returns at most that many events, the oldest first, and a count of 0 none; the rest stay buffered and indicated (IIN1.1..1.3). A read of an event group returns the events of that group in every class, in the variation asked for (g2v3 and g4v3 after a CTO), and leaves the others buffered. An event header with a range or index qualifier is taken as all events of its group |
 | Event reporting in time order across types | ✅ | ✅ per-master buffers, limits per type, oldest discarded with overflow |
 | Event deadbands | ✅ writes and reads g34 | ✅ per point (`PointConfig.Deadband`) for analog and counter points; analog input deadbands written and read by the master (g34) |
 | Unsolicited: null response at connection, enable/disable per class, hold time and count, retries, retry delay | ✅ | ✅ classes survive connections |
@@ -155,7 +155,7 @@ reference outstations do.
 | Restart, delay announced | ✅ | ✅ |
 | Clear of DEVICE_RESTART | ✅ automatic | ✅ |
 | Freeze, freeze-and-clear | ✅ | ✅ a freeze of an unchanged counter sets the frozen snapshot and its time and raises no event (`EventOnChange`, see [Frozen counter events](#frozen-counter-events)) |
-| Assign class | ✅ | ✅ |
+| Assign class | ✅ | ✅ a point without an event class follows its value, so that once ASSIGN_CLASS gives it a class, the next event reports a change from the value the master reads |
 | File transfer: read, write, append (`FileOptions.Append`), directory, info, delete, authenticate, abort | ✅ | ✅ |
 | Device attributes | ✅ | ✅ |
 | Broadcast | ✅ `Broadcast` to 0xFFFD, 0xFFFE or 0xFFFF, for the requests that need no answer | ✅ executed without a response, also as a master's first frame; IIN1.0 in the next response; after a broadcast to 0xFFFE or 0xFFFF that response asks for confirmation, and IIN1.0 is reported until it comes |

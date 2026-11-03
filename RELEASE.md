@@ -1,5 +1,37 @@
 # go-dnp3 Releases
 
+## v1.7.0
+
+**Date:** 2026-11-03
+**Previous release:** v1.6.0
+
+## Summary
+
+Hardening of event reads and of the event lifecycle against IEEE 1815-2012,
+checked behaviour by behaviour with wire-level tests at both ends. Two
+outstation fixes: a READ of events with a count of zero returned every
+event, and a point given an event class by ASSIGN_CLASS measured its next
+change from the value it was added with. No API change.
+
+## Changes
+
+### Outstation
+
+- **An event header with a count of zero names no event.** A READ of g60v2..v4 or an event group with qualifier 0x07, 0x08 or 0x09 and a count of 0 returned all buffered events, as if it had no count; it now returns none and leaves them buffered and indicated (IIN1.1..1.3). Counts above zero were already honoured, the oldest events first (IEEE 1815-2012 clause 4.2.2.7.3).
+- **A point without an event class follows its value.** Updates of a point in class 0 produce no event, but the outstation kept comparing later updates with the value the point had when it was added. Once ASSIGN_CLASS gave the point a class, a change back to that value raised no event, and the master kept the value it had read in class 0. The next event is now measured from the point's current value; deadbands apply from it.
+
+### Tests
+
+- Scripted-master tests with exact requests (`server/eventread_test.go`): limited event reads with one- and two-octet counts, confirmed and unconfirmed, and with a count of 0 in one-, two- and four-octet counts; a READ of one event group in a buffer of several groups and classes; g2v1, g2v2 and g2v3 (CTO) reads and configured event variations; per-point event class and ASSIGN_CLASS; class 0 exclusion for every static type; CON on responses with events and not on those without; a confirmation removes the events of its response only, not those buffered since; unsolicited events kept and repeated until confirmed; FREEZE_AT_TIME_NR, IMMED_FREEZE_NR and FREEZE_CLEAR_NR executed and never answered, also when they fail or do not decode; COLD_RESTART and WARM_RESTART answered with g52v2 or g52v1, IIN2.1 without a `RestartHandler`.
+- Master against scripted outstations (`client/confirm_test.go`): a solicited or unsolicited fragment that asks for confirmation is confirmed only when it parsed whole; a truncated object, or one the codec cannot size, leaves it unconfirmed and its events undelivered; one without CON is never confirmed.
+- End-to-end (`e2e/eventread_test.go`): draining events four at a time delivers each once and in order; an event group read across classes; ASSIGN_CLASS of points added without a class; analog output status out of class 0 with its g42 events; offline points reported with their flags; FREEZE_AT_TIME_NR without waiting for a response.
+
+### Documentation
+
+- INTEROPERABILITY.md describes count-limited and per-group event reads and when the master confirms; LIMITATIONS.md lists event headers with range or index qualifiers, the absence of a periodic freeze of the outstation's own, and that output status follows the application.
+
+---
+
 ## v1.6.0
 
 **Date:** 2026-11-02
