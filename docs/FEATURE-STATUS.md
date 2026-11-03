@@ -47,6 +47,8 @@ the feature rests on that one implementation.
 | Link layer: confirmed user data, frame count bit | ✅ | `internal/channel`, `TestLinkConfirmedMode` | DSC go-dnp3: M O |
 | Link layer: keep-alive | ✅ | `internal/channel` | opendnp3: O; DSC go-dnp3: M O |
 | Reads, integrity and event polls, event confirmation | ✅ | `e2e/features_test.go` | opendnp3, DSC go-dnp3: M O; dnp3py: O |
+| Event reads by count (0x07..0x09), by group across classes, in a requested variation; events kept until confirmed | ✅ | `server/eventread_test.go`, `e2e/eventread_test.go` | not yet in `make interop` |
+| Confirmation only of fragments parsed whole, solicited and unsolicited | ✅ | `client/confirm_test.go` | not yet in `make interop` |
 | Responses of several fragments | ✅ | `TestMultiFragmentResponse` | not a row of the [coverage matrix](../INTEROPERABILITY.md#interop-coverage) |
 | Event buffer overflow | ✅ | `TestEventBufferOverflow` | all four: M O |
 | Controls: select-before-operate, direct operate, set-points | ✅ | `e2e/features_test.go`, `server/conformance_test.go` | opendnp3, DSC go-dnp3: M O; dnp3py: O |

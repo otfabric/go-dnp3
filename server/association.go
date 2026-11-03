@@ -667,7 +667,7 @@ func (a *association) maybeUnsolicited() {
 	var sels []*eventSelector
 	for c := uint8(1); c <= 3; c++ {
 		if a.unsolMask&(1<<c) != 0 {
-			sels = append(sels, &eventSelector{classes: 1 << c})
+			sels = append(sels, &eventSelector{classes: 1 << c, limit: noLimit})
 		}
 	}
 	plans, _ := pack(a.eventItems(sels), a.srv.opts.maxTxFragment)

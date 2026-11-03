@@ -45,3 +45,15 @@ request methods.
   request is one fragment.
 - **Associations are per master address**: a master that reconnects while
   its old connection stands takes over, and the old connection is closed.
+- **Event headers with a range or index qualifier**: the outstation selects
+  events by all objects (0x06) or a count (0x07..0x09). A range or an index
+  list in an event header does not select points: it is answered with all
+  events of the group.
+- **No periodic freeze of the outstation's own**: counters are frozen on
+  request (IMMED_FREEZE, FREEZE_CLEAR, FREEZE_AT_TIME with an interval). An
+  application that freezes on its own schedule updates its frozen counters
+  with `Database.Update` or `Database.Batch`.
+- **Output status follows the application**: a control does not change the
+  binary or analog output status (g10, g40) by itself. The `Handler`
+  updates the point with the value the output took, which reports its event
+  (g11, g42) when the point has a class.

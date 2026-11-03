@@ -368,7 +368,15 @@ func (b *Batch) Update(t PointType, index uint32, v app.Value, mode EventMode) e
 		return fmt.Errorf("%w: no %s at index %d", dnp3.ErrInvalidOption, t, index)
 	}
 	p.value = v
-	if p.cfg.Class == 0 || mode == EventSuppress {
+	if p.cfg.Class == 0 {
+		// A point without an event class reports no change, so the next
+		// one is measured from its current value: once ASSIGN_CLASS gives
+		// it a class, an event reports a change of the value the master
+		// can read, not of the value it had when it was added.
+		p.last = v
+		return nil
+	}
+	if mode == EventSuppress {
 		return nil
 	}
 	if mode == EventForce || changed(p.last, v, p.cfg.Deadband) {
