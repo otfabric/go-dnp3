@@ -22,7 +22,7 @@ import (
 // fullDatabase adds points of every type.
 func fullDatabase(db *server.Database) {
 	on := app.FlagOnline
-	for i := uint32(0); i < 5; i++ {
+	for i := range uint32(5) {
 		_ = db.AddBinaryInput(i, server.PointConfig{Class: 1}, app.Binary{Value: i%2 == 0, Flags: on})
 	}
 	_ = db.AddBinaryInput(10, server.PointConfig{Class: 1}, app.Binary{Flags: on}) // a gap
@@ -192,7 +192,7 @@ func TestEventVariationsAndLimits(t *testing.T) {
 func TestMultiFragmentResponse(t *testing.T) {
 	const n = 600
 	p := newPair(t, func(db *server.Database) {
-		for i := uint32(0); i < n; i++ {
+		for i := range uint32(n) {
 			_ = db.AddAnalogInput(i, server.PointConfig{Class: 2, StaticVariation: 1}, app.Analog{Value: float64(i), Flags: app.FlagOnline})
 		}
 	}, []server.Option{server.WithMaxFragment(249, 2048)})
@@ -215,7 +215,7 @@ func TestMultiFragmentResponse(t *testing.T) {
 	}
 	// Events across fragments are confirmed fragment by fragment.
 	_ = p.db.Batch(func(b *server.Batch) error {
-		for i := uint32(0); i < 90; i++ {
+		for i := range uint32(90) {
 			_ = b.Update(server.AnalogInput, i, app.Analog{Value: -1, Flags: app.FlagOnline}, server.EventOnChange)
 		}
 		return nil

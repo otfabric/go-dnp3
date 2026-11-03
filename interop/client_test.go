@@ -187,8 +187,7 @@ func TestClientControls(t *testing.T) {
 // either by the echo or by a request error (both P0 outstations set
 // PARAMETER_ERROR together with NOT_SUPPORTED).
 func refused(err error, status app.CommandStatus) bool {
-	var ce *dnp3.CommandError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*dnp3.CommandError](err); ok {
 		return ce.Status == status
 	}
 	var ie *dnp3.IINError

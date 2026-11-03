@@ -27,9 +27,7 @@ func TestConcurrentRequests(t *testing.T) {
 	var wg sync.WaitGroup
 	var fail atomic.Int64
 	for i := range 100 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			var err error
@@ -47,7 +45,7 @@ func TestConcurrentRequests(t *testing.T) {
 				fail.Add(1)
 				t.Errorf("request %d: %v", i, err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if fail.Load() != 0 {
@@ -96,9 +94,7 @@ func TestManyMasters(t *testing.T) {
 
 	errs := make(chan error, masters)
 	for i := range masters {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			c, err := client.Dial(ctx, l.Addr().String(),
@@ -119,7 +115,7 @@ func TestManyMasters(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(stop)
@@ -194,9 +190,7 @@ func TestRapidOpenClose(t *testing.T) {
 	defer func() { _ = srv.Close() }()
 	var wg sync.WaitGroup
 	for i := range 24 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			c, err := client.Dial(ctx, l.Addr().String(), client.WithAddresses(masters[i], 10), client.WithResponseTimeout(2*time.Second))
@@ -205,7 +199,7 @@ func TestRapidOpenClose(t *testing.T) {
 			}
 			_, _ = c.IntegrityPoll(ctx)
 			_ = c.Close()
-		}()
+		})
 	}
 	wg.Wait()
 	// A fresh client still works.

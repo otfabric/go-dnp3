@@ -248,9 +248,7 @@ func TestChaos(t *testing.T) {
 			stop := make(chan struct{})
 			var wg sync.WaitGroup
 			run := func(f func(ctx context.Context)) {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					for {
 						select {
 						case <-stop:
@@ -261,7 +259,7 @@ func TestChaos(t *testing.T) {
 						f(ctx)
 						cancel()
 					}
-				}()
+				})
 			}
 			// The database changes all the time.
 			run(func(context.Context) {
@@ -417,9 +415,7 @@ func TestParallelMastersSecureAuthAndFiles(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, masters)
 	for i := range masters {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			c, err := client.Dial(ctx, l.Addr().String(), client.WithAddresses(addrs[i], 10), client.WithAutoIntegrity(false),
@@ -447,7 +443,7 @@ func TestParallelMastersSecureAuthAndFiles(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

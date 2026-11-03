@@ -1,5 +1,21 @@
 # go-dnp3 Releases
 
+## v1.8.0
+
+**Date:** 2026-11-03
+**Previous release:** v1.7.0
+
+## Summary
+
+Go 1.26 is now the minimum Go version. The exported API and the wire behaviour are unchanged.
+
+### Changed
+
+- `go.mod` requires Go 1.26 (was 1.23). CI tests Go 1.26 and 1.27.
+- The code base has been modernised with `go fix ./...`: `sync.WaitGroup.Go`, `errors.AsType`, `slices.Backward`, `slices.Contains`, `strings.SplitSeq`, `min`, and range-over-int loops. There is no change in behaviour.
+
+---
+
 ## v1.7.0
 
 **Date:** 2026-11-03

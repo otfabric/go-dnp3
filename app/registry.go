@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 )
 
@@ -755,8 +756,8 @@ func appendNum(b []byte, v float64, n numKind) []byte {
 
 func decodeBCD(b []byte) (Value, error) {
 	var v uint64
-	for i := len(b) - 1; i >= 0; i-- {
-		hi, lo := b[i]>>4, b[i]&0x0F
+	for _, d := range slices.Backward(b) {
+		hi, lo := d>>4, d&0x0F
 		if hi > 9 || lo > 9 {
 			return nil, malformed("BCD digit above 9 in % x", b)
 		}

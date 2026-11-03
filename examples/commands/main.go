@@ -112,8 +112,7 @@ func main() {
 
 	// A point the handler refuses.
 	_, err = c.Operate(ctx, client.SelectBeforeOperate, client.CROB(7, app.OpLatchOn, 0, 0))
-	var ce *dnp3.CommandError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*dnp3.CommandError](err); ok {
 		fmt.Printf("master: refused: index %d status %s\n", ce.Index, ce.Status)
 	}
 

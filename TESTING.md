@@ -8,7 +8,7 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 
 | Tier | Command | Needs | Runs in CI |
 |---|---|---|---|
-| Unit and component tests, with the race detector | `make test` | Go | `CI`, Go 1.23 to 1.26, on every push and pull request |
+| Unit and component tests, with the race detector | `make test` | Go | `CI`, Go 1.26 and 1.27, on every push and pull request |
 | End-to-end: go-dnp3's master against its outstation over loopback, including chaos and stress (`e2e/`) | `make e2e` | Go | part of `make test` |
 | Coverage gate | `make coverage-check` | Go | `CI` (`coverage-min: "90"`) |
 | Per-package coverage floor | `make coverage-pkg-check` | Go | `CI` (`Per-package coverage`) |

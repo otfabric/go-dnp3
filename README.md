@@ -1,6 +1,6 @@
 # go-dnp3 - DNP3 (IEEE 1815) Master and Outstation Library for Go
 
-[![Go Version](https://img.shields.io/badge/Go-1.23%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/otfabric/go-dnp3.svg)](https://pkg.go.dev/github.com/otfabric/go-dnp3)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI Status](https://github.com/otfabric/go-dnp3/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-dnp3/actions/workflows/ci.yml)
@@ -117,7 +117,7 @@ correct it.
 go get github.com/otfabric/go-dnp3
 ```
 
-Requires Go 1.23 or later. From v1.0.0 the API follows semantic
+Requires Go 1.26 or later. From v1.0.0 the API follows semantic
 versioning: a breaking change comes only with a new major version.
 
 ## Project structure

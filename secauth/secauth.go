@@ -43,10 +43,7 @@ func MAC(alg app.MACAlgorithm, key, data []byte) ([]byte, error) {
 	mac := hmac.New(h, key)
 	mac.Write(data)
 	sum := mac.Sum(nil)
-	n := alg.Len()
-	if n > len(sum) {
-		n = len(sum)
-	}
+	n := min(alg.Len(), len(sum))
 	return sum[:n], nil
 }
 

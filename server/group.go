@@ -120,9 +120,7 @@ func (g *Group) Serve(l net.Listener) error {
 			_ = c.Close()
 			continue
 		}
-		g.wg.Add(1)
-		go func() {
-			defer g.wg.Done()
+		g.wg.Go(func() {
 			if err := handshake(c); err != nil {
 				g.servers[0].log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
 			} else {
@@ -131,7 +129,7 @@ func (g *Group) Serve(l net.Listener) error {
 			g.mu.Lock()
 			g.conns--
 			g.mu.Unlock()
-		}()
+		})
 	}
 }
 

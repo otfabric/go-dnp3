@@ -478,8 +478,8 @@ func (d *device) verifyEvents(keep func(event) bool, expect string, ps []point, 
 	case "AllGeneratedBatches":
 		// every batch whose events are not confirmed yet: the latest k
 		var all []event
-		for k := len(d.batches) - 1; k >= 0; k-- {
-			all = append(filter(d.batches[k], keep), all...)
+		for _, batch := range slices.Backward(d.batches) {
+			all = append(filter(batch, keep), all...)
 			if len(all) == len(ps) {
 				return matchAll(ps, all, logf)
 			}

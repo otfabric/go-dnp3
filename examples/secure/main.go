@@ -80,8 +80,7 @@ func main() {
 	// master cannot connect.
 	_, err = client.Dial(ctx, ln.Addr().String(), client.WithAddresses(2, 10),
 		client.WithSecureAuthentication(secauth.User{Number: 1, UpdateKey: []byte("not the update key, 32 octets!!!")}))
-	var ae *dnp3.AuthError
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*dnp3.AuthError](err); ok {
 		fmt.Printf("master with the wrong update key: refused with %s\n", ae.Code)
 	}
 }

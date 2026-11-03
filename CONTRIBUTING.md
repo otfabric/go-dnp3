@@ -19,7 +19,7 @@ Thank you for your interest in contributing to `go-dnp3`! This document covers t
 
 ### Prerequisites
 
-- Go 1.23+ (see [go.mod](go.mod)); the code must build and pass on Go 1.23, so do not use newer language or standard-library features
+- Go 1.26+ (see [go.mod](go.mod)); the code must build and pass on Go 1.26, so do not use newer language or standard-library features. Run `go fix ./...` (and with `-tags interop`) before a release.
 - [staticcheck](https://staticcheck.dev/), [golangci-lint](https://golangci-lint.run/) and [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for the checks
 - No hardware and no external simulator: tests run master and outstation against each other and against scripted peers over loopback
 - Docker, for the interop tests only
