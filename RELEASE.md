@@ -31,6 +31,7 @@ dnp3 v0.3.0 (both roles) and nfm-dnp3 1.0.1 (master). No API change.
 
 - **dnp3-interop v0.11.0**: images pinned by digest in `interop/harness.go`, the Makefile and the Interop workflow, with `DNP3_INTEROP_CBSIGMA_IMAGE` and `DNP3_INTEROP_NFMDNP3_IMAGE` to override them.
 - **cB-Sigma dnp3 v0.3.0** passes every test of the features it declares, as master and as outstation: TCP, TLS, UDP, serial, dual end point, file transfer with append and authentication, Secure Authentication v5, contract 1.3.
+- **Dual end point**: the poll is retried, at most twice, when the listening master reports the connection lost before it polled. Docker's port proxy accepts the outstation's redials before the master in the container listens and can hand the master one already dropped.
 - **nfm-dnp3 1.0.1**, a master over TCP, is served the baseline without unsolicited responses (it cannot confirm them). Integrity polls, all-objects reads, controls and event polls are skipped with the known bug of each, reported upstream (fxodell/dnp3py#5, #7, #10).
 
 ### Tests

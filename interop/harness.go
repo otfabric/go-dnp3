@@ -35,11 +35,11 @@ type adapter struct {
 // constants; the Makefile and the interop workflow follow.
 const (
 	interopRelease         = "v0.11.0"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:e4615455c017ceb22559e080e900f96becf25797033bb4b13526f7a1aaaad2f2"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:d351a7854238960fedf815b9245b2a2bce87b0354204f29bde0c9b963ab77f5c"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6630a6433357e450b6340b83c1c6ffe535c762f2e0d6af6c0cdd97a020e704eb"
-	defaultCbsigmaImage    = "ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:CBSIGMA"
-	defaultNfmdnp3Image    = "ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:NFMDNP3"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:ccc55f25dc0119d3007a9d37fd5bfe35e92eb58f8194466d295ba3a536e20578"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:cf080446f229a6a192197f3cdf2cf24634375eb041cb4080cdb44aa323969c2f"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:b8b5a431b660510737b80fcdc01040bfd2a9778c90feed2704857bead0c4758a"
+	defaultCbsigmaImage    = "ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:9ef028cbe51607ca8568dc1bdd0b202554e027a08b3efe9f17112b839ce64262"
+	defaultNfmdnp3Image    = "ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:92d2ecc7a74cfbbbfae1da49524cf54e5204301042e269b80705bbc55ec4d78d"
 )
 
 // adapters returns the reference implementations to test against. The image
