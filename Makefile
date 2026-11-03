@@ -34,17 +34,20 @@ COVER_MIN := 90
 COVER_PKG_MIN := 90
 
 # Reference implementations for 'make interop': otfabric/dnp3-interop
-# INTEROP_RELEASE (opendnp3 3.1.2, DSC go-dnp3 v0.8.2, dnp3py 0.6.0). The
+# INTEROP_RELEASE (opendnp3 3.1.2, DSC go-dnp3 v0.8.2, dnp3py 0.6.0,
+# cB-Sigma dnp3 v0.3.0, nfm-dnp3 1.0.1). The
 # images are pinned by multi-arch index digest; INTEROP_COMMIT is the
 # release's commit, from which make conformance-image builds the dnp3c
 # runner. Keep in step with interop/harness.go. Override to test
 # other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev
-INTEROP_RELEASE := v0.10.0
-INTEROP_COMMIT  := 50432d115ae529ea69e1a1856819011f0dfbc723
-DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:e4615455c017ceb22559e080e900f96becf25797033bb4b13526f7a1aaaad2f2
-DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:d351a7854238960fedf815b9245b2a2bce87b0354204f29bde0c9b963ab77f5c
-DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6630a6433357e450b6340b83c1c6ffe535c762f2e0d6af6c0cdd97a020e704eb
+INTEROP_RELEASE := v0.11.0
+INTEROP_COMMIT  := 57353d8d5b46ce8d7247bb9e7a3f7c3c55766e56
+DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:ccc55f25dc0119d3007a9d37fd5bfe35e92eb58f8194466d295ba3a536e20578
+DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:cf080446f229a6a192197f3cdf2cf24634375eb041cb4080cdb44aa323969c2f
+DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:b8b5a431b660510737b80fcdc01040bfd2a9778c90feed2704857bead0c4758a
+DNP3_INTEROP_CBSIGMA_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:9ef028cbe51607ca8568dc1bdd0b202554e027a08b3efe9f17112b839ce64262
+DNP3_INTEROP_NFMDNP3_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:92d2ecc7a74cfbbbfae1da49524cf54e5204301042e269b80705bbc55ec4d78d
 
 # The dnp3c runner for 'make conformance': dnp3-interop's image of Step
 # Function I/O's dnp3c (the DNP3 IED Certification Procedure), GPL-3.0-only
@@ -152,12 +155,14 @@ fuzz: ## Run the codec and outstation fuzz targets for FUZZTIME each (default 30
 	@go test -run='^$$' -fuzz='^FuzzOutstation$$' -fuzztime=$(FUZZTIME) ./server
 	@go test -run='^$$' -fuzz='^FuzzPack$$' -fuzztime=$(FUZZTIME) ./server
 
-test-interop: ## Run the interop suite against the opendnp3, dscsystems and dnp3py reference images (needs Docker)
-	@echo "Running interop tests against dnp3-interop $(INTEROP_RELEASE): opendnp3, dscsystems, dnp3py"
+test-interop: ## Run the interop suite against the opendnp3, dscsystems, dnp3py, cbsigma and nfmdnp3 reference images (needs Docker)
+	@echo "Running interop tests against dnp3-interop $(INTEROP_RELEASE): opendnp3, dscsystems, dnp3py, cbsigma, nfmdnp3"
 	@DNP3_REQUIRE_INTEROP=1 \
 		DNP3_INTEROP_OPENDNP3_IMAGE="$(DNP3_INTEROP_OPENDNP3_IMAGE)" \
 		DNP3_INTEROP_DSCSYSTEMS_IMAGE="$(DNP3_INTEROP_DSCSYSTEMS_IMAGE)" \
 		DNP3_INTEROP_DNP3PY_IMAGE="$(DNP3_INTEROP_DNP3PY_IMAGE)" \
+		DNP3_INTEROP_CBSIGMA_IMAGE="$(DNP3_INTEROP_CBSIGMA_IMAGE)" \
+		DNP3_INTEROP_NFMDNP3_IMAGE="$(DNP3_INTEROP_NFMDNP3_IMAGE)" \
 		go test -tags=$(INTEROP_TAGS) -count=1 -timeout=30m ./interop/...
 
 interop: test-interop ## Alias for test-interop

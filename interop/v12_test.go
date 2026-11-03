@@ -231,7 +231,17 @@ func TestServerDualEndPoint(t *testing.T) {
 					_ = st.srv.DialAndServe(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), server.Redial{MinDelay: 100 * time.Millisecond, MaxDelay: time.Second})
 				}()
 				t.Cleanup(func() { cancel(); _ = st.srv.Close() })
+				// The outstation redials the published port from the start,
+				// and Docker's port proxy accepts a dial before the master in
+				// the container listens: the master can be handed a
+				// connection the outstation has already dropped, and reports
+				// it lost. The outstation keeps redialling, so a new master
+				// gets a live connection; only that case is retried.
 				r := runClientSpec(t, a, docker, argv)
+				for attempt := 2; !r.OK && r.errorCode() == "connection-lost" && attempt <= 3; attempt++ {
+					t.Logf("connection lost before the poll (attempt %d): %s", attempt-1, r.errorCode())
+					r = runClientSpec(t, a, docker, argv)
+				}
 				if !r.OK {
 					t.Fatalf("integrity poll over the outstation's connection: %s", r.errorCode())
 				}

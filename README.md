@@ -45,8 +45,9 @@ The library provides:
   overflow), periodic polls, structured logging, metrics hooks, TCP, TLS,
   UDP and serial (any byte stream)
 - **Verified against third-party stacks**: as master and as outstation
-  against opendnp3, DSC go-dnp3 and dnp3py, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.10.0,
+  against opendnp3, DSC go-dnp3, dnp3py and cB-Sigma dnp3, and as
+  outstation against nfm-dnp3, in the containers of
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.11.0,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -99,7 +100,7 @@ you can pick the right one for your project.
 | Structured logging | ✅ `log/slog` | own logger | ✅ `log/slog` |
 | Metrics | ✅ callbacks (`dnp3.Metrics`) | — | `Stats()` counters |
 | Dependencies | none (standard library) | ASIO, exe4cpp, ser4cpp; OpenSSL for TLS | standard library; go.bug.st/serial for serial |
-| Tested against other stacks in CI | ✅ the two and dnp3py, the features of the [coverage matrix](INTEROPERABILITY.md#interop-coverage) | not documented | ✅ opendnp3 |
+| Tested against other stacks in CI | ✅ the two, dnp3py, cB-Sigma dnp3 and nfm-dnp3, the features of the [coverage matrix](INTEROPERABILITY.md#interop-coverage) | not documented | ✅ opendnp3 |
 | DNP Users Group IED conformance procedures (dnp3c) in CI | ✅ 3.1r1 subset levels 2 and 3, 2.7 level 2, against a [test outstation](internal/cmd/conformance) (not a certification) | not documented | ✅ 3.1r1 subset level 3, 2.7 level 2 (not a certification) |
 
 ✅ = available · — = not available. For opendnp3 3.1.2 and DSC go-dnp3
@@ -337,7 +338,7 @@ Device Profile.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.10.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.10.0),
+of [otfabric/dnp3-interop v0.11.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.11.0),
 pinned by digest.
 
 | Reference | Version | Licence | Roles tested |
@@ -345,6 +346,8 @@ pinned by digest.
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
 | DSC go-dnp3 | v0.8.2 | GPL-3.0-or-later | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
+| cB-Sigma dnp3 | v0.3.0 | Apache-2.0 | master and outstation |
+| nfm-dnp3 | 1.0.1 | MIT | master (TCP; go-dnp3's outstation serves it without unsolicited responses, and three of its upstream defects skip tests: [INTEROPERABILITY.md](INTEROPERABILITY.md#interop-coverage)) |
 
 The Self-interop workflow, run by hand, runs a commit against the latest
 published go-dnp3 (`dnp3-interop-otfabric:latest`). It finds a change on the
