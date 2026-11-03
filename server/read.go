@@ -45,7 +45,8 @@ func (s selector) has(i uint32) bool {
 }
 
 // eventSelector is one event header of a READ: a class or a point type,
-// a variation (0 for each event's own) and a count limit (0 for none).
+// a variation (0 for each event's own) and a count limit (negative for
+// none).
 type eventSelector struct {
 	classes   uint8 // bit mask, 1<<class; 0 when the selector is a type
 	typ       PointType
@@ -54,8 +55,11 @@ type eventSelector struct {
 	taken     int
 }
 
+// noLimit is the limit of an event header without a count: all events.
+const noLimit = -1
+
 func (s *eventSelector) match(e *bufEvent) bool {
-	if s.limit > 0 && s.taken >= s.limit {
+	if s.limit >= 0 && s.taken >= s.limit {
 		return false
 	}
 	if s.classes != 0 {
@@ -94,9 +98,11 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 	for i := range req.Headers {
 		h := &req.Headers[i]
 		g, v := h.GV.Group(), h.GV.Variation()
-		limit := 0
+		// A count qualifier (0x07..0x09) limits an event header to that
+		// many events, the oldest first; a count of zero names none.
+		limit := noLimit
 		if h.Qualifier.IsCount() {
-			limit = int(h.Count)
+			limit = int(min(h.Count, math.MaxInt32))
 		}
 		switch {
 		case g == 60 && v == 1:

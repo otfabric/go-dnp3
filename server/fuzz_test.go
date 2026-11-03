@@ -39,6 +39,9 @@ func FuzzOutstation(f *testing.F) {
 		req(1, app.FuncWrite, app.Ranged(app.GV(0, 10), 1, app.StringAttribute("x"))),
 		req(2, app.FuncFreezeAtTime, app.Counted(app.G50V2, app.AbsoluteTime{Interval: 1}), app.AllObjects(app.G20V0)),
 		req(3, app.FuncRead, app.AllObjects(app.G34V0)),
+		// Count-limited event reads, a count of 0 among them.
+		req(4, app.FuncRead, app.CountOf(app.G60V2, 0), app.CountOf(app.G2V3, 2), app.Header{GV: app.G32V0, Qualifier: app.Qual2ByteCount, Count: 1}),
+		req(5, app.FuncFreezeAtTimeNoAck, app.Counted(app.G50V2, app.AbsoluteTime{}), app.AllObjects(app.G20V0)),
 	}
 	// Found by fuzzing: a READ of g70v5 under a qualifier that carries
 	// indices only, so its object has no file transport block. It took
