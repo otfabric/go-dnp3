@@ -280,7 +280,7 @@ func (db *Database) statics(t PointType, s selector, requested uint8, class0 boo
 func (a *association) iinItem(s selector) item {
 	iin := a.iin()
 	h := app.Header{GV: app.G80V1, Qualifier: app.Qual1ByteStartStop}
-	for b := uint32(0); b < 16; b++ {
+	for b := range uint32(16) {
 		if s.has(b) {
 			h.Objects = append(h.Objects, app.Object{Index: b, Value: app.Binary{Value: iin&(1<<b) != 0}})
 		}

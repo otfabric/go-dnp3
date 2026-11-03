@@ -357,7 +357,7 @@ func TestFittingSmallRoom(t *testing.T) {
 		{h: app.Ranged(app.G30V5, 300, app.Analog{Value: 4}, app.Analog{Value: 5})},
 	}
 	first, _ := items[0].h.EncodedLen()
-	for slack := 0; slack < 12; slack++ {
+	for slack := range 12 {
 		plans, dropped := pack(items, responseHeaderLen+first+slack)
 		n := 0
 		for _, p := range plans {
@@ -407,7 +407,7 @@ func TestFrozenCounterEventsOnChange(t *testing.T) {
 	if err := db.AddCounter(1, PointConfig{}, app.Counter{Value: 7, Flags: on}); err != nil {
 		t.Fatal(err)
 	}
-	for i := uint32(0); i < 2; i++ {
+	for i := range uint32(2) {
 		if err := db.AddFrozenCounter(i, PointConfig{Class: 3}, app.Counter{Flags: on}); err != nil {
 			t.Fatal(err)
 		}

@@ -37,7 +37,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.23.x"
+          go-version: "1.26.x"
 
       # The runner is not published (dnp3c is GPL-3.0 and the image is
       # kept local): it is built here from

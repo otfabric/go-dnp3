@@ -46,18 +46,14 @@ func (c *Client) taskLoop() {
 	var polls sync.WaitGroup
 	stop := make(chan struct{})
 	for i, p := range c.opts.polls {
-		polls.Add(1)
-		go func() {
-			defer polls.Done()
+		polls.Go(func() {
 			c.pollLoop(i, p, stop)
-		}()
+		})
 	}
 	if u := c.opts.auth; u != nil && len(u.UpdateKey) > 0 {
-		polls.Add(1)
-		go func() {
-			defer polls.Done()
+		polls.Go(func() {
 			c.keyChangeLoop(stop)
-		}()
+		})
 	}
 	defer func() {
 		close(stop)
@@ -204,8 +200,7 @@ func (c *Client) runStartup(ctx context.Context) error {
 // startupStep returns the error of a startup step that ends the sequence:
 // an IINError is logged instead.
 func (c *Client) startupStep(step string, err error) error {
-	var ie *dnp3.IINError
-	if errors.As(err, &ie) {
+	if _, ok := errors.AsType[*dnp3.IINError](err); ok {
 		c.log.Warn("startup step rejected", "step", step, "error", err)
 		return nil
 	}

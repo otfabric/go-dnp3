@@ -31,8 +31,7 @@ func fixtureFiles(f *fixture) map[string][]byte {
 }
 
 func fileStatus(err error) app.FileStatus {
-	var fe *dnp3.FileError
-	if errors.As(err, &fe) {
+	if fe, ok := errors.AsType[*dnp3.FileError](err); ok {
 		return fe.Status
 	}
 	return 255

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"sync"
 	"time"
 
@@ -142,12 +143,7 @@ func (s *Server) masterAllowed(m link.Address) bool {
 	if len(s.opts.masters) == 0 {
 		return m <= link.MaxStationAddress
 	}
-	for _, x := range s.opts.masters {
-		if x == m {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.opts.masters, m)
 }
 
 // publish hands new events to every association.
@@ -222,15 +218,13 @@ func (s *Server) Serve(l net.Listener) error {
 			_ = c.Close()
 			continue
 		}
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
+		s.wg.Go(func() {
 			if err := handshake(c); err != nil {
 				s.log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
 				return
 			}
 			_ = s.ServeConn(c, c.RemoteAddr())
-		}()
+		})
 	}
 }
 

@@ -72,7 +72,7 @@ func adapters(t testing.TB) []adapter {
 	var out []adapter
 	for _, a := range all {
 		selected := only == ""
-		for _, want := range strings.Split(only, ",") {
+		for want := range strings.SplitSeq(only, ",") {
 			selected = selected || strings.TrimSpace(want) == a.name
 		}
 		switch {
@@ -347,7 +347,7 @@ func (s *refServer) events(t testing.TB) []event {
 		t.Fatalf("logs of %s server: %v", s.adapter.name, err)
 	}
 	var evs []event
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		if line == "" {
 			continue
 		}
@@ -366,9 +366,9 @@ func (s *refServer) waitEvent(t testing.TB, what string, match func(event) bool)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		evs := s.events(t)
-		for i := len(evs) - 1; i >= 0; i-- {
-			if match(evs[i]) {
-				return evs[i]
+		for _, ev := range slices.Backward(evs) {
+			if match(ev) {
+				return ev
 			}
 		}
 		if time.Now().After(deadline) {
@@ -484,8 +484,7 @@ func runClientCmd(t testing.TB, a adapter, op string, cmd []string) *result {
 	t.Helper()
 	out, stderr, err := docker(cmd...)
 	r := &result{}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		r.exit = ee.ExitCode()
 	} else if err != nil {
 		t.Fatalf("run %s client: %v\n%s", a.name, err, stderr)

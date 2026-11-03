@@ -3,7 +3,6 @@
 package client
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -16,14 +15,11 @@ import (
 func TestAcquireBusyDoesNotRace(t *testing.T) {
 	c := &Client{turn: make(chan struct{}, 1), closeCh: make(chan struct{})}
 	c.opts.queueLimit = 1
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 2000 {
 				switch err := c.acquire(ctx); {
 				case err == nil:
@@ -33,7 +29,7 @@ func TestAcquireBusyDoesNotRace(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

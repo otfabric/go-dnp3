@@ -41,9 +41,7 @@ func TestOneReconnectAfterStartupFails(t *testing.T) {
 		mu.Unlock()
 		wg.Wait()
 	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			conn, err := l.Accept()
 			if err != nil {
@@ -53,9 +51,7 @@ func TestOneReconnectAfterStartupFails(t *testing.T) {
 			mu.Lock()
 			conns = append(conns, conn)
 			mu.Unlock()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				if breaking.Load() {
 					// The key change goes out, and the connection breaks.
 					_, _ = conn.Read(make([]byte, 1))
@@ -71,9 +67,9 @@ func TestOneReconnectAfterStartupFails(t *testing.T) {
 				last = conn
 				mu.Unlock()
 				_, _ = io.Copy(io.Discard, conn)
-			}()
+			})
 		}
-	}()
+	})
 
 	user := secauth.User{Number: 1, UpdateKey: []byte("0123456789abcdef")}
 	c, err := New(l.Addr().String(),
@@ -91,11 +87,9 @@ func TestOneReconnectAfterStartupFails(t *testing.T) {
 	c.mu.Lock()
 	c.dialing = true
 	c.mu.Unlock()
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
 		c.reconnectLoop()
-	}()
+	})
 
 	time.Sleep(300 * time.Millisecond)
 	breaking.Store(false)

@@ -135,13 +135,11 @@ func TestConcurrentSendsKeepFragmentsWhole(t *testing.T) {
 	p := newPair(t, true)
 	var wg sync.WaitGroup
 	for i := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := p.m.Send(context.Background(), bytes.Repeat([]byte{byte(i)}, 600)); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	seen := map[byte]bool{}
