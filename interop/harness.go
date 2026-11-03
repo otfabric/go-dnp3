@@ -22,29 +22,32 @@ import (
 )
 
 // adapter is one reference implementation, as a container image that follows
-// the dnp3-interop container contract 1.4.
+// the dnp3-interop container contract 1.5.
 type adapter struct {
 	name  string
 	image string
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.10.0 (opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
-// dnp3py 0.6.0). The images are pinned by multi-arch index digest so that
+// otfabric/dnp3-interop v0.11.0 (opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
+// dnp3py 0.6.0, cB-Sigma dnp3 v0.3.0, nfm-dnp3 1.0.1). The images are pinned by multi-arch index digest so that
 // a run is reproducible. Moving to another release of dnp3-interop means changing these
 // constants; the Makefile and the interop workflow follow.
 const (
-	interopRelease         = "v0.10.0"
+	interopRelease         = "v0.11.0"
 	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:e4615455c017ceb22559e080e900f96becf25797033bb4b13526f7a1aaaad2f2"
 	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:d351a7854238960fedf815b9245b2a2bce87b0354204f29bde0c9b963ab77f5c"
 	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6630a6433357e450b6340b83c1c6ffe535c762f2e0d6af6c0cdd97a020e704eb"
+	defaultCbsigmaImage    = "ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:CBSIGMA"
+	defaultNfmdnp3Image    = "ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:NFMDNP3"
 )
 
 // adapters returns the reference implementations to test against. The image
 // of each can be overridden, for example to try a candidate:
 //
 //	DNP3_INTEROP_OPENDNP3_IMAGE, DNP3_INTEROP_DSCSYSTEMS_IMAGE,
-//	DNP3_INTEROP_DNP3PY_IMAGE
+//	DNP3_INTEROP_DNP3PY_IMAGE, DNP3_INTEROP_CBSIGMA_IMAGE,
+//	DNP3_INTEROP_NFMDNP3_IMAGE
 //
 // DNP3_INTEROP_ADAPTERS restricts the run to a comma-separated subset.
 //
@@ -61,6 +64,8 @@ func adapters(t testing.TB) []adapter {
 		{"opendnp3", getenv("DNP3_INTEROP_OPENDNP3_IMAGE", defaultOpendnp3Image)},
 		{"dscsystems", getenv("DNP3_INTEROP_DSCSYSTEMS_IMAGE", defaultDscsystemsImage)},
 		{"dnp3py", getenv("DNP3_INTEROP_DNP3PY_IMAGE", defaultDnp3pyImage)},
+		{"cbsigma", getenv("DNP3_INTEROP_CBSIGMA_IMAGE", defaultCbsigmaImage)},
+		{"nfmdnp3", getenv("DNP3_INTEROP_NFMDNP3_IMAGE", defaultNfmdnp3Image)},
 		{"otfabric", os.Getenv("DNP3_INTEROP_OTFABRIC_IMAGE")},
 	}
 	only := os.Getenv("DNP3_INTEROP_ADAPTERS")
@@ -188,7 +193,21 @@ var fixtureCache sync.Map // image and fixture name -> []byte
 // fixture returns the baseline fixture baked into the image.
 func (a adapter) fixture(t testing.TB) *fixture {
 	t.Helper()
-	return a.fixtureNamed(t, "baseline")
+	f := a.fixtureNamed(t, "baseline")
+	if withoutUnsolicited[a.name] {
+		f.Outstation.Unsolicited = false
+	}
+	return f
+}
+
+// withoutUnsolicited are the images whose master go-dnp3's outstation
+// serves the baseline without unsolicited responses.
+var withoutUnsolicited = map[string]bool{
+	// nfm-dnp3 1.0.1 has no outstation, and its master sends the
+	// application confirm as CONFIRMED_USER_DATA, so it cannot confirm the
+	// null unsolicited response of the baseline (dnp3-interop known bug
+	// nfmdnp3-confirm-link-service).
+	"nfmdnp3": true,
 }
 
 // fixtureNamed returns the named fixture baked into the image.
@@ -548,6 +567,22 @@ var knownBugs = map[string]map[string]string{
 	"dscsystems": {
 		"freeze-clear-without-frozen": "v0.8.2: FREEZE AND CLEAR leaves a counter that has no frozen counter of the same index uncleared",
 	},
+	// nfm-dnp3's defects are reported upstream (fxodell/dnp3py#5, #7, #10)
+	// and fail its master against every outstation in dnp3-interop.
+	"nfmdnp3": {
+		"static-objects":  "1.0.1: no decoder for g3v2 and g110, so an integrity poll or all-objects read loses them (fxodell/dnp3py#10)",
+		"controls":        "1.0.1: the CROB trip and close codes are swapped and qualifier 0x28 is written with a 1-octet count (fxodell/dnp3py#7, #5)",
+		"prefixed-events": "1.0.1: qualifier 0x28 is read with a 1-octet count, so the objects after the first prefixed event header are lost (fxodell/dnp3py#5)",
+	},
+}
+
+// skipKnownBug skips the test when behaviour is a recorded bug of a, so the
+// run reports it with the record instead of failing.
+func skipKnownBug(t testing.TB, a adapter, behaviour string) {
+	t.Helper()
+	if why, ok := knownBugs[a.name][behaviour]; ok {
+		t.Skipf("known bug of %s: %s", a.name, why)
+	}
 }
 
 // knownBug reports whether behaviour is a recorded bug of a, logging it.

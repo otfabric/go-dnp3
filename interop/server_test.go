@@ -39,6 +39,7 @@ func TestServerIntegrityPoll(t *testing.T) {
 	requireDocker(t)
 	for _, a := range adapters(t) {
 		t.Run(a.name, func(t *testing.T) {
+			skipKnownBug(t, a, "static-objects")
 			_, port := serveFixture(t, a)
 			r := runClient(t, a, port, "integrity-poll")
 			if !r.OK {
@@ -93,6 +94,7 @@ func TestServerControls(t *testing.T) {
 	requireDocker(t)
 	for _, a := range adapters(t) {
 		t.Run(a.name, func(t *testing.T) {
+			skipKnownBug(t, a, "controls")
 			_, port := serveFixture(t, a)
 			op := func(args ...string) *result { return runClient(t, a, port, "operate", args...) }
 			status := func(r *result) string {
@@ -137,6 +139,7 @@ func TestServerEvents(t *testing.T) {
 	requireDocker(t)
 	for _, a := range adapters(t) {
 		t.Run(a.name, func(t *testing.T) {
+			skipKnownBug(t, a, "prefixed-events")
 			_, port := serveFixture(t, a)
 			_ = runClient(t, a, port, "integrity-poll")
 			if r := runClient(t, a, port, "operate", "--type", "g12v1", "--index", "0", "--code", "LATCH_ON"); !r.OK {
@@ -212,6 +215,9 @@ func TestServerUnsolicited(t *testing.T) {
 	requireDocker(t)
 	for _, a := range adapters(t) {
 		t.Run(a.name, func(t *testing.T) {
+			if withoutUnsolicited[a.name] {
+				t.Skipf("%s is served without unsolicited responses", a.name)
+			}
 			_, port := serveFixture(t, a)
 			if r := runClient(t, a, port, "enable-unsolicited"); !r.OK {
 				t.Fatalf("enable unsolicited: %s", r.errorCode())

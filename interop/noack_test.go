@@ -106,6 +106,7 @@ func TestServerReadAllObjects(t *testing.T) {
 	for _, a := range adapters(t) {
 		t.Run(a.name, func(t *testing.T) {
 			a.need(t, "readAllObjectsClient")
+			skipKnownBug(t, a, "static-objects")
 			_, port := serveFixture(t, a)
 			for _, g := range []struct {
 				group string

@@ -52,8 +52,8 @@ how the images are obtained; the peers and results are in
 
 | Variable | Effect |
 |---|---|
-| `DNP3_INTEROP_OPENDNP3_IMAGE`, `DNP3_INTEROP_DSCSYSTEMS_IMAGE`, `DNP3_INTEROP_DNP3PY_IMAGE` | Use another image of that peer |
-| `DNP3_INTEROP_ADAPTERS` | Comma-separated subset of `opendnp3`, `dscsystems`, `dnp3py` |
+| `DNP3_INTEROP_OPENDNP3_IMAGE`, `DNP3_INTEROP_DSCSYSTEMS_IMAGE`, `DNP3_INTEROP_DNP3PY_IMAGE`, `DNP3_INTEROP_CBSIGMA_IMAGE`, `DNP3_INTEROP_NFMDNP3_IMAGE` | Use another image of that peer |
+| `DNP3_INTEROP_ADAPTERS` | Comma-separated subset of `opendnp3`, `dscsystems`, `dnp3py`, `cbsigma`, `nfmdnp3` |
 
 | `DNP3_REQUIRE_INTEROP=1` | Fail instead of skip when Docker is not available. `make interop` and the `Interop` workflow set it |
 

@@ -77,6 +77,27 @@ func TestResponseVector(t *testing.T) {
 	}
 }
 
+// TestFileAuthenticationEmptyStrings: an AUTHENTICATE_FILE answer may carry
+// an empty user name and password with both offsets 0 (cB-Sigma dnp3
+// v0.3.0); the strings point at nothing, so the answer decodes. Encoding
+// keeps the offsets at 12.
+func TestFileAuthenticationEmptyStrings(t *testing.T) {
+	f, err := Decode(unhex(t, "C3 81 00 00 46 02 5B 01 0C 00 00 00 00 00 00 00 00 00 EF BE AD DE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Headers) != 1 || len(f.Headers[0].Objects) != 1 {
+		t.Fatalf("headers %#v", f.Headers)
+	}
+	if v := f.Headers[0].Objects[0].Value; v != (FileAuthentication{AuthKey: 0xDEADBEEF}) {
+		t.Fatalf("value %#v", v)
+	}
+	want := unhex(t, "C3 81 00 00 46 02 5B 01 0C 00 0C 00 00 00 0C 00 00 00 EF BE AD DE")
+	if re := mustEncode(t, f); !bytes.Equal(re, want) {
+		t.Fatalf("re-encode % X", re)
+	}
+}
+
 // TestDataSetCharacteristicsVector: g86v2 is one octet per data set
 // (IEEE 1815-2012 Annex A), sent with a range, not free-format.
 func TestDataSetCharacteristicsVector(t *testing.T) {
@@ -461,6 +482,7 @@ func TestDecodeErrors(t *testing.T) {
 		{"free-format wrong fixed size", "C0 20 78 04 5B 01 03 00 01 00 00", ErrMalformed},
 		{"bad BCD", "C0 81 00 00 65 01 07 01 AB 00", ErrMalformed},
 		{"short data set characteristics", "C0 81 00 00 56 02 00 01 02 0D", ErrMalformed},
+		{"g70v2 name at offset 0", "C0 81 00 00 46 02 5B 01 0D 00 00 00 01 00 01 00 00 00 00 00 00 00 41", ErrMalformed},
 		{"bad file offset", "C0 81 00 00 46 07 5B 01 14 00 13 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", ErrMalformed},
 		{"short index list", "C0 01 1E 01 17 03 01 02", ErrMalformed},
 		{"attribute too short", "C0 81 00 00 00 FC 00 00 00 01 05 41", ErrMalformed},
@@ -633,6 +655,8 @@ func FuzzDecode(f *testing.F) {
 		"C5 05 0C 01 28 01 00 03 00 03 01 64 00 00 00 00 00 00 00 00",
 		"C0 81 00 00 33 01 07 01 00 00 00 00 00 00 02 03 17 01 01 01 0A 00",
 		"C0 81 00 00 46 05 5B 01 0C 00 34 12 00 00 07 00 00 80 64 61 74 61",
+		// g70v2 with empty strings at offset 0 (cB-Sigma dnp3's AUTHENTICATE_FILE answer).
+		"C3 81 00 00 46 02 5B 01 0C 00 00 00 00 00 00 00 00 00 EF BE AD DE",
 		"C0 81 00 00 00 FF 00 00 00 FE 04 01 00 02 01",
 		// g91v1 with a count qualifier (DSC go-dnp3's ACTIVATE_CONFIG answer)
 		// and free format; the corpus in testdata/fuzz/FuzzDecode has more.

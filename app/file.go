@@ -227,7 +227,10 @@ const (
 func decFileAuth(b []byte) (Value, error) {
 	r := reader{b: b}
 	uo, us, po, ps, key := r.u16(), r.u16(), r.u16(), r.u16(), r.u32()
-	if r.err != nil || uo != g70v2NameOffset || po != uo+us {
+	// Empty strings point at nothing, so their offsets are not checked: an
+	// outstation may answer AUTHENTICATE_FILE with both offsets 0.
+	empty := us == 0 && ps == 0
+	if r.err != nil || !empty && (uo != g70v2NameOffset || po != uo+us) {
 		return nil, malformed("g70v2 string offsets %d/%d", uo, po)
 	}
 	u, p := r.bytes(int(us)), r.bytes(int(ps))

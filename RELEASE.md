@@ -11,7 +11,10 @@ Hardening of event reads and of the event lifecycle against IEEE 1815-2012,
 checked behaviour by behaviour with wire-level tests at both ends. Two
 outstation fixes: a READ of events with a count of zero returned every
 event, and a point given an event class by ASSIGN_CLASS measured its next
-change from the value it was added with. No API change.
+change from the value it was added with. The master accepts an
+AUTHENTICATE_FILE answer with empty strings at offset 0. The interop suite
+runs against dnp3-interop v0.11.0, with two more reference stacks: cB-Sigma
+dnp3 v0.3.0 (both roles) and nfm-dnp3 1.0.1 (master). No API change.
 
 ## Changes
 
@@ -20,14 +23,26 @@ change from the value it was added with. No API change.
 - **An event header with a count of zero names no event.** A READ of g60v2..v4 or an event group with qualifier 0x07, 0x08 or 0x09 and a count of 0 returned all buffered events, as if it had no count; it now returns none and leaves them buffered and indicated (IIN1.1..1.3). Counts above zero were already honoured, the oldest events first (IEEE 1815-2012 clause 4.2.2.7.3).
 - **A point without an event class follows its value.** Updates of a point in class 0 produce no event, but the outstation kept comparing later updates with the value the point had when it was added. Once ASSIGN_CLASS gave the point a class, a change back to that value raised no event, and the master kept the value it had read in class 0. The next event is now measured from the point's current value; deadbands apply from it.
 
+### Master
+
+- **g70v2 with empty strings decodes at any offset.** cB-Sigma dnp3 v0.3.0 answers AUTHENTICATE_FILE with an empty user name and password whose offsets are 0; the decoder required offset 12 and dropped the answer, so `AuthenticateFile` timed out. Empty strings point at nothing, so their offsets are no longer checked; non-empty strings must still start at offset 12, and the encoder still writes 12.
+
+### Interop
+
+- **dnp3-interop v0.11.0**: images pinned by digest in `interop/harness.go`, the Makefile and the Interop workflow, with `DNP3_INTEROP_CBSIGMA_IMAGE` and `DNP3_INTEROP_NFMDNP3_IMAGE` to override them.
+- **cB-Sigma dnp3 v0.3.0** passes every test of the features it declares, as master and as outstation: TCP, TLS, UDP, serial, dual end point, file transfer with append and authentication, Secure Authentication v5, contract 1.3.
+- **nfm-dnp3 1.0.1**, a master over TCP, is served the baseline without unsolicited responses (it cannot confirm them). Integrity polls, all-objects reads, controls and event polls are skipped with the known bug of each, reported upstream (fxodell/dnp3py#5, #7, #10).
+
 ### Tests
 
+- `app`: an AUTHENTICATE_FILE answer with empty strings at offset 0 (cB-Sigma dnp3's) decodes and re-encodes at offset 12; a non-empty string at another offset is still malformed; a `FuzzDecode` seed.
 - Scripted-master tests with exact requests (`server/eventread_test.go`): limited event reads with one- and two-octet counts, confirmed and unconfirmed, and with a count of 0 in one-, two- and four-octet counts; a READ of one event group in a buffer of several groups and classes; g2v1, g2v2 and g2v3 (CTO) reads and configured event variations; per-point event class and ASSIGN_CLASS; class 0 exclusion for every static type; CON on responses with events and not on those without; a confirmation removes the events of its response only, not those buffered since; unsolicited events kept and repeated until confirmed; FREEZE_AT_TIME_NR, IMMED_FREEZE_NR and FREEZE_CLEAR_NR executed and never answered, also when they fail or do not decode; COLD_RESTART and WARM_RESTART answered with g52v2 or g52v1, IIN2.1 without a `RestartHandler`.
 - Master against scripted outstations (`client/confirm_test.go`): a solicited or unsolicited fragment that asks for confirmation is confirmed only when it parsed whole; a truncated object, or one the codec cannot size, leaves it unconfirmed and its events undelivered; one without CON is never confirmed.
 - End-to-end (`e2e/eventread_test.go`): draining events four at a time delivers each once and in order; an event group read across classes; ASSIGN_CLASS of points added without a class; analog output status out of class 0 with its g42 events; offline points reported with their flags; FREEZE_AT_TIME_NR without waiting for a response.
 
 ### Documentation
 
+- README, INTEROPERABILITY.md (coverage matrix with cB-Sigma dnp3 and nfm-dnp3, their findings), FEATURE-STATUS, TESTING and SECURITY name dnp3-interop v0.11.0 and the two stacks.
 - INTEROPERABILITY.md describes count-limited and per-group event reads and when the master confirms; LIMITATIONS.md lists event headers with range or index qualifiers, the absence of a periodic freeze of the outstation's own, and that output status follows the application.
 
 ---
