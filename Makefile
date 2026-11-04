@@ -41,13 +41,13 @@ COVER_PKG_MIN := 90
 # runner. Keep in step with interop/harness.go. Override to test
 # other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev
-INTEROP_RELEASE := v0.11.0
-INTEROP_COMMIT  := 57353d8d5b46ce8d7247bb9e7a3f7c3c55766e56
-DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:ccc55f25dc0119d3007a9d37fd5bfe35e92eb58f8194466d295ba3a536e20578
-DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:cf080446f229a6a192197f3cdf2cf24634375eb041cb4080cdb44aa323969c2f
-DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:b8b5a431b660510737b80fcdc01040bfd2a9778c90feed2704857bead0c4758a
-DNP3_INTEROP_CBSIGMA_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:9ef028cbe51607ca8568dc1bdd0b202554e027a08b3efe9f17112b839ce64262
-DNP3_INTEROP_NFMDNP3_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:92d2ecc7a74cfbbbfae1da49524cf54e5204301042e269b80705bbc55ec4d78d
+INTEROP_RELEASE := v0.11.2
+INTEROP_COMMIT  := 2bcb962924d8ac548c1721d00fde9f862adf4e39
+DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:76a2baa2da118e049196d2b7310f84cc79b38ddf0443a40e410e4553f4773203
+DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:768f85690f97fcf800d56f5862450365264f1021f675dd6a9ed5c581ec449134
+DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:af83c625c14f0897805573166bdd610ee35e7ba818986ed2107f525f73b4f159
+DNP3_INTEROP_CBSIGMA_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:61a43fc0cb99c5f8987484fd983c302d4815702b31891ddfa1f29c7bc4876cb4
+DNP3_INTEROP_NFMDNP3_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:9345804a876c9e1795fc099a724ca0e3e5c5f6deebbbf47113056413b2155bed
 
 # The dnp3c runner for 'make conformance': dnp3-interop's image of Step
 # Function I/O's dnp3c (the DNP3 IED Certification Procedure), GPL-3.0-only

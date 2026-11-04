@@ -29,17 +29,17 @@ type adapter struct {
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.11.0 (opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
+// otfabric/dnp3-interop v0.11.2 (opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
 // dnp3py 0.6.0, cB-Sigma dnp3 v0.3.0, nfm-dnp3 1.0.1). The images are pinned by multi-arch index digest so that
 // a run is reproducible. Moving to another release of dnp3-interop means changing these
 // constants; the Makefile and the interop workflow follow.
 const (
-	interopRelease         = "v0.11.0"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:ccc55f25dc0119d3007a9d37fd5bfe35e92eb58f8194466d295ba3a536e20578"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:cf080446f229a6a192197f3cdf2cf24634375eb041cb4080cdb44aa323969c2f"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:b8b5a431b660510737b80fcdc01040bfd2a9778c90feed2704857bead0c4758a"
-	defaultCbsigmaImage    = "ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:9ef028cbe51607ca8568dc1bdd0b202554e027a08b3efe9f17112b839ce64262"
-	defaultNfmdnp3Image    = "ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:92d2ecc7a74cfbbbfae1da49524cf54e5204301042e269b80705bbc55ec4d78d"
+	interopRelease         = "v0.11.2"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:76a2baa2da118e049196d2b7310f84cc79b38ddf0443a40e410e4553f4773203"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:768f85690f97fcf800d56f5862450365264f1021f675dd6a9ed5c581ec449134"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:af83c625c14f0897805573166bdd610ee35e7ba818986ed2107f525f73b4f159"
+	defaultCbsigmaImage    = "ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:61a43fc0cb99c5f8987484fd983c302d4815702b31891ddfa1f29c7bc4876cb4"
+	defaultNfmdnp3Image    = "ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:9345804a876c9e1795fc099a724ca0e3e5c5f6deebbbf47113056413b2155bed"
 )
 
 // adapters returns the reference implementations to test against. The image
