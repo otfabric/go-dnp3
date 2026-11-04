@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/otfabric/go-dnp3/app"
-	"github.com/otfabric/go-dnp3/link"
 )
 
 // request is one call of the dnp3c integration plugin. Op is the name of
@@ -130,7 +129,11 @@ func (d *device) do(r *request, rep *reply, logf func(string, ...any)) error {
 			d.pending.unsolRetries = *r.Limit
 		}
 	case "setMasterAddress":
-		d.pending.master = link.Address(r.N)
+		a, err := linkAddress(r.N)
+		if err != nil {
+			return err
+		}
+		d.pending.master = a
 	case "setMaxFragmentSize":
 		d.pending.maxFragment = r.N
 	case "setColdRestartSupport":
@@ -556,7 +559,7 @@ func matchAll(ps []point, want []event, logf func(string, ...any)) error {
 				first, firstEv = &p, want[found]
 			} else {
 				got := *p.Time - *first.Time
-				exp := int64(want[found].time) - int64(firstEv.time)
+				exp := millis(want[found].time) - millis(firstEv.time)
 				if got-exp > 1 || exp-got > 1 {
 					return fmt.Errorf("event %v is %d ms after the first, generated %d ms after", p, got, exp)
 				}
@@ -570,6 +573,9 @@ func matchAll(ps []point, want []event, logf func(string, ...any)) error {
 func (d *device) verifyAttributes(as []attr, logf func(string, ...any)) error {
 	want := attributes()
 	for _, a := range as {
+		if a.Variation < 0 || a.Variation > 0xFF {
+			continue
+		}
 		w, ok := want[uint8(a.Variation)]
 		if !ok {
 			continue
@@ -588,5 +594,9 @@ func (d *device) current(kind string, index int) (app.Value, bool) {
 	if d.removed[kind] {
 		return nil, false
 	}
-	return d.srv.Database().Get(pointTypes[kind], uint32(index))
+	i, err := pointIndex(index)
+	if err != nil {
+		return nil, false
+	}
+	return d.srv.Database().Get(pointTypes[kind], i)
 }

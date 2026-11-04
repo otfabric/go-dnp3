@@ -245,9 +245,9 @@ func encFileAuth(b []byte, v FileAuthentication) ([]byte, error) {
 		return b, invalid("g70v2 strings too long")
 	}
 	b = le16(b, g70v2NameOffset)
-	b = le16(b, uint16(len(v.UserName)))
-	b = le16(b, uint16(g70v2NameOffset+len(v.UserName)))
-	b = le16(b, uint16(len(v.Password)))
+	b = le16(b, len16(len(v.UserName)))
+	b = le16(b, len16(g70v2NameOffset+len(v.UserName)))
+	b = le16(b, len16(len(v.Password)))
 	b = le32(b, v.AuthKey)
 	b = append(b, v.UserName...)
 	return append(b, v.Password...), nil
@@ -270,7 +270,7 @@ func encFileCommand(b []byte, v FileCommand) ([]byte, error) {
 		return b, invalid("g70v3 name too long")
 	}
 	b = le16(b, g70v3NameOffset)
-	b = le16(b, uint16(len(v.Name)))
+	b = le16(b, len16(len(v.Name)))
 	b = le48(b, v.Created)
 	b = le16(b, uint16(v.Permissions))
 	b = le32(b, v.AuthKey)
@@ -358,7 +358,7 @@ func encFileDescriptor(b []byte, v FileDescriptor) ([]byte, error) {
 		return b, invalid("g70v7 name too long")
 	}
 	b = le16(b, g70v7NameOffset)
-	b = le16(b, uint16(len(v.Name)))
+	b = le16(b, len16(len(v.Name)))
 	b = le16(b, uint16(v.Type))
 	b = le32(b, v.Size)
 	b = le48(b, v.Created)

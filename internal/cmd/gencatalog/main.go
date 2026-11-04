@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"go/format"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -81,7 +82,7 @@ func main() {
 }
 
 func run(path string, check bool) error {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(filepath.Clean(path)) // the catalog named on the command line
 	if err != nil {
 		return err
 	}
@@ -113,7 +114,8 @@ func run(path string, check bool) error {
 			}
 			continue
 		}
-		if err := os.WriteFile(out.path, b, 0o644); err != nil {
+		// An existing file keeps its mode; git records no read bits.
+		if err := os.WriteFile(out.path, b, 0o600); err != nil {
 			return err
 		}
 	}

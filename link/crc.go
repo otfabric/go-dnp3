@@ -27,7 +27,7 @@ var crcTable = func() (t [256]uint16) {
 func CRC(b []byte) uint16 {
 	var c uint16
 	for _, x := range b {
-		c = c>>8 ^ crcTable[byte(c)^x]
+		c = c>>8 ^ crcTable[byte(c&0xFF)^x]
 	}
 	return ^c
 }
@@ -35,11 +35,11 @@ func CRC(b []byte) uint16 {
 // appendCRC appends the CRC of block to b, low octet first.
 func appendCRC(b, block []byte) []byte {
 	c := CRC(block)
-	return append(b, byte(c), byte(c>>8))
+	return append(b, byte(c&0xFF), byte(c>>8))
 }
 
 // checkCRC reports whether the two octets after block hold its CRC.
 func checkCRC(block []byte, crc []byte) bool {
 	c := CRC(block)
-	return crc[0] == byte(c) && crc[1] == byte(c>>8)
+	return crc[0] == byte(c&0xFF) && crc[1] == byte(c>>8)
 }

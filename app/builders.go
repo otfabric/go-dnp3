@@ -38,7 +38,7 @@ func IndexList(gv GroupVariation, indexes ...uint32) Header {
 		objs[i].Index = x
 		m = max(m, x)
 	}
-	return Header{GV: gv, Qualifier: IndexQualifier(len(objs), m), Count: uint32(len(objs)), Objects: objs}
+	return Header{GV: gv, Qualifier: IndexQualifier(len(objs), m), Count: len32(len(objs)), Objects: objs}
 }
 
 // CountOf returns a header naming up to n objects of gv without values,
@@ -52,11 +52,11 @@ func CountOf(gv GroupVariation, n uint32) Header {
 func Ranged(gv GroupVariation, start uint32, values ...Value) Header {
 	objs := make([]Object, len(values))
 	for i, v := range values {
-		objs[i] = Object{Index: start + uint32(i), Value: v}
+		objs[i] = Object{Index: start + len32(i), Value: v}
 	}
 	stop := start
 	if len(values) > 0 {
-		stop = start + uint32(len(values)-1)
+		stop = start + len32(len(values)-1)
 	}
 	return Header{GV: gv, Qualifier: RangeQualifier(stop), Start: start, Stop: stop, Objects: objs}
 }
@@ -68,7 +68,7 @@ func Indexed(gv GroupVariation, objs ...Object) Header {
 	for _, o := range objs {
 		maxIndex = max(maxIndex, o.Index)
 	}
-	return Header{GV: gv, Qualifier: IndexQualifier(len(objs), maxIndex), Count: uint32(len(objs)), Objects: slices.Clone(objs)}
+	return Header{GV: gv, Qualifier: IndexQualifier(len(objs), maxIndex), Count: len32(len(objs)), Objects: slices.Clone(objs)}
 }
 
 // Counted returns a header carrying objects without index (qualifier
@@ -76,9 +76,9 @@ func Indexed(gv GroupVariation, objs ...Object) Header {
 func Counted(gv GroupVariation, values ...Value) Header {
 	objs := make([]Object, len(values))
 	for i, v := range values {
-		objs[i] = Object{Index: uint32(i), Value: v}
+		objs[i] = Object{Index: len32(i), Value: v}
 	}
-	return Header{GV: gv, Qualifier: CountQualifier(len(values)), Count: uint32(len(values)), Objects: objs}
+	return Header{GV: gv, Qualifier: CountQualifier(len(values)), Count: len32(len(values)), Objects: objs}
 }
 
 // FreeFormat returns a header carrying free-format objects, each preceded
@@ -87,11 +87,17 @@ func Counted(gv GroupVariation, values ...Value) Header {
 func FreeFormat(gv GroupVariation, values ...Value) Header {
 	objs := make([]Object, len(values))
 	for i, v := range values {
-		objs[i] = Object{Index: uint32(i), Value: v}
+		objs[i] = Object{Index: len32(i), Value: v}
 	}
-	return Header{GV: gv, Qualifier: Qual2ByteSizeFreeFormat, Count: uint32(len(values)), Objects: objs}
+	return Header{GV: gv, Qualifier: Qual2ByteSizeFreeFormat, Count: len32(len(values)), Objects: objs}
 }
 
 // OctetStringGV returns the variation of group g (110..113) for a string
-// of n octets.
-func OctetStringGV(g uint8, n int) GroupVariation { return GV(g, uint8(n)) }
+// of n octets. A length outside 1..255 has no variation and gives
+// variation 0, which no encoding of a value accepts.
+func OctetStringGV(g uint8, n int) GroupVariation {
+	if n < 1 || n > 255 {
+		return GV(g, 0)
+	}
+	return GV(g, uint8(n))
+}

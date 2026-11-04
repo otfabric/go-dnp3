@@ -331,7 +331,11 @@ func (d *device) update(changes []event) error {
 			c := &changes[i]
 			_, f := valueFlags(d.values[c.kind][c.index])
 			v := valueOf(c.kind, c.value, f, now)
-			if err := b.Update(pointTypes[c.kind], uint32(c.index), v, server.EventForce); err != nil {
+			i, err := pointIndex(c.index)
+			if err != nil {
+				return err
+			}
+			if err := b.Update(pointTypes[c.kind], i, v, server.EventForce); err != nil {
 				return fmt.Errorf("%s %d: %w", c.kind, c.index, err)
 			}
 			d.values[c.kind][c.index] = v
@@ -400,7 +404,11 @@ func (d *device) setFlags(kind string, index int, f app.Flags) error {
 	if classes[kind] == 0 {
 		mode = server.EventSuppress
 	}
-	if err := d.srv.Database().Update(pointTypes[kind], uint32(index), v, mode); err != nil {
+	i, err := pointIndex(index)
+	if err != nil {
+		return err
+	}
+	if err := d.srv.Database().Update(pointTypes[kind], i, v, mode); err != nil {
 		return err
 	}
 	d.values[kind][index] = v

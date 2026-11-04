@@ -70,7 +70,11 @@ func main() {
 	}
 	for _, h := range res.Headers() {
 		for _, o := range h.Objects {
-			if s := secauth.Statistic(o.Index); s == secauth.StatSuccessfulAuthentications || s == secauth.StatSessionKeyChanges {
+			idx := o.Index
+			if idx > 0xFFFF {
+				continue
+			}
+			if s := secauth.Statistic(idx); s == secauth.StatSuccessfulAuthentications || s == secauth.StatSessionKeyChanges {
 				fmt.Printf("outstation statistic %s: %d\n", s, o.Value.(app.SecurityStatistic).Value)
 			}
 		}

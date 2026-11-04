@@ -453,10 +453,10 @@ func (s *Server) attributeItems(h *app.Header, p *readPlan) []item {
 	start, stop := attributeSets(h)
 	// The configured sets in the range, in order: a range is not walked
 	// set by set, it may span four billion of them.
-	var sets []uint32
+	var sets []uint16
 	for set := range s.opts.attributes {
 		if uint32(set) >= start && uint32(set) <= stop {
-			sets = append(sets, uint32(set))
+			sets = append(sets, set)
 		}
 	}
 	slices.Sort(sets)
@@ -465,7 +465,7 @@ func (s *Server) attributeItems(h *app.Header, p *readPlan) []item {
 	}
 	var out []item
 	for _, set := range sets {
-		out = append(out, s.attributeSetItems(set, s.opts.attributes[uint16(set)], h.GV.Variation(), p)...)
+		out = append(out, s.attributeSetItems(uint32(set), s.opts.attributes[set], h.GV.Variation(), p)...)
 	}
 	return out
 }
@@ -506,8 +506,11 @@ func (a *association) writeAttributes(ctx context.Context, h app.Header) app.IIN
 	if h.Qualifier.IsIndexed() && len(h.Objects) > 0 {
 		start = h.Objects[0].Index
 	}
+	if start > 0xFFFF {
+		return app.IINParameterError
+	}
 	as := a.srv.opts.attributes[uint16(start)]
-	if start > 0xFFFF || as == nil {
+	if as == nil {
 		return app.IINParameterError
 	}
 	v := h.GV.Variation()

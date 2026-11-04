@@ -392,7 +392,7 @@ func encAuth(b []byte, v Value) ([]byte, error) {
 		b = le32(b, o.KSQ)
 		b = le16(b, o.User)
 		b = append(b, byte(o.KeyWrap), byte(o.Status), byte(o.MAC))
-		b = le16(b, uint16(len(o.Challenge)))
+		b = le16(b, len16(len(o.Challenge)))
 		b = append(b, o.Challenge...)
 		return append(b, o.MACValue...), nil
 	case AuthSessionKeyChange:
@@ -419,9 +419,9 @@ func encAuth(b []byte, v Value) ([]byte, error) {
 		b = le32(b, o.SCS)
 		b = le16(b, o.Role)
 		b = le16(b, o.RoleExpiry)
-		b = le16(b, uint16(len(o.UserName)))
-		b = le16(b, uint16(len(o.PublicKey)))
-		b = le16(b, uint16(len(o.Certification)))
+		b = le16(b, len16(len(o.UserName)))
+		b = le16(b, len16(len(o.PublicKey)))
+		b = le16(b, len16(len(o.Certification)))
 		b = append(b, o.UserName...)
 		b = append(b, o.PublicKey...)
 		return append(b, o.Certification...), nil
@@ -430,8 +430,8 @@ func encAuth(b []byte, v Value) ([]byte, error) {
 			return b, invalid("g120v11 field too long")
 		}
 		b = append(b, o.KeyChangeMethod)
-		b = le16(b, uint16(len(o.UserName)))
-		b = le16(b, uint16(len(o.Challenge)))
+		b = le16(b, len16(len(o.UserName)))
+		b = le16(b, len16(len(o.Challenge)))
 		b = append(b, o.UserName...)
 		return append(b, o.Challenge...), nil
 	case AuthUpdateKeyChangeReply:
@@ -440,7 +440,7 @@ func encAuth(b []byte, v Value) ([]byte, error) {
 		}
 		b = le32(b, o.KSQ)
 		b = le16(b, o.User)
-		b = le16(b, uint16(len(o.Challenge)))
+		b = le16(b, len16(len(o.Challenge)))
 		return append(b, o.Challenge...), nil
 	case AuthUpdateKeyChange:
 		if len(o.EncryptedKey) > 0xFFFF {
@@ -448,7 +448,7 @@ func encAuth(b []byte, v Value) ([]byte, error) {
 		}
 		b = le32(b, o.KSQ)
 		b = le16(b, o.User)
-		b = le16(b, uint16(len(o.EncryptedKey)))
+		b = le16(b, len16(len(o.EncryptedKey)))
 		return append(b, o.EncryptedKey...), nil
 	case AuthUpdateKeyChangeSignature:
 		return append(b, o.Signature...), nil

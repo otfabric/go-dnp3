@@ -153,7 +153,7 @@ func TestDirectOperateCROBVector(t *testing.T) {
 // sample returns a value of the family of gv that survives a round trip
 // through the variation unchanged.
 func sample(gv GroupVariation, d *desc, i int) Value {
-	ts := Timestamp(1_700_000_000_000 + i)
+	ts := Timestamp(1_700_000_000_000) + Timestamp(max(i, 0))
 	if d.time == tNone {
 		ts = 0
 	}

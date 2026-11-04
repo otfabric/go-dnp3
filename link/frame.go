@@ -155,8 +155,9 @@ func (f *Frame) AppendEncode(b []byte) ([]byte, error) {
 		return b, err
 	}
 	start := len(b)
-	b = append(b, Start0, Start1, byte(minLength+len(f.Data)), f.Control(),
-		byte(f.Dest), byte(f.Dest>>8), byte(f.Src), byte(f.Src>>8))
+	n := minLength + len(f.Data) // at most 255: Validate bounds the data
+	b = append(b, Start0, Start1, byte(min(max(n, 0), 0xFF)), f.Control(),
+		byte(f.Dest&0xFF), byte(f.Dest>>8), byte(f.Src&0xFF), byte(f.Src>>8))
 	b = appendCRC(b, b[start:])
 	for d := f.Data; len(d) > 0; {
 		n := min(len(d), BlockSize)

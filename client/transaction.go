@@ -173,7 +173,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 					return res, err
 				}
 				if next >= 0 {
-					expect = uint8(next)
+					expect = uint8(next & 0x0F) // an application sequence number, 0..15
 					timer.Reset(c.opts.responseTimeout)
 					continue
 				}

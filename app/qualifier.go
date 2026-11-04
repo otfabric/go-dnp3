@@ -140,7 +140,7 @@ func CountQualifier(n int) Qualifier {
 // IndexQualifier returns the smallest index-prefixed count qualifier that
 // holds n objects with indexes up to maxIndex.
 func IndexQualifier(n int, maxIndex uint32) Qualifier {
-	m := max(uint32(n), maxIndex)
+	m := max(len32(n), maxIndex)
 	switch {
 	case m <= 0xFF:
 		return Qual1ByteIndexCount

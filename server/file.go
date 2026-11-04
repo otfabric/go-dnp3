@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"math"
 	"path"
 	"strings"
 	"time"
@@ -117,12 +118,14 @@ func (a *association) file(req *app.Fragment) *response {
 		}
 		maxBlock := int(c.MaxBlockSize)
 		if maxBlock == 0 || maxBlock > limit {
-			maxBlock = limit
+			// The block size is two octets on the wire: a fragment size
+			// over 65555 must not announce a wrapped one.
+			maxBlock = min(limit, 0xFFFF)
 		}
 		a.nextHandle++
 		h := a.nextHandle
 		a.files[h] = &openFile{f: f, mode: c.Mode, maxBlock: maxBlock, used: time.Now()}
-		st.Handle, st.MaxBlockSize = h, uint16(maxBlock)
+		st.Handle, st.MaxBlockSize = h, uint16(min(max(maxBlock, 0), 0xFFFF))
 		if c.Mode == app.FileModeRead {
 			st.Size = f.Size()
 		}
@@ -328,11 +331,17 @@ func (s FSFileServer) Open(_ context.Context, req FileRequest) (File, app.FileSt
 		}
 		return &memFile{data: b}, app.FileSuccess
 	}
+	size, ok := fileSize(info)
+	if !ok {
+		// The size of a file is four octets (g70v4): a file of 4 GiB or
+		// more cannot be described, so it is not opened.
+		return nil, app.FileFatal
+	}
 	f, err := s.FS.Open(p)
 	if err != nil {
 		return nil, app.FileNotFound
 	}
-	return &fsFile{f: f, size: uint32(info.Size())}, app.FileSuccess
+	return &fsFile{f: f, size: size}, app.FileSuccess
 }
 
 // Delete refuses: the file system is read-only.
@@ -354,12 +363,23 @@ func (s FSFileServer) Info(_ context.Context, name string) (app.FileDescriptor, 
 }
 
 func descriptor(name string, info fs.FileInfo) app.FileDescriptor {
-	d := app.FileDescriptor{Name: name, Type: app.FileTypeSimple, Size: uint32(info.Size()),
-		Created: app.TimestampOf(info.ModTime()), Permissions: app.Permissions(info.Mode().Perm())}
+	size, _ := fileSize(info) // 0xFFFFFFFF for a file of 4 GiB or more
+	d := app.FileDescriptor{Name: name, Type: app.FileTypeSimple, Size: size,
+		Created: app.TimestampOf(info.ModTime()), Permissions: app.Permissions(info.Mode().Perm() & 0o777)}
 	if info.IsDir() {
 		d.Type, d.Size = app.FileTypeDirectory, 0
 	}
 	return d
+}
+
+// fileSize returns the size of a file in the four octets of g70, and
+// false, with the largest size, when it does not fit them.
+func fileSize(info fs.FileInfo) (uint32, bool) {
+	n := info.Size()
+	if n < 0 || n > math.MaxUint32 {
+		return math.MaxUint32, false
+	}
+	return uint32(n), true
 }
 
 type fsFile struct {
@@ -386,5 +406,5 @@ func (m *memFile) Read(p []byte) (int, error) {
 	return n, nil
 }
 func (m *memFile) Write([]byte) (int, error) { return 0, fs.ErrPermission }
-func (m *memFile) Size() uint32              { return uint32(len(m.data)) }
+func (m *memFile) Size() uint32              { return count32(len(m.data)) }
 func (m *memFile) Close(bool) error          { return nil }
