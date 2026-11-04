@@ -68,7 +68,7 @@ var iinNames = [16]string{
 func (i IIN) Has(bits IIN) bool { return i&bits == bits }
 
 // IIN1 returns the first octet.
-func (i IIN) IIN1() uint8 { return uint8(i) }
+func (i IIN) IIN1() uint8 { return uint8(i & 0xFF) }
 
 // IIN2 returns the second octet.
 func (i IIN) IIN2() uint8 { return uint8(i >> 8) }

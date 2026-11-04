@@ -3,6 +3,7 @@
 package server
 
 import (
+	"math"
 	"sort"
 
 	"github.com/otfabric/go-dnp3/app"
@@ -142,12 +143,17 @@ func normalize(h app.Header) app.Header {
 			m = max(m, o.Index)
 		}
 		h.Qualifier = app.IndexQualifier(n, m)
-		h.Count = uint32(n)
+		h.Count = count32(n)
 	case h.Qualifier.IsCount():
-		h.Count = uint32(n)
+		h.Count = count32(n)
 		if !h.Qualifier.IsFreeFormat() {
 			h.Qualifier = app.CountQualifier(n)
 		}
 	}
 	return h
 }
+
+// count32 returns a count or length as four octets. The counts of a
+// response are bounded by its fragment size; the clamp keeps a count that
+// could not be sent from wrapping.
+func count32(n int) uint32 { return uint32(min(uint64(max(n, 0)), math.MaxUint32)) }

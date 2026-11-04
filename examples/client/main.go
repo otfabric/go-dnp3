@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math"
 	"os"
 	"os/signal"
 	"time"
@@ -51,7 +52,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	c, err := client.Dial(ctx, *addr,
-		client.WithAddresses(link.Address(*local), link.Address(*remote)),
+		client.WithAddresses(linkAddress("local", *local), linkAddress("remote", *remote)),
 		client.WithHandler(print),
 		client.WithLogger(logger),
 		client.WithTimeSync(client.TimeSyncLAN),
@@ -65,8 +66,8 @@ func main() {
 	}
 	defer func() { _ = c.Close() }()
 
-	if *operate >= 0 {
-		st, err := c.Operate(ctx, client.SelectBeforeOperate, client.CROB(uint32(*operate), app.OpLatchOn, 0, 0))
+	if op := *operate; op >= 0 && op <= math.MaxInt32 {
+		st, err := c.Operate(ctx, client.SelectBeforeOperate, client.CROB(uint32(op), app.OpLatchOn, 0, 0))
 		fmt.Printf("operate: %v %v\n", st, err)
 	}
 	<-ctx.Done()
@@ -95,4 +96,13 @@ func describe(m client.Measurement) string {
 		s += " at " + ts.String()
 	}
 	return s
+}
+
+// linkAddress returns the value of a link address flag, which must fit
+// the 16 bits of a link address.
+func linkAddress(name string, v uint) link.Address {
+	if v > 0xFFFF {
+		log.Fatalf("-%s %d: a link address is 0..65535", name, v)
+	}
+	return link.Address(min(v, 0xFFFF))
 }

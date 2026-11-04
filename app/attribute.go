@@ -152,7 +152,7 @@ func UintAttribute(v uint32) Attribute {
 
 // IntAttribute returns a signed integer attribute of four octets.
 func IntAttribute(v int32) Attribute {
-	return Attribute{Type: AttrSignedInt, Data: binary.LittleEndian.AppendUint32(nil, uint32(v))}
+	return Attribute{Type: AttrSignedInt, Data: binary.LittleEndian.AppendUint32(nil, uint32of(v))}
 }
 
 // FloatAttribute returns a floating-point attribute of eight octets.
@@ -217,11 +217,11 @@ func (a Attribute) Int() (int32, error) {
 	}
 	switch len(a.Data) {
 	case 1:
-		return int32(int8(a.Data[0])), nil
+		return int8of(a.Data[0]), nil
 	case 2:
-		return int32(int16(binary.LittleEndian.Uint16(a.Data))), nil
+		return int16of(binary.LittleEndian.Uint16(a.Data)), nil
 	case 4:
-		return int32(binary.LittleEndian.Uint32(a.Data)), nil
+		return int32of(binary.LittleEndian.Uint32(a.Data)), nil
 	default:
 		return 0, invalid("INT attribute of %d octets", len(a.Data))
 	}
@@ -283,6 +283,6 @@ func encodeAttribute(b []byte, a Attribute) ([]byte, error) {
 	case a.Type == AttrExtList:
 		n -= 256
 	}
-	b = append(b, byte(a.Type), byte(n))
+	b = append(b, byte(a.Type), byte(n&0xFF)) // n <= 255, checked above
 	return append(b, a.Data...), nil
 }

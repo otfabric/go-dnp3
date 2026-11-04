@@ -7,6 +7,7 @@ package interop
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -502,7 +503,7 @@ const fileKey = 0x5EC12E7
 func (s *fileStore) requireAuth(user, password string) { s.user, s.password = user, password }
 
 func (s *fileStore) Authenticate(_ context.Context, user, password string) (uint32, bool) {
-	ok := s.user != "" && user == s.user && password == s.password
+	ok := s.user != "" && user == s.user && subtle.ConstantTimeCompare([]byte(password), []byte(s.password)) == 1
 	if !ok {
 		return 0, false
 	}

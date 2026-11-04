@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -67,13 +68,13 @@ func main() {
 	}
 	fmt.Print(report)
 	if *out != "" {
-		if err := os.WriteFile(*out, []byte(report), 0o644); err != nil {
+		if err := os.WriteFile(*out, []byte(report), 0o600); err != nil {
 			fmt.Fprintln(os.Stderr, "upstreamwatch:", err)
 			os.Exit(1)
 		}
 	}
 	if *ghOut != "" {
-		f, err := os.OpenFile(*ghOut, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		f, err := os.OpenFile(*ghOut, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err == nil {
 			_, _ = fmt.Fprintf(f, "attention=%v\n", attention)
 			_ = f.Close()
@@ -175,7 +176,7 @@ func run() (string, bool, error) {
 }
 
 func readJSON(path string, v any) error {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(filepath.Clean(path)) // a file named on the command line
 	if err != nil {
 		return err
 	}

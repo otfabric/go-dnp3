@@ -22,7 +22,7 @@ func GV(g, v uint8) GroupVariation { return GroupVariation(g)<<8 | GroupVariatio
 func (gv GroupVariation) Group() uint8 { return uint8(gv >> 8) }
 
 // Variation returns the variation.
-func (gv GroupVariation) Variation() uint8 { return uint8(gv) }
+func (gv GroupVariation) Variation() uint8 { return uint8(gv & 0xFF) }
 
 // String returns, for example, "g30v5".
 func (gv GroupVariation) String() string { return fmt.Sprintf("g%dv%d", gv.Group(), gv.Variation()) }
@@ -433,9 +433,9 @@ func (d *desc) readTime(r *reader, c *codecCtx) (Timestamp, error) {
 func readNum(r *reader, n numKind) float64 {
 	switch n {
 	case nI16:
-		return float64(int16(r.u16()))
+		return float64(int16of(r.u16()))
 	case nI32:
-		return float64(int32(r.u32()))
+		return float64(int32of(r.u32()))
 	case nU16:
 		return float64(r.u16())
 	case nU32:
@@ -500,7 +500,9 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 			b = append(b, byte(o.Flags))
 		}
 		if d.num == nU16 {
-			b = le16(b, uint16(o.Value))
+			// A 16-bit variation carries the low 16 bits of the
+			// counter, as a 16-bit counter that rolls over would.
+			b = le16(b, uint16(o.Value&0xFFFF))
 		} else {
 			b = le32(b, o.Value)
 		}
@@ -692,7 +694,7 @@ func (d *desc) writeTime(b []byte, t Timestamp, c *codecCtx) ([]byte, error) {
 		if t < c.cto || t-c.cto > 0xFFFF {
 			return b, invalid("time %s is not within 65535 ms after the CTO %s", t, c.cto)
 		}
-		return le16(b, uint16(t-c.cto)), nil
+		return le16(b, uint16((t-c.cto)&0xFFFF)), nil
 	default:
 		return b, nil
 	}
@@ -738,9 +740,9 @@ func toNum(v float64, n numKind) (float64, bool) {
 func appendNum(b []byte, v float64, n numKind) []byte {
 	switch n {
 	case nI16:
-		return le16(b, uint16(int16(v)))
+		return le16(b, uint16of(int16(v)))
 	case nI32:
-		return le32(b, uint32(int32(v)))
+		return le32(b, uint32of(int32(v)))
 	case nU16:
 		return le16(b, uint16(v))
 	case nU32:
@@ -815,13 +817,14 @@ func authVariation(v Value) uint8 {
 	}
 }
 
-// putUint writes v in w octets, little endian.
+// putUint writes v in w octets, little endian. Callers check that v fits
+// w octets; a wider v is cut to its low octets.
 func putUint(b []byte, v uint32, w int) []byte {
 	switch w {
 	case 1:
-		return append(b, byte(v))
+		return append(b, byte(v&0xFF))
 	case 2:
-		return le16(b, uint16(v))
+		return le16(b, uint16(v&0xFFFF))
 	default:
 		return le32(b, v)
 	}
@@ -843,9 +846,9 @@ func getUint(b []byte, w int) uint32 {
 func setUint(b []byte, v uint32, w int) {
 	switch w {
 	case 1:
-		b[0] = byte(v)
+		b[0] = byte(v & 0xFF)
 	case 2:
-		binary.LittleEndian.PutUint16(b, uint16(v))
+		binary.LittleEndian.PutUint16(b, uint16(v&0xFFFF))
 	default:
 		binary.LittleEndian.PutUint32(b, v)
 	}

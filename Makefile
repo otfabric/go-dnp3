@@ -154,6 +154,8 @@ fuzz: ## Run the codec and outstation fuzz targets for FUZZTIME each (default 30
 	@go test -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZTIME) ./app
 	@go test -run='^$$' -fuzz='^FuzzOutstation$$' -fuzztime=$(FUZZTIME) ./server
 	@go test -run='^$$' -fuzz='^FuzzPack$$' -fuzztime=$(FUZZTIME) ./server
+	@go test -run='^$$' -fuzz='^FuzzMaster$$' -fuzztime=$(FUZZTIME) ./client
+	@go test -run='^$$' -fuzz='^FuzzKeyUnwrap$$' -fuzztime=$(FUZZTIME) ./secauth
 
 test-interop: ## Run the interop suite against the opendnp3, dscsystems, dnp3py, cbsigma and nfmdnp3 reference images (needs Docker)
 	@echo "Running interop tests against dnp3-interop $(INTEROP_RELEASE): opendnp3, dscsystems, dnp3py, cbsigma, nfmdnp3"

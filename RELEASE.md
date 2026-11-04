@@ -1,5 +1,45 @@
 # go-dnp3 Releases
 
+## v1.9.0
+
+**Date:** 2026-11-04
+**Previous release:** v1.8.0
+
+## Summary
+
+Hardening from a low/low static analysis scan (gosec, opengrep): every narrowing integer conversion is range-checked where the scanner can see it, and the defects it pointed at are fixed. File transfer with fragments over 65547 octets failed on every block; it now works at both ends. A few out-of-range inputs that were sent wrapped are refused. New fuzz targets for the master and for session key change data, and an end-to-end test of file transfer over large fragments. No exported API is added or removed.
+
+## Changes
+
+### Outstation
+
+- **File block size fits its object.** The block size announced at OPEN_FILE was the fragment size less 20, sent in two octets: with fragments over 65555 octets and a master that left the size to the outstation it was announced modulo 2^16 (100000-octet fragments announced 34444) while larger blocks were sent, and any block over 65527 octets could not be encoded, so every READ of the file was answered without its block. Blocks are now at most 65527 octets, the most a g70v5 object holds beside the handle and block number.
+- **Files of 4 GiB or more.** `FSFileServer` opened them with their size modulo 2^32; it now refuses them with FILE_FATAL, and directory listings and GET_FILE_INFO give them the size 0xFFFFFFFF.
+- A WRITE of an attribute of a set over 65535 no longer looks up the set modulo 2^16 before it is refused with PARAMETER_ERROR (the answer was already right).
+
+### Master
+
+- **`FreezeAtTime` checks its interval.** A negative interval, or one of 2^32 ms (about 49.7 days) or more, was sent modulo 2^32; it is now an `ErrInvalidOption` and nothing is sent.
+- **`WriteFile` blocks fit their object.** An outstation announcing a block size over 65527 got a WRITE that could not be encoded; blocks are now at most 65527 octets.
+
+### Objects
+
+- `OctetStringGV(g, n)` returns variation 0 for a length outside 1..255 instead of the length modulo 256 (257 gave variation 1, -1 gave 255). No value encodes under variation 0, so such a string is refused when it is encoded.
+
+### Testing
+
+- `FuzzMaster` (`client`): the master, with Secure Authentication configured, against an outstation that answers every request with the fuzz input as a response, a continuation or an authentication response. Requests must end within their timeouts and Close must return.
+- `FuzzKeyUnwrap` (`secauth`): AES key unwrap and the parsing of session key change data.
+- `e2e/largefragment_test.go`: read and write of a 300000-octet file over 100000-octet fragments.
+- Regression tests for each fix above, and for the two's complement helpers of the object codecs.
+
+### Tooling
+
+- The interop fixture compares the file password in constant time; the catalog generator and the upstream watch write their files with mode 0600 and clean the paths they read.
+- go-ci and the release workflow use otfabric/.github v3.3.1.
+
+---
+
 ## v1.8.0
 
 **Date:** 2026-11-03

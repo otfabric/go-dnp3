@@ -48,7 +48,7 @@ func main() {
 	})
 	var err error
 	srv, err = server.New(
-		server.WithAddress(link.Address(*address)),
+		server.WithAddress(linkAddress("address", *address)),
 		server.WithHandler(breaker),
 		server.WithLogger(logger),
 		server.WithUnsolicited(server.Unsolicited{Enabled: true}),
@@ -70,12 +70,12 @@ func main() {
 	go func() {
 		t := time.NewTicker(time.Second)
 		defer t.Stop()
-		for n := 0; ; n++ {
+		for n := uint32(0); ; n++ {
 			<-t.C
 			_ = db.Batch(func(b *server.Batch) error {
 				_ = b.Update(server.AnalogInput, 0, app.Analog{Value: 50 + math.Sin(float64(n)/10), Flags: app.FlagOnline}, server.EventOnChange)
-				_ = b.Update(server.Counter, 0, app.Counter{Value: uint32(n), Flags: app.FlagOnline}, server.EventOnChange)
-				return b.Update(server.BinaryInput, uint32(n%4), app.Binary{Value: n%8 < 4, Flags: app.FlagOnline}, server.EventOnChange)
+				_ = b.Update(server.Counter, 0, app.Counter{Value: n, Flags: app.FlagOnline}, server.EventOnChange)
+				return b.Update(server.BinaryInput, n%4, app.Binary{Value: n%8 < 4, Flags: app.FlagOnline}, server.EventOnChange)
 			})
 		}
 	}()
@@ -89,4 +89,13 @@ func main() {
 	if err := srv.ListenAndServe(*addr); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// linkAddress returns the value of a link address flag, which must fit
+// the 16 bits of a link address.
+func linkAddress(name string, v uint) link.Address {
+	if v > 0xFFFF {
+		log.Fatalf("-%s %d: a link address is 0..65535", name, v)
+	}
+	return link.Address(min(v, 0xFFFF))
 }

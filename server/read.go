@@ -215,9 +215,15 @@ func (db *Database) covers(t PointType, s selector) bool {
 		}
 		return true
 	}
-	for i := uint64(s.start); i <= uint64(s.stop); i++ {
-		if _, ok := db.points[t][uint32(i)]; !ok {
+	if s.start > s.stop {
+		return true
+	}
+	for i := s.start; ; i++ {
+		if _, ok := db.points[t][i]; !ok {
 			return false
+		}
+		if i == s.stop { // before i++, which wraps after 0xFFFFFFFF
+			break
 		}
 	}
 	return true
@@ -227,7 +233,7 @@ func (db *Database) covers(t PointType, s selector) bool {
 func staticGV(t PointType, p *point, requested uint8) app.GroupVariation {
 	ti := types[t]
 	if t == OctetString {
-		return app.GV(ti.staticGroup, uint8(len(p.value.(app.OctetString).Data)))
+		return app.OctetStringGV(ti.staticGroup, len(p.value.(app.OctetString).Data))
 	}
 	v := requested
 	if v == 0 {
@@ -292,7 +298,7 @@ func (a *association) iinItem(s selector) item {
 func eventGV(e *bufEvent, requested uint8) app.GroupVariation {
 	ti := types[e.typ]
 	if e.typ == OctetString {
-		return app.GV(ti.eventGroup, uint8(len(e.value.(app.OctetString).Data)))
+		return app.OctetStringGV(ti.eventGroup, len(e.value.(app.OctetString).Data))
 	}
 	v := requested
 	if v == 0 {

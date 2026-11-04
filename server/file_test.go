@@ -162,6 +162,11 @@ func TestFileBlockLimits(t *testing.T) {
 		{nil, app.FileModeRead, transport.DefaultMaxFragment - 20},
 		{[]Option{WithMaxFragment(2048, 1024)}, app.FileModeWrite, 1024 - 20},
 		{[]Option{WithMaxFragment(1024, 2048)}, app.FileModeRead, 1024 - 20},
+		// A block fits the two-octet size of its g70v5 object with the
+		// handle and block number: a larger fragment announces 65527,
+		// not the fragment size modulo 2^16.
+		{[]Option{WithMaxFragment(100_000, 2048)}, app.FileModeRead, 0xFFFF - 8},
+		{[]Option{WithMaxFragment(100_000, 100_000)}, app.FileModeWrite, 0xFFFF - 8},
 		{[]Option{WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: testSessionKey}, Critical: []app.FunctionCode{app.FuncDirectOperate}})}, app.FileModeWrite,
 			transport.DefaultMaxFragment - 20 - secauth.AggressiveOverhead},
 	}

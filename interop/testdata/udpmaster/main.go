@@ -50,7 +50,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *wait)
 	defer cancel()
 	c, err := client.Dial(ctx, *addr, client.WithStream(open), client.WithAutoIntegrity(false),
-		client.WithAddresses(1, link.Address(*outstation)), client.WithResponseTimeout(2*time.Second))
+		client.WithAddresses(1, link.Address(min(*outstation, 0xFFFF))), client.WithResponseTimeout(2*time.Second))
 	if err != nil {
 		out.Error = err.Error()
 		return

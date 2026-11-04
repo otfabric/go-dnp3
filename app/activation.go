@@ -92,20 +92,22 @@ func ParseActivateConfigStatus(data []byte) (ActivateConfigStatus, error) {
 // is negative or does not fit 32 bits of milliseconds, when there are
 // more than 255 results, or when a text is longer than 254 octets.
 func (s ActivateConfigStatus) Raw() (Raw, error) {
-	ms := s.Delay / time.Millisecond
-	if s.Delay < 0 || ms > 0xFFFFFFFF {
+	ms := int64(s.Delay / time.Millisecond)
+	if ms < 0 || ms > 0xFFFFFFFF {
 		return Raw{}, invalid("g91v1 time delay %v", s.Delay)
 	}
-	if len(s.Results) > maxActivationResults {
-		return Raw{}, invalid("g91v1 with %d status entries, at most %d", len(s.Results), maxActivationResults)
+	n := len(s.Results)
+	if n > maxActivationResults {
+		return Raw{}, invalid("g91v1 with %d status entries, at most %d", n, maxActivationResults)
 	}
-	b := le32(make([]byte, 0, activationHeaderSize+2*len(s.Results)), uint32(ms))
-	b = append(b, byte(len(s.Results)))
+	b := le32(make([]byte, 0, activationHeaderSize+2*n), uint32(ms))
+	b = append(b, byte(n))
 	for i, e := range s.Results {
-		if len(e.Text) > maxActivationText {
+		l := len(e.Text) + 1 // the length octet counts the status code too
+		if l > maxActivationText+1 {
 			return Raw{}, invalid("g91v1 status %d: text of %d octets, at most %d", i+1, len(e.Text), maxActivationText)
 		}
-		b = append(b, byte(len(e.Text)+1), e.Code)
+		b = append(b, byte(l), e.Code)
 		b = append(b, e.Text...)
 	}
 	return Raw{Data: b}, nil

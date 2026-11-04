@@ -53,6 +53,12 @@ request methods.
   request (IMMED_FREEZE, FREEZE_CLEAR, FREEZE_AT_TIME with an interval). An
   application that freezes on its own schedule updates its frozen counters
   with `Database.Update` or `Database.Batch`.
+- **File blocks are at most 65527 octets**: a block travels in a g70v5
+  object, whose two-octet size also counts the handle and block number.
+  Both ends cap the block size there, whatever the fragment size allows.
+- **Files of 4 GiB or more**: the size of a file is four octets (g70v4,
+  g70v7). `FSFileServer` refuses to open such a file (FILE_FATAL) and lists
+  it with size 0xFFFFFFFF.
 - **Output status follows the application**: a control does not change the
   binary or analog output status (g10, g40) by itself. The `Handler`
   updates the point with the value the output took, which reports its event

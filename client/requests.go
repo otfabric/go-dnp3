@@ -500,9 +500,15 @@ func (c *Client) Freeze(ctx context.Context, clear, noAck bool, headers ...app.H
 }
 
 // FreezeAtTime asks for a freeze at the given time, repeated every
-// interval (zero for once).
+// interval (zero for once). The interval is sent in 32 bits of
+// milliseconds (g50v2); a negative interval or one of 2^32 ms (about 49.7
+// days) or more is an ErrInvalidOption.
 func (c *Client) FreezeAtTime(ctx context.Context, at time.Time, interval time.Duration, headers ...app.Header) error {
-	hs := append([]app.Header{app.Counted(app.G50V2, app.AbsoluteTime{Time: app.TimestampOf(at), Interval: uint32(interval.Milliseconds())})}, headers...)
+	ms := interval.Milliseconds()
+	if ms < 0 || ms > math.MaxUint32 {
+		return fmt.Errorf("%w: freeze interval %v does not fit 32 bits of milliseconds", dnp3.ErrInvalidOption, interval)
+	}
+	hs := append([]app.Header{app.Counted(app.G50V2, app.AbsoluteTime{Time: app.TimestampOf(at), Interval: uint32(ms)})}, headers...)
 	_, err := c.request(ctx, app.FuncFreezeAtTime, false, hs...)
 	return err
 }

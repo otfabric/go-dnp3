@@ -5,6 +5,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -206,7 +207,7 @@ func decodeHeader(b []byte, fc FunctionCode, c *codecCtx) (Header, int, error) {
 		if q.IsIndexed() && h.Count > 0 {
 			// An index list without values.
 			pw := q.prefixWidth()
-			if uint64(h.Count)*uint64(pw) > uint64(len(b)-p) {
+			if uint64(h.Count)*ulen(pw) > ulen(len(b)-p) {
 				return h, 0, truncated("index list of %s: %d indexes", h.GV, h.Count)
 			}
 			h.Objects = make([]Object, h.Count)
@@ -251,7 +252,7 @@ func (d *desc) decodeObjects(h *Header, b []byte, c *codecCtx) (int, error) {
 				o.Value = DoubleBitBinary{Value: DoubleBit(x & 3)}
 			}
 		}
-		return int(nb), nil
+		return int(min(nb, math.MaxInt32)), nil // nb <= len(b), checked above
 	}
 
 	if d.freeFormat(gv) && !q.IsFreeFormat() {
@@ -266,10 +267,10 @@ func (d *desc) decodeObjects(h *Header, b []byte, c *codecCtx) (int, error) {
 		n = uint64(h.Count)
 	}
 	// The least each object occupies, to bound n before allocating.
-	least := uint64(max(size, 1)) + uint64(q.prefixWidth())
+	least := ulen(max(size, 1)) + ulen(q.prefixWidth())
 	// A free-format object's size is given; only an attribute's is checked.
 	if d.fam == fAttribute || (d.selfSized() && !q.IsFreeFormat()) {
-		least = uint64(d.leastSize()) + uint64(q.prefixWidth())
+		least = ulen(d.leastSize()) + ulen(q.prefixWidth())
 	}
 	if n*least > uint64(len(b)) {
 		return 0, truncated("%s: %d objects in %d octets", gv, n, len(b))
@@ -300,7 +301,7 @@ func (d *desc) decodeObjects(h *Header, b []byte, c *codecCtx) (int, error) {
 			}
 			l := getUint(b[p:], pw)
 			p += pw
-			if uint64(l) > uint64(len(b)-p) {
+			if uint64(l) > ulen(len(b)-p) {
 				return p, truncated("%s: object of %d octets, %d left", gv, l, len(b)-p)
 			}
 			objLen = int(l)
@@ -377,7 +378,7 @@ func (h *Header) appendEncode(b []byte, c *codecCtx) ([]byte, error) {
 		if uint64(len(h.Objects)) > limit {
 			return b, invalid("%d indexes with qualifier %s", len(h.Objects), q)
 		}
-		b = putUint(b, uint32(len(h.Objects)), w)
+		b = putUint(b, len32(len(h.Objects)), w)
 		pw := q.prefixWidth()
 		plimit := uint64(1)<<(8*pw) - 1
 		for _, o := range h.Objects {
@@ -413,12 +414,12 @@ func (h *Header) appendEncode(b []byte, c *codecCtx) ([]byte, error) {
 				return b, invalid("indexes not contiguous: %d at position %d of a range from %d", o.Index, i, start)
 			}
 		}
-		b = putUint(putUint(b, start, w), uint32(stop), w)
+		b = putUint(putUint(b, start, w), uint32(stop&0xFFFFFFFF), w)
 	} else {
 		if uint64(n) > limit {
 			return b, invalid("%d objects with qualifier %s", n, q)
 		}
-		b = putUint(b, uint32(n), w)
+		b = putUint(b, len32(n), w)
 	}
 
 	if bits := d.bits(); bits > 0 {
@@ -470,10 +471,10 @@ func (h *Header) appendEncode(b []byte, c *codecCtx) ([]byte, error) {
 				return b, err
 			}
 			l := len(b) - at - pw
-			if uint64(l) > plimit {
+			if ulen(l) > plimit {
 				return b, invalid("object of %d octets with qualifier %s", l, q)
 			}
-			setUint(b[at:], uint32(l), pw)
+			setUint(b[at:], len32(l), pw)
 			continue
 		}
 		at := len(b)

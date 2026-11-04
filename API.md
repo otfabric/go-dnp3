@@ -122,7 +122,7 @@ Every request takes a `context.Context` and returns a `*Result` (its fields
 | `EnableUnsolicited(ctx, classes...)`, `DisableUnsolicited` | ENABLE_UNSOLICITED, DISABLE_UNSOLICITED |
 | `AssignClass(ctx, class, headers...)` | ASSIGN_CLASS |
 | `Freeze(ctx, clear, noAck, headers...)` | IMMED_FREEZE, FREEZE_CLEAR and their `_NR` forms |
-| `FreezeAtTime(ctx, at, interval, headers...)` | FREEZE_AT_TIME |
+| `FreezeAtTime(ctx, at, interval, headers...)` | FREEZE_AT_TIME; an interval below 0 or of 2^32 ms or more is an `ErrInvalidOption` |
 | `ClearRestart(ctx)` | WRITE g80v1 index 7 |
 | `ReadAttributes(ctx, variation)`, `WriteAttribute(ctx, variation, a)` | READ / WRITE g0, set 0 |
 | `ReadAttributeSet(ctx, set, variation)`, `WriteAttributeSet(ctx, set, variation, a)` | The same for another set |
@@ -240,7 +240,7 @@ directories.
 | `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `HeaderLen`, `String`; `Decode(b)`; `AppendObjectValue(b, gv, v)` encodes one object without header, as a free-format object carries it |
 | `Header{GV, Qualifier, Start, Stop, Count, Objects}` | `EncodedLen`, `String` |
 | `Object{Index, Value}`, `Value` | The closed set of value types |
-| `GroupVariation`, `GV(g, v)`, `G1V0` ... `G122V2`, `OctetStringGV(g, n)` | `Group`, `Variation`, `Name`, `Known`, `IsEvent`, `Size`; [OBJECTS.md](OBJECTS.md) lists them all |
+| `GroupVariation`, `GV(g, v)`, `G1V0` ... `G122V2`, `OctetStringGV(g, n)` (variation 0 for n outside 1..255) | `Group`, `Variation`, `Name`, `Known`, `IsEvent`, `Size`; [OBJECTS.md](OBJECTS.md) lists them all |
 | `FunctionCode`, `Func*` | `String`, `Defined`, `IsResponse`, `NoAck` |
 | `IIN`, `IIN*` | `Has`, `IIN1`, `IIN2`, `String`; `IINBit` |
 | `Control{FIR, FIN, CON, UNS, Seq}`, `SingleControl`, `ParseControl`, `NextSeq` | The application control octet (`Byte`, `String`) |

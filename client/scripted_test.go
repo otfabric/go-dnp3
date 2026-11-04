@@ -25,6 +25,13 @@ type scripted struct {
 
 func newScripted(t *testing.T, answer func(req *app.Fragment) (app.IIN, []app.Header)) *scripted {
 	t.Helper()
+	return newScriptedMax(t, 0, answer)
+}
+
+// newScriptedMax is newScripted reassembling requests of up to
+// maxFragment octets (0 for the default).
+func newScriptedMax(t *testing.T, maxFragment int, answer func(req *app.Fragment) (app.IIN, []app.Header)) *scripted {
+	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +44,7 @@ func newScripted(t *testing.T, answer func(req *app.Fragment) (app.IIN, []app.He
 		}
 		ch := channel.New(conn, channel.Config{})
 		reqs := make(chan *app.Fragment, 16)
-		sess := ch.AddSession(channel.SessionConfig{Local: 10, Remote: 1,
+		sess := ch.AddSession(channel.SessionConfig{Local: 10, Remote: 1, MaxFragment: maxFragment,
 			OnFragment: func(b []byte, _ link.Address) {
 				if f, err := app.Decode(b); err == nil && f.Function != app.FuncConfirm {
 					reqs <- f

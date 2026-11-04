@@ -87,8 +87,22 @@ func le64(b []byte, v uint64) []byte { return binary.LittleEndian.AppendUint64(b
 
 func le48(b []byte, t Timestamp) []byte {
 	t &= MaxTimestamp
-	return append(b, byte(t), byte(t>>8), byte(t>>16), byte(t>>24), byte(t>>32), byte(t>>40))
+	return append(b, byte(t&0xFF), byte(t>>8&0xFF), byte(t>>16&0xFF), byte(t>>24&0xFF), byte(t>>32&0xFF), byte(t>>40&0xFF))
 }
+
+// len16 returns the length n as a two-octet field. Every caller checks n
+// against 0xFFFF first and fails the encoding when it does not fit; the
+// clamp only makes that bound visible here.
+func len16(n int) uint16 { return uint16(max(min(n, 0xFFFF), 0)) }
+
+// len32 returns the count n as a four-octet field, clamped like len16. A
+// slice of more than 2^32-1 elements cannot be encoded in a fragment, so
+// the encoders fail on the fragment size before such a count is used.
+func len32(n int) uint32 { return uint32(min(uint64(max(n, 0)), math.MaxUint32)) }
+
+// ulen returns a length or offset difference, never negative, as uint64
+// for overflow-free bound checks.
+func ulen(n int) uint64 { return uint64(max(n, 0)) }
 
 func f32(b []byte, v float32) []byte { return le32(b, math.Float32bits(v)) }
 func f64(b []byte, v float64) []byte { return le64(b, math.Float64bits(v)) }
@@ -101,3 +115,25 @@ func clone(b []byte) []byte {
 	}
 	return append([]byte(nil), b...)
 }
+
+// Two's complement reinterpretations between the signed values of the
+// object library and their unsigned wire octets. They are written as
+// arithmetic so that the reinterpretation is explicit, not an accident of
+// a conversion.
+
+// int8of returns octet b read as a signed 8-bit integer.
+func int8of(b byte) int32 { return int32(b) - int32(b&0x80)<<1 }
+
+// int16of returns v read as a signed 16-bit integer.
+func int16of(v uint16) int32 { return int32(v) - int32(v&0x8000)<<1 }
+
+// int32of returns v read as a signed 32-bit integer.
+func int32of(v uint32) int32 {
+	return int32(max(min(int64(v)-int64(v&0x80000000)<<1, math.MaxInt32), math.MinInt32))
+}
+
+// uint16of returns the two's complement octets of v.
+func uint16of(v int16) uint16 { return uint16(int32(v) & 0xFFFF) }
+
+// uint32of returns the two's complement octets of v.
+func uint32of(v int32) uint32 { return uint32(int64(v) & 0xFFFFFFFF) }

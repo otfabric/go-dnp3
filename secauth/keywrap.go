@@ -60,7 +60,7 @@ func KeyUnwrap(kek, wrapped []byte) ([]byte, error) {
 	var b [16]byte
 	for j := 5; j >= 0; j-- {
 		for i := n; i >= 1; i-- {
-			binary.BigEndian.PutUint64(b[:8], binary.BigEndian.Uint64(out[:8])^uint64(n*j+i))
+			binary.BigEndian.PutUint64(b[:8], binary.BigEndian.Uint64(out[:8])^uint64(max(n*j+i, 0)))
 			copy(b[8:], out[8*i:8*i+8])
 			c.Decrypt(b[:], b[:])
 			copy(out[:8], b[:8])
@@ -80,10 +80,11 @@ func KeyUnwrap(kek, wrapped []byte) ([]byte, error) {
 // message the outstation sent last, padded with zeros to a multiple of 8
 // octets for the key wrap.
 func KeyChangeData(control, monitoring, keyStatus []byte) ([]byte, error) {
-	if len(control) != len(monitoring) || len(control) < 16 || len(control) > 64 {
-		return nil, fmt.Errorf("secauth: session keys of %d and %d octets: need equal lengths of 16..64", len(control), len(monitoring))
+	l := len(control)
+	if l != len(monitoring) || l < 16 || l > 64 {
+		return nil, fmt.Errorf("secauth: session keys of %d and %d octets: need equal lengths of 16..64", l, len(monitoring))
 	}
-	b := binary.LittleEndian.AppendUint16(nil, uint16(len(control)))
+	b := binary.LittleEndian.AppendUint16(nil, uint16(l))
 	b = append(b, control...)
 	b = append(b, monitoring...)
 	b = append(b, keyStatus...)
