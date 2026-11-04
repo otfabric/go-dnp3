@@ -9,7 +9,7 @@ None of this is a conformance claim. Nothing is certified: only the DNP Users
 Group certifies devices, and go-dnp3 declares no subset level. Peer results
 show that go-dnp3 and those stacks agree with each other.
 
-Status: go-dnp3 v1.7.0, dnp3-interop v0.11.0 (opendnp3 3.1.2, DSC go-dnp3
+Status: go-dnp3 v1.8.0, dnp3-interop v0.11.2 (opendnp3 3.1.2, DSC go-dnp3
 v0.8.2, dnp3py 0.6.0, cB-Sigma dnp3 v0.3.0, nfm-dnp3 1.0.1), dnp3c 0.2.0.
 
 ## Platforms
