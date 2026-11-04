@@ -31,6 +31,9 @@ type FileOptions struct {
 
 const fileRequestID = 1
 
+// maxFileBlock is the largest block of a g70v5 object (qualifier 0x5B).
+const maxFileBlock = 0xFFFF - 8
+
 // fileObject returns the single object of the response of a file
 // operation, of the expected type or a command status.
 func fileObject(res *Result) (app.Value, error) {
@@ -159,6 +162,10 @@ func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size u
 	if block == 0 {
 		block = 1024
 	}
+	// A block travels in a g70v5 object, whose two-octet size also counts
+	// the handle and block number: an outstation announcing more than
+	// 65527 gets blocks that fit the object.
+	block = min(block, maxFileBlock)
 	if c.opts.auth != nil && slices.Contains(c.opts.aggressive, app.FuncWrite) && block > 2*secauth.AggressiveOverhead {
 		// An outstation that sized the block for a plain request has no
 		// room for the aggressive mode objects.

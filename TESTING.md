@@ -95,7 +95,9 @@ Left out of `COVER_PKGS`, and why:
 
 Targets: `FuzzDecode` and `FuzzReader` (`link`), `FuzzReassembler`
 (`transport`), `FuzzDecode` (`app`), `FuzzOutstation` and `FuzzPack`
-(`server`). `make fuzz` runs each for `FUZZTIME` (default 30s). A new target
+(`server`), `FuzzMaster` (`client`: the master against an outstation that
+answers every request with the fuzz input, with Secure Authentication
+configured) and `FuzzKeyUnwrap` (`secauth`: session key change data). `make fuzz` runs each for `FUZZTIME` (default 30s). A new target
 must be added to the `fuzz` recipe by name.
 
 When a target fails, Go writes the input to `testdata/fuzz/<Target>/` in the

@@ -116,11 +116,13 @@ func (a *association) file(req *app.Fragment) *response {
 				limit -= secauth.AggressiveOverhead
 			}
 		}
+		// A block travels in a g70v5 object, whose two-octet size also
+		// counts the handle and block number: with fragments over 65547
+		// octets the object, not the fragment, is the limit.
+		limit = min(limit, maxFileBlock)
 		maxBlock := int(c.MaxBlockSize)
 		if maxBlock == 0 || maxBlock > limit {
-			// The block size is two octets on the wire: a fragment size
-			// over 65555 must not announce a wrapped one.
-			maxBlock = min(limit, 0xFFFF)
+			maxBlock = limit
 		}
 		a.nextHandle++
 		h := a.nextHandle
@@ -371,6 +373,10 @@ func descriptor(name string, info fs.FileInfo) app.FileDescriptor {
 	}
 	return d
 }
+
+// maxFileBlock is the largest block of a g70v5 object (qualifier 0x5B):
+// its size is two octets and includes the handle and block number.
+const maxFileBlock = 0xFFFF - 8
 
 // fileSize returns the size of a file in the four octets of g70, and
 // false, with the largest size, when it does not fit them.
