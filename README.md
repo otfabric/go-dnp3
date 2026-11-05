@@ -392,9 +392,10 @@ The full list is in [LIMITATIONS.md](LIMITATIONS.md).
   has it. See [SECURITY.md](SECURITY.md) and
   [the gaps](INTEROPERABILITY.md#feature-completeness-and-the-remaining-gaps).
 - **Data sets, private registration objects and the virtual terminal**
-  (groups 83, 85..88, 90, 91 carried raw, except the one-octet data set
+  (groups 83, 85..88, 90 carried raw, except the one-octet data set
   characteristics g86v2; 112, 113 decoded) have no procedures: exchange
-  them with the generic request methods.
+  them with the generic request methods. Group 91 is decoded for
+  ACTIVATE_CONFIG (`Client.ActivateConfig`, `server.ActivateConfigHandler`).
 - **Conformance**: CI runs the DNP Users Group's IED certification
   procedures (dnp3c: 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2)
   against a [test outstation](internal/cmd/conformance) built on the library, with the

@@ -33,9 +33,10 @@ comparison with other stacks are in
 ## Objects without procedures
 
 Data sets, private registration objects and the virtual terminal (groups 83,
-85..88, 90, 91 carried raw, except the one-octet data set characteristics
-g86v2; 112, 113 decoded) have no procedures: exchange them with the generic
-request methods.
+85..88, 90 carried raw, except the one-octet data set characteristics g86v2;
+112, 113 decoded) have no procedures: exchange them with the generic request
+methods. Group 91 is decoded for ACTIVATE_CONFIG (`Client.ActivateConfig`,
+`server.ActivateConfigHandler`).
 
 ## Behaviour to plan for
 
