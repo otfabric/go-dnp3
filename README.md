@@ -66,6 +66,7 @@ The library provides:
 - [Error semantics](#error-semantics)
 - [Examples](#examples)
 - [Development](#development)
+- [Recorded traffic](#recorded-traffic)
 - [Interop tests](#interop-tests)
 - [Limitations](#limitations)
 - [License](#license)
@@ -334,6 +335,17 @@ source, and it is not published. CI runs the same on every push. The
 results are not a certification. [internal/cmd/conformance](internal/cmd/conformance) describes the setup and the
 Device Profile.
 
+## Recorded traffic
+
+[testdata/captures](testdata/captures/README.md) holds 182 captures of
+other DNP3 software (ITI ICS-Security-Tools, including 140 conformance
+runs against the opendnp3 3.0 outstation with the runner's logs, the Zeek
+DNP3 traces and the igbe attack data set). `make test` decodes every frame,
+encodes it back octet for octet, compares the decoding with Wireshark's and
+the runner's, and replays the master and the outstation against the
+recorded peers. The recordings are software-generated or of unknown origin:
+they are not evidence about any RTU or IED.
+
 ## Interop tests
 
 `make interop` runs go-dnp3 as master against the reference outstations,
@@ -408,6 +420,8 @@ The full list is in [LIMITATIONS.md](LIMITATIONS.md).
   behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation: a
   request is one fragment.
+- **No hardware**: no test runs against an RTU or IED, and the recorded
+  traffic does not identify a physical device.
 
 ## License
 

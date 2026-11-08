@@ -227,6 +227,7 @@ a pre-shared session key is used directly (outside the standard, see
 | Dual end point, both roles, TCP and TLS | ✅ against opendnp3, DSC go-dnp3 and cB-Sigma dnp3 |
 | Frozen analog inputs, command events, time and interval | ✅ as master against DSC go-dnp3's outstation; as outstation against the masters that decode them (opendnp3, DSC go-dnp3) |
 | Aggressive mode | ✅ between go-dnp3's own ends; no reference in dnp3-interop has it |
+| Recorded traffic of other software (182 captures: ITI ICS-Security-Tools, 140 conformance runs against the opendnp3 3.0 outstation, Zeek traces, the igbe attack data set; classes C and D, no identified hardware) | ✅ decoded and encoded back octet for octet, against Wireshark and the conformance runner's log; master and outstation replayed against the recorded peers ([testdata/captures](testdata/captures/README.md)); not a statement about any device |
 
 ## Frozen counter events
 

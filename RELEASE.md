@@ -1,5 +1,30 @@
 # go-dnp3 Releases
 
+## v1.9.1
+
+**Date:** 2026-11-08
+**Previous release:** v1.9.0
+
+## Summary
+
+Validation against recorded DNP3 traffic of other software: 182 captures (the ITI ICS-Security-Tools DNP3 captures, among them 140 runs of a conformance runner against the opendnp3 3.0 outstation with the runner's logs, the Zeek DNP3 traces and the igbe attack data set), committed byte-identical with their sources, revisions and SHA256. Every frame is decoded, encoded back octet for octet and checked against Wireshark's dissector and the runner's own decoding; the master and the outstation are replayed against the recorded peers. One outstation defect found this way is fixed. The recordings are software-generated or of unknown origin (evidence classes C and D): nothing here is a statement about DNP3 hardware. No exported API is added or removed.
+
+## Changes
+
+### Outstation
+
+- **READ of g0v0 answers IIN2.1.** Group 0 has no variation 0; an outstation without device attribute sets answered it with IIN2.2 (PARAMETER_ERROR), one with sets with IIN2.1. It now answers IIN2.1 (OBJECT_UNKNOWN) alone in both cases, as procedure 8.6.3.2 of the DNP3 IED certification procedure verifies and the recorded opendnp3 outstation answers (`conformance-runner_opendnp3-3_8-6-3-2.pcap`, frame 4).
+
+### Testing
+
+- `testdata/captures`: the corpus, `manifest.json` (source, revision, original name and URL, SHA256, size, evidence class, peers, operations, limitations, files examined and not committed), `SHA256SUMS`, `coverage.json` (what the codecs find per file), Wireshark's decoding of every file (`tshark/`) and the conformance runner's logs. `make captures-verify` checks the SHA256 (CI job `Captures`); `make captures-oracle`, `captures-report` and `captures-seeds` regenerate the derived files.
+- `internal/capture` (test infrastructure): pcap and pcapng reader (Ethernet, BSD loopback, IPv4, TCP reassembled per direction with retransmissions, gaps and reused address pairs, UDP), and the corpus tests: 13690 link frames and 12456 fragments encode back to the recorded octets; link, transport and application headers, IIN and object headers agree with Wireshark in every frame but the classified ones; the runner's logged octets are the reassembled streams, and its decoding of 1063 link, 1024 transport and 968 application rows, 1206 object headers and 4858 values agrees with go-dnp3's; every framing and decode error (45) is classified.
+- `client`: 5543 recorded requests replayed through `Request` and `Broadcast`, byte-identical apart from the sequence number, with the recorded responses (5534 fragments, 82142 measurements) and 647 unsolicited responses accepted and confirmed; `ReadFile`, `ListDirectory`, `WriteFile`, `DeleteFile`, select before operate, LAN and non-LAN time synchronization, `DelayMeasure` and restarts against the recorded outstations.
+- `server`: 5569 recorded requests sent to the outstation and its answers compared with the recorded ones (answered or not, sequence, IIN2 errors, control echoes), every difference classified; the link-layer octets of the link procedures (resets, link status, confirmed data, invalid FCV, damaged frames) replayed with the same link reactions as the recorded outstation.
+- 370 fuzz seeds from the captures for `FuzzDecode` and `FuzzReader` (`link`), `FuzzDecode` (`app`), `FuzzOutstation` (`server`) and `FuzzMaster` (`client`).
+
+---
+
 ## v1.9.0
 
 **Date:** 2026-11-04
