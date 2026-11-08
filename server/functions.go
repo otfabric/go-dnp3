@@ -450,6 +450,15 @@ func attributeSets(h *app.Header) (start, stop uint32) {
 }
 
 func (s *Server) attributeItems(h *app.Header, p *readPlan) []item {
+	if h.GV.Variation() == 0 {
+		// Group 0 has no variation 0 (IEEE 1815-2012 Annex A, device
+		// attributes are variations 1..255): an unknown object, whatever
+		// sets the outstation has. The DNP3 IED certification procedure
+		// (8.6.3.2) expects IIN2.1; recorded in
+		// conformance-runner_opendnp3-3_8-6-3-2.pcap.
+		p.iin |= app.IINObjectUnknown
+		return nil
+	}
 	start, stop := attributeSets(h)
 	// The configured sets in the range, in order: a range is not walked
 	// set by set, it may span four billion of them.

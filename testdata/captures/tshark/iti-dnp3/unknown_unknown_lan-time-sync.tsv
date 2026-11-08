@@ -1,0 +1,6 @@
+# TShark (Wireshark) 4.6.9 (v4.6.9-0-g2d548b197c75).
+# frame	ctl	src	dst	len	tr.ctl	al.ctl	al.func	al.iin	al.obj	objq.prefix	objq.range
+1	0xc4	3	4	8	0xc8	0xc9	24				
+2	0x44	4	3	10	0xca	0xc9	129	0x0000			
+3	0xc4	3	4	18	0xc9	0xca	2		0x3203	0	7
+4	0x44	4	3	10	0xcb	0xca	129	0x0000			

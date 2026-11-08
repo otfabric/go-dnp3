@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet cross vuln test e2e coverage coverage-check coverage-pkg-check cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch conformance conformance-image print-conformance-image docs-check
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet cross vuln test e2e coverage coverage-check coverage-pkg-check cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch conformance conformance-image print-conformance-image docs-check captures-verify captures-oracle captures-report captures-seeds
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -25,7 +25,8 @@ BIN_DIR := bin
 # Library packages: tests and coverage (exclude examples)
 TEST_PKGS := $(shell go list ./... | grep -v '/examples')
 # Packages whose coverage counts, including what the e2e suite exercises.
-COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/internal/cmd' | grep -v '/e2e' | paste -sd, -)
+# internal/capture is test infrastructure for the recorded traffic.
+COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/internal/cmd' | grep -v '/e2e' | grep -v '/internal/capture' | paste -sd, -)
 
 # Build tag of the interop package (excluded from default ./... builds).
 INTEROP_TAGS := interop
@@ -201,11 +202,25 @@ upstream-watch: ## Compare app/catalog.json with the upstream object definitions
 coverpkg-check: ## Fail when CI's coverpkg (.github/workflows/ci.yml) is not COVER_PKGS
 	@grep -qF -- "$(COVER_PKGS)" .github/workflows/ci.yml || { echo "coverpkg in .github/workflows/ci.yml must be: $(COVER_PKGS)"; exit 1; }
 
-check: generate-check coverpkg-check fmt fmt-check lint lint-ci vet vuln test coverage-pkg-check examples docs-check ## Run generate-check + coverpkg-check + format + lint + vet + vuln + test + per-package coverage + docs-check
+check: generate-check coverpkg-check captures-verify fmt fmt-check lint lint-ci vet vuln test coverage-pkg-check examples docs-check ## Run generate-check + coverpkg-check + captures-verify + format + lint + vet + vuln + test + per-package coverage + docs-check
 
 # The documents against the code (DOC-008): docsync, as docs.yml runs it.
 docs-check: ## Check that the documents agree with the code (docsync)
 	@go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
+
+# Recorded traffic (testdata/captures/README.md): committed byte-identical,
+# every file under 50 MB, so the suites run offline in make test.
+captures-verify: ## Verify the SHA256 of every committed capture and conformance log
+	@cd testdata/captures && shasum -a 256 -c --quiet SHA256SUMS && echo "testdata/captures: SHA256SUMS verified"
+
+captures-oracle: ## Regenerate testdata/captures/tshark/ (Wireshark's decoding of every capture; needs tshark)
+	@./scripts/captures-oracle.sh
+
+captures-report: ## Rewrite testdata/captures/coverage.json from what the codecs find (review the difference)
+	@DNP3_CAPTURE_UPDATE=1 go test -count=1 -run '^TestCoverage$$' ./internal/capture/
+
+captures-seeds: ## Rewrite the fuzz seeds taken from the captures (testdata/fuzz of link, app, server, client)
+	@DNP3_CAPTURE_SEEDS=1 go test -count=1 -run '^TestFuzzSeeds$$' ./internal/capture/
 
 clean: ## Remove generated binaries and coverage artifacts
 	@echo "Cleaning up"

@@ -16,6 +16,11 @@ comparison with other stacks are in
   multi-drop, and the network tests of section 9.
 - Peer results show that go-dnp3 and those stacks agree with each other;
   see [INTEROPERABILITY.md](INTEROPERABILITY.md) for what was run.
+- **No DNP3 hardware.** No test runs against an RTU or IED, and none of the
+  recorded traffic in [testdata/captures](testdata/captures/README.md)
+  identifies a physical device: it is software-generated or of unknown
+  origin. The secure authentication recordings cannot be checked beyond
+  their decoding: their keys are not in them.
 
 ## Secure Authentication
 

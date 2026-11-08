@@ -1,0 +1,5425 @@
+{
+  "schema": 1,
+  "totals": {
+    "files": 182,
+    "packets": 30048,
+    "link_frames": 13690,
+    "framing_errors": 31,
+    "fragments": 12470,
+    "fragments_decoded": 12456,
+    "anomalies": 45
+  },
+  "files": [
+    {
+      "id": "assign-class",
+      "packets": 3,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "ASSIGN_CLASS": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "ASSIGN_CLASS g1v0 q=0x06",
+        "ASSIGN_CLASS g60v3 q=0x06"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "auth-change-session-keys",
+      "packets": 8,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "AUTHENTICATE_REQ": 2,
+        "AUTHENTICATE_RESP": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "AUTHENTICATE_REQ g120v4 q=0x07",
+        "AUTHENTICATE_REQ g120v6 q=0x5B",
+        "AUTHENTICATE_RESP g120v5 q=0x5B"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "auth-control-challenge-response",
+      "packets": 5,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "AUTHENTICATE_REQ": 1,
+        "AUTHENTICATE_RESP": 1,
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "AUTHENTICATE_REQ g120v2 q=0x5B",
+        "AUTHENTICATE_RESP g120v1 q=0x5B",
+        "DIRECT_OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "cold-restart-and-response",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "COLD_RESTART": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [],
+      "iin": [
+        "NO_FUNC_CODE_SUPPORT"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "dataset-exchange",
+      "packets": 6,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g0v213 q=0x00",
+        "READ g0v215 q=0x00",
+        "READ g85v1 q=0x00",
+        "READ g86v1 q=0x00",
+        "RESPONSE g0v213 q=0x00",
+        "RESPONSE g0v215 q=0x00",
+        "RESPONSE g85v1 q=0x5B",
+        "RESPONSE g86v1 q=0x5B"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "direct-operate-analog-output",
+      "packets": 1,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g41v2 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "direct-operate-crob-malform-but-good-crc",
+      "packets": 1,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1
+      },
+      "fragments_decoded": 0,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [],
+      "iin": [],
+      "anomalies": [
+        {
+          "frame": 1,
+          "layer": "application",
+          "error": "header 0: app: malformed fragment: truncated g12v1: 2 objects in 13 octets"
+        }
+      ]
+    },
+    {
+      "id": "direct-operate-no-ack-crob",
+      "packets": 1,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE_NR": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE_NR g12v1 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "direct-operate-and-response",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "disable-unsolicited-and-response",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DISABLE_UNSOLICITED": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "test-data-part1",
+      "packets": 181,
+      "conversations": 8,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 93
+      },
+      "framing_errors": 1,
+      "cut": 0,
+      "fragments": {
+        "COLD_RESTART": 2,
+        "CONFIRM": 13,
+        "DISABLE_UNSOLICITED": 7,
+        "ENABLE_UNSOLICITED": 3,
+        "READ": 3,
+        "RESPONSE": 23,
+        "STOP_APPL": 4,
+        "UNSOLICITED_RESPONSE": 30,
+        "WARM_RESTART": 2,
+        "WRITE": 6
+      },
+      "fragments_decoded": 87,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06",
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06",
+        "READ g2v0 q=0x06",
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v1 q=0x00",
+        "RESPONSE g20v5 q=0x00",
+        "RESPONSE g21v9 q=0x00",
+        "RESPONSE g30v3 q=0x00",
+        "RESPONSE g52v2 q=0x07",
+        "UNSOLICITED_RESPONSE g2v3 q=0x28",
+        "UNSOLICITED_RESPONSE g32v1 q=0x28",
+        "UNSOLICITED_RESPONSE g51v1 q=0x07",
+        "WRITE g50v1 q=0x07",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "BROADCAST",
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "NO_FUNC_CODE_SUPPORT"
+      ],
+      "anomalies": [
+        {
+          "frame": 21,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 48 octets skipped before end of stream"
+        },
+        {
+          "frame": 154,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 156,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 163,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 166,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 174,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 176,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        }
+      ]
+    },
+    {
+      "id": "test-data-part2",
+      "packets": 33,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 22
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 6,
+        "RESPONSE": 11,
+        "SELECT": 5
+      },
+      "fragments_decoded": 22,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g255v0 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g12v1 q=0x28",
+        "SELECT g12v1 q=0x28"
+      ],
+      "iin": [
+        "OBJECT_UNKNOWN",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "enable-unsolicited-and-response",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "ENABLE_UNSOLICITED": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "file-delete",
+      "packets": 3,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DELETE_FILE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DELETE_FILE g70v3 q=0x5B",
+        "RESPONSE g70v4 q=0x5B"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "file-list-directory",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 13
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CLOSE_FILE": 1,
+        "OPEN_FILE": 1,
+        "READ": 2,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 8,
+      "multi_segment": 2,
+      "multi_fragment": 0,
+      "objects": [
+        "CLOSE_FILE g70v4 q=0x5B",
+        "OPEN_FILE g70v3 q=0x5B",
+        "READ g70v5 q=0x5B",
+        "RESPONSE g70v4 q=0x5B",
+        "RESPONSE g70v5 q=0x5B"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "file-read",
+      "packets": 7,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CLOSE_FILE": 1,
+        "OPEN_FILE": 1,
+        "READ": 1,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "CLOSE_FILE g70v4 q=0x5B",
+        "OPEN_FILE g70v3 q=0x5B",
+        "READ g70v5 q=0x5B",
+        "RESPONSE g70v4 q=0x5B",
+        "RESPONSE g70v5 q=0x5B"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "file-write",
+      "packets": 7,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CLOSE_FILE": 1,
+        "OPEN_FILE": 1,
+        "RESPONSE": 3,
+        "WRITE": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "CLOSE_FILE g70v4 q=0x5B",
+        "OPEN_FILE g70v3 q=0x5B",
+        "RESPONSE g70v4 q=0x5B",
+        "RESPONSE g70v6 q=0x5B",
+        "WRITE g70v5 q=0x5B"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "full-exchange",
+      "packets": 22,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 11
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "DISABLE_UNSOLICITED": 1,
+        "ENABLE_UNSOLICITED": 1,
+        "READ": 1,
+        "RESPONSE": 4,
+        "UNSOLICITED_RESPONSE": 1,
+        "WRITE": 1
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06",
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06",
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x00",
+        "RESPONSE g20v1 q=0x00",
+        "RESPONSE g21v1 q=0x00",
+        "RESPONSE g30v1 q=0x00",
+        "RESPONSE g3v2 q=0x00",
+        "RESPONSE g40v1 q=0x00",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "immediate-freeze",
+      "packets": 3,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "IMMED_FREEZE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "IMMED_FREEZE g20v0 q=0x06"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "lan-time-sync",
+      "packets": 5,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RECORD_CURRENT_TIME": 1,
+        "RESPONSE": 2,
+        "WRITE": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "WRITE g50v3 q=0x07"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "operate-aggressive-mode",
+      "packets": 3,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g120v3 q=0x07",
+        "DIRECT_OPERATE g120v9 q=0x5B",
+        "DIRECT_OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "read-and-response",
+      "packets": 12,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 3
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x00",
+        "RESPONSE g20v1 q=0x00",
+        "RESPONSE g21v1 q=0x00",
+        "RESPONSE g30v1 q=0x00",
+        "RESPONSE g3v2 q=0x00",
+        "RESPONSE g40v1 q=0x00"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "select-operate-and-responses",
+      "packets": 12,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28",
+        "SELECT g12v1 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "serial-time-sync",
+      "packets": 5,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DELAY_MEASURE": 1,
+        "RESPONSE": 2,
+        "WRITE": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "RESPONSE g52v2 q=0x07",
+        "WRITE g50v1 q=0x07"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "unsolicited-response-and-confirm",
+      "packets": 9,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "UNSOLICITED_RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "warm-restart-and-response",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RESPONSE": 1,
+        "WARM_RESTART": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [],
+      "iin": [
+        "NO_FUNC_CODE_SUPPORT"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "write-binary-output",
+      "packets": 1,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "WRITE": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "WRITE g10v1 q=0x00"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "write-iin-and-response",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RESPONSE": 1,
+        "WRITE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "write-vto-empty-string",
+      "packets": 2,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 9
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "WRITE": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "WRITE g112v0 q=0x01"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-6-1-2",
+      "packets": 79,
+      "conversations": 1,
+      "link_frames": {
+        "PRI CONFIRMED_USER_DATA": 12,
+        "PRI RESET_LINK_STATES": 2,
+        "PRI UNCONFIRMED_USER_DATA": 10,
+        "SEC ACK": 12
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 13,
+        "RESPONSE": 9
+      },
+      "fragments_decoded": 22,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-6-3-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI REQUEST_LINK_STATUS": 2,
+        "SEC LINK_STATUS": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {},
+      "fragments_decoded": 0,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-6-5-2",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-6-6-2-1",
+      "packets": 25,
+      "conversations": 1,
+      "link_frames": {
+        "PRI CONFIRMED_USER_DATA": 1,
+        "PRI RESET_LINK_STATES": 1,
+        "PRI UNCONFIRMED_USER_DATA": 1,
+        "SEC ACK": 2
+      },
+      "framing_errors": 1,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": [
+        {
+          "frame": 20,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 72 octets skipped before end of stream"
+        }
+      ]
+    },
+    {
+      "id": "conformance-6-6-2-2",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI CONFIRMED_USER_DATA": 1,
+        "PRI RESET_LINK_STATES": 1,
+        "PRI UNCONFIRMED_USER_DATA": 1,
+        "SEC ACK": 2
+      },
+      "framing_errors": 2,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": [
+        {
+          "frame": 14,
+          "layer": "link",
+          "error": "link: framing error: link: invalid function code: PRIMARY(5)"
+        },
+        {
+          "frame": 16,
+          "layer": "link",
+          "error": "link: framing error: link: invalid function code: PRIMARY(10)"
+        }
+      ]
+    },
+    {
+      "id": "conformance-6-6-2-3",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {},
+      "framing_errors": 4,
+      "cut": 0,
+      "fragments": {},
+      "fragments_decoded": 0,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [],
+      "iin": [],
+      "anomalies": [
+        {
+          "frame": 4,
+          "layer": "link",
+          "error": "link: framing error: link: invalid length: UNCONFIRMED_USER_DATA without user data"
+        },
+        {
+          "frame": 6,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 14 octets skipped"
+        },
+        {
+          "frame": 6,
+          "layer": "link",
+          "error": "link: framing error: link: invalid length: UNCONFIRMED_USER_DATA without user data"
+        },
+        {
+          "frame": 6,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 14 octets skipped before end of stream"
+        }
+      ]
+    },
+    {
+      "id": "conformance-6-6-2-4",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {},
+      "framing_errors": 8,
+      "cut": 0,
+      "fragments": {},
+      "fragments_decoded": 0,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [],
+      "iin": [],
+      "anomalies": [
+        {
+          "frame": 4,
+          "layer": "link",
+          "error": "link: framing error: link: CRC error: header"
+        },
+        {
+          "frame": 6,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 17 octets skipped"
+        },
+        {
+          "frame": 6,
+          "layer": "link",
+          "error": "link: framing error: link: invalid length: UNCONFIRMED_USER_DATA without user data"
+        },
+        {
+          "frame": 8,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 8 octets skipped"
+        },
+        {
+          "frame": 8,
+          "layer": "link",
+          "error": "link: framing error: link: CRC error: header"
+        },
+        {
+          "frame": 10,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 17 octets skipped"
+        },
+        {
+          "frame": 10,
+          "layer": "link",
+          "error": "link: framing error: link: invalid length: UNCONFIRMED_USER_DATA without user data"
+        },
+        {
+          "frame": 10,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 8 octets skipped before end of stream"
+        }
+      ]
+    },
+    {
+      "id": "conformance-6-6-2-5",
+      "packets": 17,
+      "conversations": 1,
+      "link_frames": {
+        "PRI CONFIRMED_USER_DATA": 1,
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 3,
+      "cut": 0,
+      "fragments": {
+        "READ": 2
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06"
+      ],
+      "iin": [],
+      "anomalies": [
+        {
+          "frame": 8,
+          "layer": "link",
+          "error": "link: framing error: link: invalid length: TEST_LINK_STATES with 15 octets of user data"
+        },
+        {
+          "frame": 10,
+          "layer": "link",
+          "error": "link: framing error: link: invalid length: RESET_LINK_STATES with 15 octets of user data"
+        },
+        {
+          "frame": 12,
+          "layer": "link",
+          "error": "link: framing error: link: invalid length: REQUEST_LINK_STATUS with 15 octets of user data"
+        }
+      ]
+    },
+    {
+      "id": "conformance-7-2",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-1-2",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g10v0 q=0x06",
+        "RESPONSE g10v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-1",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28",
+        "SELECT g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-3",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RESPONSE": 1,
+        "SELECT": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "RESPONSE g12v1 q=0x28",
+        "SELECT g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-4",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-5",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-6",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-7",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-8",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-9",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x28",
+        "SELECT g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-10",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RESPONSE": 1,
+        "SELECT": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "RESPONSE g12v1 q=0x28",
+        "SELECT g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-11",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 3,
+        "SELECT": 2
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-12",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 3,
+        "SELECT": 2
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-13",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 2,
+        "RESPONSE": 3,
+        "SELECT": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-14",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 2,
+        "RESPONSE": 3,
+        "SELECT": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-1-2-15",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 2,
+        "RESPONSE": 3,
+        "SELECT": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17",
+        "SELECT g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-2-2-1",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-2-2-2",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-2-2-3",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-3-2-1",
+      "packets": 9,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE_NR": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE_NR g12v1 q=0x17"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-3-2-2",
+      "packets": 9,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE_NR": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE_NR g12v1 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-3-2-3",
+      "packets": 9,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE_NR": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE_NR g12v1 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-4-2",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "OPERATE": 1,
+        "RESPONSE": 5,
+        "SELECT": 3
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g12v1 q=0x28",
+        "OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28",
+        "SELECT g12v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-5-2-1",
+      "packets": 39,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 16
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 8,
+        "RESPONSE": 8
+      },
+      "fragments_decoded": 16,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-2-5-2-2",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 5,
+        "RESPONSE": 5
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g12v1 q=0x17",
+        "RESPONSE g12v1 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-3-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "READ": 1,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g41v2 q=0x28",
+        "READ g40v0 q=0x06",
+        "RESPONSE g40v2 q=0x00",
+        "RESPONSE g41v2 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-1",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x28",
+        "RESPONSE g41v2 q=0x28",
+        "SELECT g41v2 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "SELECT g41v2 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-3",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RESPONSE": 1,
+        "SELECT": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "RESPONSE g41v2 q=0x28",
+        "SELECT g41v2 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-4",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "SELECT g41v2 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-5",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "SELECT g41v2 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-6",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x28",
+        "SELECT g41v2 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-7",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RESPONSE": 1,
+        "SELECT": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "RESPONSE g41v2 q=0x28",
+        "SELECT g41v2 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-8",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 3,
+        "SELECT": 2
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "SELECT g41v2 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-9",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 3,
+        "SELECT": 2
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "SELECT g41v2 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-10",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 2,
+        "RESPONSE": 3,
+        "SELECT": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "SELECT g41v2 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-11",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 2,
+        "RESPONSE": 3,
+        "SELECT": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "SELECT g41v2 q=0x17"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-1-2-12",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 2,
+        "RESPONSE": 3,
+        "SELECT": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17",
+        "SELECT g41v2 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-2-2-1",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g41v2 q=0x17",
+        "RESPONSE g41v2 q=0x17"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-2-2-2",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g41v2 q=0x28",
+        "RESPONSE g41v2 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-2-2-3",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g41v2 q=0x28",
+        "RESPONSE g41v2 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-3-2-1",
+      "packets": 9,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE_NR": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE_NR g41v2 q=0x17"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-3-2-2",
+      "packets": 9,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE_NR": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE_NR g41v2 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-3-2-3",
+      "packets": 9,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE_NR": 1
+      },
+      "fragments_decoded": 1,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE_NR g41v2 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-4-4-2",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE": 1,
+        "OPERATE": 1,
+        "RESPONSE": 5,
+        "SELECT": 3
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE g41v2 q=0x28",
+        "OPERATE g41v2 q=0x28",
+        "RESPONSE g41v2 q=0x28",
+        "SELECT g41v2 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-1-2",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-2-2-1",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-2-2-2",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v2 q=0x07",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-2-2-3",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v2 q=0x08",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-2-2-4",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-3-2-1",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v3 q=0x06",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-3-2-2",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v3 q=0x06",
+        "READ g60v3 q=0x07",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-3-2-3",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v3 q=0x06",
+        "READ g60v3 q=0x08",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-3-2-4",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v3 q=0x06",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-4-2-1",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v4 q=0x06",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-4-2-2",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v4 q=0x06",
+        "READ g60v4 q=0x07",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_3_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-4-2-3",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v4 q=0x06",
+        "READ g60v4 q=0x08",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_3_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-4-2-4",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v4 q=0x06",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-5-2-1",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g22v1 q=0x28",
+        "RESPONSE g2v1 q=0x28",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-5-2-2",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 5,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g22v1 q=0x28",
+        "RESPONSE g2v1 q=0x28",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g32v1 q=0x28",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-5-6-2",
+      "packets": 45,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 19
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 3,
+        "READ": 8,
+        "RESPONSE": 8
+      },
+      "fragments_decoded": 19,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g22v1 q=0x28",
+        "RESPONSE g2v1 q=0x28",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "CLASS_3_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-1-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 2,
+        "WRITE": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-2-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "FUNCTION(112)": 1,
+        "READ": 1,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 3,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "NO_FUNC_CODE_SUPPORT"
+      ],
+      "anomalies": [
+        {
+          "frame": 4,
+          "layer": "application",
+          "error": "app: unknown function code: 112"
+        }
+      ]
+    },
+    {
+      "id": "conformance-8-6-3-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g0v0 q=0x06",
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "OBJECT_UNKNOWN"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-4-2",
+      "packets": 22,
+      "conversations": 2,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g10v0 q=0x06",
+        "RESPONSE g10v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "LOCAL_CONTROL",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-4-3",
+      "packets": 22,
+      "conversations": 2,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g10v0 q=0x06",
+        "RESPONSE g10v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "LOCAL_CONTROL",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-5-2",
+      "packets": 25,
+      "conversations": 1,
+      "link_frames": {
+        "PRI CONFIRMED_USER_DATA": 1,
+        "PRI RESET_LINK_STATES": 1,
+        "PRI UNCONFIRMED_USER_DATA": 6,
+        "SEC ACK": 1
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 3,
+        "RESPONSE": 3,
+        "WRITE": 1
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "BROADCAST",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-5-3",
+      "packets": 17,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 5
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DIRECT_OPERATE_NR": 1,
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 5,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DIRECT_OPERATE_NR g12v1 q=0x17",
+        "READ g60v2 q=0x06"
+      ],
+      "iin": [
+        "BROADCAST",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-5-4",
+      "packets": 60,
+      "conversations": 2,
+      "link_frames": {
+        "PRI CONFIRMED_USER_DATA": 2,
+        "PRI RESET_LINK_STATES": 2,
+        "PRI UNCONFIRMED_USER_DATA": 17,
+        "SEC ACK": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 8,
+        "RESPONSE": 8,
+        "WRITE": 2
+      },
+      "fragments_decoded": 19,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "BROADCAST",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-6-2-1",
+      "packets": 31,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 12
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v2 q=0x07",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "EVENT_BUFFER_OVERFLOW",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-6-2-2",
+      "packets": 37,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 15
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "READ g60v4 q=0x07",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_3_EVENTS",
+        "DEVICE_RESTART",
+        "EVENT_BUFFER_OVERFLOW",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-6-2-3",
+      "packets": 37,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 15
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v3 q=0x07",
+        "READ g60v4 q=0x06",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "EVENT_BUFFER_OVERFLOW",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-6-6-2-4",
+      "packets": 31,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 12
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v2 q=0x07",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "EVENT_BUFFER_OVERFLOW",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-7-1-2",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DELAY_MEASURE": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "RESPONSE g52v2 q=0x07"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-7-2-2",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 2,
+        "RESPONSE": 3,
+        "WRITE": 1
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g2v1 q=0x28",
+        "WRITE g50v1 q=0x07"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-8-2",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "COLD_RESTART": 1,
+        "READ": 1,
+        "RESPONSE": 3,
+        "WRITE": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00",
+        "RESPONSE g52v2 q=0x07",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-9-1-2",
+      "packets": 51,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 22
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 1,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 2,
+      "multi_fragment": 2,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g22v1 q=0x28",
+        "RESPONSE g2v1 q=0x28",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g32v1 q=0x28",
+        "RESPONSE g40v2 q=0x00",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "CLASS_3_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-9-2-2",
+      "packets": 73,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 33
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 4,
+        "READ": 2,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 9,
+      "multi_segment": 3,
+      "multi_fragment": 3,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g22v1 q=0x28",
+        "RESPONSE g2v1 q=0x28",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g32v1 q=0x28",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "CLASS_3_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-11-2-1",
+      "packets": 40,
+      "conversations": 2,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 13
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 1,
+        "RESPONSE": 2,
+        "UNSOLICITED_RESPONSE": 7,
+        "WRITE": 1
+      },
+      "fragments_decoded": 13,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g40v2 q=0x00",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-11-2-2",
+      "packets": 29,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 11
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 3,
+        "DISABLE_UNSOLICITED": 1,
+        "ENABLE_UNSOLICITED": 1,
+        "RESPONSE": 2,
+        "UNSOLICITED_RESPONSE": 4
+      },
+      "fragments_decoded": 11,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06",
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "UNSOLICITED_RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-11-2-3",
+      "packets": 29,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 11
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 3,
+        "DISABLE_UNSOLICITED": 1,
+        "ENABLE_UNSOLICITED": 1,
+        "RESPONSE": 2,
+        "UNSOLICITED_RESPONSE": 4
+      },
+      "fragments_decoded": 11,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "UNSOLICITED_RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-11-2-4",
+      "packets": 29,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 11
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 3,
+        "DISABLE_UNSOLICITED": 1,
+        "ENABLE_UNSOLICITED": 1,
+        "RESPONSE": 2,
+        "UNSOLICITED_RESPONSE": 4
+      },
+      "fragments_decoded": 11,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06",
+        "UNSOLICITED_RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_3_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-11-2-5",
+      "packets": 156,
+      "conversations": 4,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 64
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 9,
+        "ENABLE_UNSOLICITED": 4,
+        "READ": 6,
+        "RESPONSE": 13,
+        "UNSOLICITED_RESPONSE": 27,
+        "WRITE": 5
+      },
+      "fragments_decoded": 64,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06",
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g2v1 q=0x28",
+        "UNSOLICITED_RESPONSE g2v1 q=0x28",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-11-2-6",
+      "packets": 23,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 8
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DISABLE_UNSOLICITED": 1,
+        "ENABLE_UNSOLICITED": 1,
+        "READ": 1,
+        "RESPONSE": 4,
+        "WRITE": 1
+      },
+      "fragments_decoded": 8,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06",
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "NEED_TIME",
+        "NO_FUNC_CODE_SUPPORT"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-13-2-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g1v0 q=0x06",
+        "RESPONSE g1v2 q=0x01"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-13-2-3",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g1v0 q=0x06"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-2",
+      "packets": 25,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 9
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 9,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-3",
+      "packets": 23,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 8
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 8,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v0 q=0x07",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-4",
+      "packets": 23,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 8
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 8,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v0 q=0x08",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-5",
+      "packets": 25,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 9
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 9,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-6",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v1 q=0x06",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-7",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v1 q=0x07",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-8",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v1 q=0x08",
+        "RESPONSE g2v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-9",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v2 q=0x06",
+        "RESPONSE g2v2 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-10",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v2 q=0x07",
+        "RESPONSE g2v2 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-11",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v2 q=0x08",
+        "RESPONSE g2v2 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-12",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v3 q=0x06",
+        "RESPONSE g2v3 q=0x28",
+        "RESPONSE g51v2 q=0x07"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-13",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v3 q=0x07",
+        "RESPONSE g2v3 q=0x28",
+        "RESPONSE g51v2 q=0x07"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-14",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v3 q=0x08",
+        "RESPONSE g2v3 q=0x28",
+        "RESPONSE g51v2 q=0x07"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-14-2-15",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v3 q=0x06",
+        "RESPONSE g2v3 q=0x28",
+        "RESPONSE g51v2 q=0x07"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-15-2",
+      "packets": 53,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 23
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 3,
+        "DELAY_MEASURE": 2,
+        "READ": 5,
+        "RESPONSE": 10,
+        "WRITE": 3
+      },
+      "fragments_decoded": 23,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v3 q=0x06",
+        "RESPONSE g2v3 q=0x28",
+        "RESPONSE g51v1 q=0x07",
+        "RESPONSE g51v2 q=0x07",
+        "RESPONSE g52v2 q=0x07",
+        "WRITE g50v1 q=0x07",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-16-1-2-2",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g20v0 q=0x06",
+        "RESPONSE g20v2 q=0x01"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-16-1-2-3",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g20v0 q=0x06"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-16-2-2-2",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "IMMED_FREEZE": 2,
+        "READ": 3,
+        "RESPONSE": 5
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "IMMED_FREEZE g20v0 q=0x06",
+        "READ g21v0 q=0x06",
+        "RESPONSE g21v2 q=0x01"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-16-2-2-3",
+      "packets": 23,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 8
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "FREEZE_CLEAR": 2,
+        "READ": 2,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 8,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "FREEZE_CLEAR g20v0 q=0x06",
+        "READ g21v0 q=0x06",
+        "RESPONSE g21v2 q=0x01"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-16-2-2-4",
+      "packets": 23,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 8
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "IMMED_FREEZE_NR": 2,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 8,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "IMMED_FREEZE_NR g20v0 q=0x06",
+        "READ g21v0 q=0x06",
+        "RESPONSE g21v2 q=0x01"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-16-2-2-5",
+      "packets": 19,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 6
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "FREEZE_CLEAR_NR": 2,
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "FREEZE_CLEAR_NR g20v0 q=0x06",
+        "READ g21v0 q=0x06",
+        "RESPONSE g21v2 q=0x01"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-17-2-2",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g22v0 q=0x06",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-17-2-3",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g22v0 q=0x06",
+        "READ g22v0 q=0x07",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-17-2-4",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g22v0 q=0x06",
+        "READ g22v0 q=0x08",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-17-2-5",
+      "packets": 25,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 9
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 9,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g22v0 q=0x06",
+        "RESPONSE g22v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-18-2-2",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g30v0 q=0x06",
+        "RESPONSE g30v2 q=0x01"
+      ],
+      "iin": [
+        "CLASS_3_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-19-2-1",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g32v0 q=0x06",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-19-2-2",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g32v0 q=0x06",
+        "RESPONSE g32v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-20-2",
+      "packets": 13,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 3
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g10v0 q=0x06",
+        "READ g11v0 q=0x06",
+        "READ g1v0 q=0x06",
+        "READ g20v0 q=0x06",
+        "READ g21v0 q=0x06",
+        "READ g22v0 q=0x06",
+        "READ g23v0 q=0x06",
+        "READ g2v0 q=0x06",
+        "READ g30v0 q=0x06",
+        "READ g32v0 q=0x06",
+        "READ g3v0 q=0x06",
+        "READ g40v0 q=0x06",
+        "READ g42v0 q=0x06",
+        "READ g4v0 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x01",
+        "RESPONSE g20v2 q=0x01",
+        "RESPONSE g21v2 q=0x01",
+        "RESPONSE g30v2 q=0x01",
+        "RESPONSE g3v2 q=0x01",
+        "RESPONSE g40v2 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-21-2-1",
+      "packets": 15,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 2,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g3v0 q=0x06",
+        "RESPONSE g3v2 q=0x01"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-21-2-2",
+      "packets": 11,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g3v0 q=0x06"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-2",
+      "packets": 25,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 9
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 9,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-3",
+      "packets": 23,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 8
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 8,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v0 q=0x07",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-4",
+      "packets": 23,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 8
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 8,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v0 q=0x08",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-5",
+      "packets": 25,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 9
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 9,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-6",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v1 q=0x06",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-7",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v1 q=0x07",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-8",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v1 q=0x08",
+        "RESPONSE g4v1 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-9",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v2 q=0x06",
+        "RESPONSE g4v2 q=0x28"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-10",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v2 q=0x07",
+        "RESPONSE g4v2 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-11",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v2 q=0x08",
+        "RESPONSE g4v2 q=0x28"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-12",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v3 q=0x06",
+        "RESPONSE g4v3 q=0x28",
+        "RESPONSE g51v2 q=0x07"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-13",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v3 q=0x07",
+        "RESPONSE g4v3 q=0x28",
+        "RESPONSE g51v2 q=0x07"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-14",
+      "packets": 27,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 10
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 2,
+        "READ": 4,
+        "RESPONSE": 4
+      },
+      "fragments_decoded": 10,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g2v0 q=0x06",
+        "READ g2v3 q=0x08",
+        "RESPONSE g2v3 q=0x28",
+        "RESPONSE g51v2 q=0x07"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "conformance-8-22-2-15",
+      "packets": 21,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 7
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CONFIRM": 1,
+        "READ": 3,
+        "RESPONSE": 3
+      },
+      "fragments_decoded": 7,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g4v0 q=0x06",
+        "READ g4v3 q=0x06",
+        "RESPONSE g4v3 q=0x28",
+        "RESPONSE g51v2 q=0x07"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-test-data-merged",
+      "packets": 214,
+      "conversations": 9,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 115
+      },
+      "framing_errors": 1,
+      "cut": 0,
+      "fragments": {
+        "COLD_RESTART": 2,
+        "CONFIRM": 13,
+        "DISABLE_UNSOLICITED": 7,
+        "ENABLE_UNSOLICITED": 3,
+        "READ": 9,
+        "RESPONSE": 34,
+        "SELECT": 5,
+        "STOP_APPL": 4,
+        "UNSOLICITED_RESPONSE": 30,
+        "WARM_RESTART": 2,
+        "WRITE": 6
+      },
+      "fragments_decoded": 109,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06",
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06",
+        "READ g255v0 q=0x06",
+        "READ g2v0 q=0x06",
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g12v1 q=0x28",
+        "RESPONSE g1v1 q=0x00",
+        "RESPONSE g20v5 q=0x00",
+        "RESPONSE g21v9 q=0x00",
+        "RESPONSE g30v3 q=0x00",
+        "RESPONSE g52v2 q=0x07",
+        "SELECT g12v1 q=0x28",
+        "UNSOLICITED_RESPONSE g2v3 q=0x28",
+        "UNSOLICITED_RESPONSE g32v1 q=0x28",
+        "UNSOLICITED_RESPONSE g51v1 q=0x07",
+        "WRITE g50v1 q=0x07",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "BROADCAST",
+        "CLASS_2_EVENTS",
+        "DEVICE_RESTART",
+        "NEED_TIME",
+        "NO_FUNC_CODE_SUPPORT",
+        "OBJECT_UNKNOWN",
+        "PARAMETER_ERROR"
+      ],
+      "anomalies": [
+        {
+          "frame": 21,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 48 octets skipped before end of stream"
+        },
+        {
+          "frame": 154,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 156,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 163,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 166,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 174,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        },
+        {
+          "frame": 176,
+          "layer": "application",
+          "error": "header 2: app: invalid qualifier: 0xED for g60v4"
+        }
+      ]
+    },
+    {
+      "id": "zeek-del-measure",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DELAY_MEASURE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "RESPONSE g52v2 q=0x07"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-en-spon",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "ENABLE_UNSOLICITED": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-file-del",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "DELETE_FILE": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "DELETE_FILE g70v3 q=0x5B",
+        "RESPONSE g70v4 q=0x5B"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-file-read",
+      "packets": 30,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 14
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CLOSE_FILE": 1,
+        "CONFIRM": 1,
+        "OPEN_FILE": 1,
+        "READ": 1,
+        "RESPONSE": 5,
+        "WRITE": 2
+      },
+      "fragments_decoded": 11,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "CLOSE_FILE g70v4 q=0x5B",
+        "OPEN_FILE g70v3 q=0x5B",
+        "READ g70v5 q=0x5B",
+        "RESPONSE g70v4 q=0x5B",
+        "RESPONSE g70v5 q=0x5B",
+        "WRITE g50v1 q=0x07"
+      ],
+      "iin": [
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-file-write",
+      "packets": 22,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 9
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "CLOSE_FILE": 1,
+        "OPEN_FILE": 1,
+        "RESPONSE": 3,
+        "WRITE": 1
+      },
+      "fragments_decoded": 6,
+      "multi_segment": 1,
+      "multi_fragment": 0,
+      "objects": [
+        "CLOSE_FILE g70v4 q=0x5B",
+        "OPEN_FILE g70v3 q=0x5B",
+        "RESPONSE g70v4 q=0x5B",
+        "RESPONSE g70v6 q=0x5B",
+        "WRITE g70v5 q=0x5B"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-link-only",
+      "packets": 35,
+      "conversations": 1,
+      "link_frames": {
+        "PRI REQUEST_LINK_STATUS": 3,
+        "PRI UNCONFIRMED_USER_DATA": 17,
+        "SEC LINK_STATUS": 3
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 2
+      },
+      "fragments_decoded": 3,
+      "multi_segment": 2,
+      "multi_fragment": 1,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "RESPONSE g10v2 q=0x01",
+        "RESPONSE g1v1 q=0x01",
+        "RESPONSE g30v5 q=0x01",
+        "RESPONSE g40v3 q=0x00"
+      ],
+      "iin": [
+        "CLASS_2_EVENTS",
+        "NEED_TIME"
+      ],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-read",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x00",
+        "RESPONSE g30v1 q=0x00"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-read-p20001",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "READ": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g1v2 q=0x00",
+        "RESPONSE g30v1 q=0x00"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-rec-time",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RECORD_CURRENT_TIME": 1,
+        "RESPONSE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-select-operate",
+      "packets": 13,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 4
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 1,
+        "RESPONSE": 2,
+        "SELECT": 1
+      },
+      "fragments_decoded": 4,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x28",
+        "RESPONSE g12v1 q=0x28",
+        "SELECT g12v1 q=0x28"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "zeek-write",
+      "packets": 10,
+      "conversations": 1,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 2
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "RESPONSE": 1,
+        "WRITE": 1
+      },
+      "fragments_decoded": 2,
+      "multi_segment": 0,
+      "multi_fragment": 0,
+      "objects": [
+        "WRITE g50v1 q=0x07"
+      ],
+      "iin": [],
+      "anomalies": []
+    },
+    {
+      "id": "igbe-ddca-smart-grid-attacks",
+      "packets": 26058,
+      "conversations": 546,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 12227
+      },
+      "framing_errors": 11,
+      "cut": 0,
+      "fragments": {
+        "COLD_RESTART": 11,
+        "CONFIRM": 546,
+        "DISABLE_UNSOLICITED": 11,
+        "ENABLE_UNSOLICITED": 546,
+        "OPERATE": 12,
+        "READ": 4428,
+        "RESPONSE": 5021,
+        "SELECT": 12,
+        "UNSOLICITED_RESPONSE": 546,
+        "WRITE": 1
+      },
+      "fragments_decoded": 11134,
+      "multi_segment": 1093,
+      "multi_fragment": 0,
+      "objects": [
+        "DISABLE_UNSOLICITED g60v2 q=0x06",
+        "DISABLE_UNSOLICITED g60v3 q=0x06",
+        "DISABLE_UNSOLICITED g60v4 q=0x06",
+        "ENABLE_UNSOLICITED g60v2 q=0x06",
+        "ENABLE_UNSOLICITED g60v3 q=0x06",
+        "ENABLE_UNSOLICITED g60v4 q=0x06",
+        "OPERATE g12v1 q=0x28",
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g12v1 q=0x28",
+        "RESPONSE g1v2 q=0x00",
+        "RESPONSE g20v1 q=0x00",
+        "RESPONSE g21v1 q=0x00",
+        "RESPONSE g30v1 q=0x00",
+        "RESPONSE g30v5 q=0x00",
+        "RESPONSE g3v2 q=0x00",
+        "RESPONSE g40v1 q=0x00",
+        "SELECT g12v1 q=0x28",
+        "WRITE g80v1 q=0x00"
+      ],
+      "iin": [
+        "DEVICE_RESTART",
+        "NO_FUNC_CODE_SUPPORT"
+      ],
+      "anomalies": [
+        {
+          "frame": 21893,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped"
+        },
+        {
+          "frame": 21947,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped"
+        },
+        {
+          "frame": 21995,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped"
+        },
+        {
+          "frame": 22036,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped before end of stream"
+        },
+        {
+          "frame": 22079,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped before end of stream"
+        },
+        {
+          "frame": 22126,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped before end of stream"
+        },
+        {
+          "frame": 22173,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped before end of stream"
+        },
+        {
+          "frame": 22220,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped"
+        },
+        {
+          "frame": 22267,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped"
+        },
+        {
+          "frame": 22317,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped"
+        },
+        {
+          "frame": 22386,
+          "layer": "link",
+          "error": "link: framing error: link: invalid start octets: 3 octets skipped"
+        }
+      ]
+    }
+  ]
+}

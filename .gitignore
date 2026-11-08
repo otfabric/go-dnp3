@@ -26,3 +26,6 @@ coverage.out
 /internal/cmd/conformance/conformance
 /internal/cmd/gencatalog/gencatalog
 /internal/cmd/upstreamwatch/upstreamwatch
+
+# testdata/captures/coverage.json is the corpus report, not a coverage profile.
+!testdata/captures/coverage.json

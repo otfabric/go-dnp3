@@ -20,6 +20,7 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 | Interop with independent stacks, both roles | `make interop` | Go, Docker | `Interop`, on every push and pull request |
 | DNP Users Group IED certification procedures with dnp3c | `make conformance` | Go, Docker | `Conformance`, on every push and pull request |
 | Catalog against the upstream object definitions | `make upstream-watch` | network | `Upstream watch`, weekly |
+| Recorded traffic: decode, encode, Wireshark and conformance-log oracles, client and server replay ([testdata/captures](testdata/captures/README.md)) | part of `make test`; `make captures-verify` checks the SHA256 | Go | `CI` (tests), `Captures` (SHA256) |
 
 `make check` is the local gate. It runs `make coverage-pkg-check`, which fails
 when a package is below `COVER_PKG_MIN`; run `make coverage-check` for the
@@ -27,8 +28,32 @@ gate on the total. It does not run `make fuzz`, `make e2e` on its own (`make tes
 suite), `make interop` or `make conformance`.
 
 All tests run on Linux in CI. No tier uses DNP3 hardware or a real serial
-line: serial is tested over byte streams, and in the interop suite over a
+line, and the recorded traffic is not from identified hardware: serial is tested over byte streams, and in the interop suite over a
 pseudo-terminal bridged to TCP.
+
+## Recorded traffic
+
+[testdata/captures](testdata/captures/README.md) holds 182 network
+captures of other DNP3 software, committed byte-identical (8.4 MB, no file
+over 50 MB, so no extended corpus): the ITI ICS-Security-Tools DNP3
+captures, including 140 runs of a conformance runner against the opendnp3
+3.0 outstation with the runner's logs, the Zeek DNP3 test traces and the
+igbe attack data set. They are software-generated or of unknown origin
+(evidence classes C and D), not traffic of identified hardware.
+
+`internal/capture` reads pcap and pcapng (Ethernet, BSD loopback; IPv4; TCP
+reassembled per direction, UDP), runs `link.Reader`, the transport
+`Reassembler` and `app.Decode` over every conversation and checks: the
+manifest and SHA256SUMS; that every decoded frame and fragment encodes back
+to its octets; the decoding against Wireshark's (`testdata/captures/tshark`,
+`make captures-oracle`) and against the conformance runner's log; that every
+error is classified; `coverage.json` (`make captures-report`); the fuzz
+seeds taken from the captures (`make captures-seeds`). `client` replays the
+recorded requests and procedures against the recorded responses; `server`
+sends the recorded requests, and the link-layer octets of the link
+procedures, to the outstation and compares its answers with the recorded
+ones. The comparison rules and the classified differences are in the
+captures README.
 
 ## Chaos and stress
 
@@ -99,6 +124,11 @@ Targets: `FuzzDecode` and `FuzzReader` (`link`), `FuzzReassembler`
 answers every request with the fuzz input, with Secure Authentication
 configured) and `FuzzKeyUnwrap` (`secauth`: session key change data). `make fuzz` runs each for `FUZZTIME` (default 30s). A new target
 must be added to the `fuzz` recipe by name.
+
+The corpora hold seeds taken from the recorded traffic
+(`capture-<file>-<frame>`, written by `make captures-seeds`): one per shape
+of fragment, every fragment the decoder refuses, link frames and the octets
+around framing errors.
 
 When a target fails, Go writes the input to `testdata/fuzz/<Target>/` in the
 package. To keep it as a regression test, fix the cause and commit that file;
