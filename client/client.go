@@ -226,6 +226,7 @@ func (c *Client) establish(ctx context.Context) error {
 	reconnect := !c.closed && c.opts.reconnect != nil && lostErr != nil
 	if reconnect {
 		c.dialing = true
+		c.wg.Add(1) // under c.mu, as in connect
 	}
 	c.mu.Unlock()
 	if !reconnect {
@@ -233,7 +234,10 @@ func (c *Client) establish(ctx context.Context) error {
 		return nil
 	}
 	c.setState(dnp3.StateConnecting, lostErr)
-	c.wg.Go(c.reconnectLoop)
+	go func() {
+		defer c.wg.Done()
+		c.reconnectLoop()
+	}()
 	return nil
 }
 
@@ -287,9 +291,12 @@ func (c *Client) connect(ctx context.Context, hold bool) (*channel.Channel, erro
 	started := make(chan struct{})
 	c.started = started
 	c.proc.reset(c.autoTimeSync(stream))
+	// The Add under c.mu, where closed was checked, comes before a Close's
+	// Wait: an Add from zero after it is not allowed (sync.WaitGroup),
+	// and watch would run after Close returned.
+	c.wg.Add(1)
 	c.mu.Unlock()
 	ch.Start()
-	c.wg.Add(1)
 	go c.watch(ch)
 	c.log.Info("connected", "remote_addr", addrString(remote))
 	c.setState(dnp3.StateConnected, nil)
