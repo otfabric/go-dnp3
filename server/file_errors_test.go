@@ -73,15 +73,21 @@ func TestFileRequestErrors(t *testing.T) {
 		t.Fatalf("info: %v", f)
 	}
 
-	// A read that fails, and a block out of sequence.
+	// A block out of sequence, and a read that fails: each closes the file
+	// (IEEE 1815-2012 5.3.8 Rule 13), so the second needs a new open.
 	r := fileStatus(t, ask(app.FuncOpenFile, cmd))
 	if st := transportStatus(t, ask(app.FuncRead, app.FreeFormat(app.G70V5, app.FileTransport{Handle: r.Handle, Block: 1}))); st.Status != app.FileBlockSequence {
 		t.Fatalf("block out of sequence: %+v", st)
 	}
+	if st := transportStatus(t, ask(app.FuncRead, app.FreeFormat(app.G70V5, app.FileTransport{Handle: r.Handle}))); st.Status != app.FileInvalidHandle {
+		t.Fatalf("read after an error: %+v", st)
+	}
+	r = fileStatus(t, ask(app.FuncOpenFile, cmd))
 	if st := transportStatus(t, ask(app.FuncRead, app.FreeFormat(app.G70V5, app.FileTransport{Handle: r.Handle}))); st.Status != app.FileFatal || st.Text != "bad sector" {
 		t.Fatalf("failing read: %+v", st)
 	}
 	// A close that fails reports the error.
+	r = fileStatus(t, ask(app.FuncOpenFile, cmd))
 	if st := fileStatus(t, ask(app.FuncCloseFile, app.FreeFormat(app.G70V4, app.FileCommandStatus{Handle: r.Handle, RequestID: 1}))); st.Status != app.FileFatal || st.Text != "close failed" {
 		t.Fatalf("failing close: %+v", st)
 	}

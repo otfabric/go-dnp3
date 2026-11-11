@@ -45,8 +45,17 @@ type Command struct {
 	// Index is the point index.
 	Index uint32
 	// Value is an app.CROB or an app.AnalogOutput. Its Status field is
-	// zero: a control whose request carries another status is answered
-	// with FORMAT_ERROR without calling the Handler (TB2014-002).
+	// zero: a control whose request carries another status does not reach
+	// the Handler. NON_PARTICIPATING (126) is echoed unchanged (IEEE
+	// 1815-2012 Table 11-7 footnote a, p. 330), any other status is
+	// answered with FORMAT_ERROR (TB2014-002), and a CROB with the queue
+	// bit set with NOT_SUPPORTED (A.8.1.2.2, p. 506).
+	//
+	// A CROB with Count 0 is passed on as it came. IEEE 1815-2012
+	// A.8.1.2.2 (p. 506) makes support for it optional; an outstation that
+	// supports it does not change the output, ignores the on and off
+	// times and returns the status it would have returned. That is the
+	// Handler's to do.
 	Value app.Value
 	// Master is the link address of the master that sent the control.
 	Master link.Address
@@ -114,8 +123,17 @@ type TimeHandler interface {
 // ApplicationHandler is an optional interface of the [Handler] for the
 // function codes that act on the outstation's applications:
 // INITIALIZE_DATA, INITIALIZE_APPL, START_APPL, STOP_APPL, SAVE_CONFIG and
-// ACTIVATE_CONFIG. It returns the IIN2 error bits of the response; 0 is
-// success. Without it these functions are answered with IIN2.0.
+// ACTIVATE_CONFIG. It returns the IIN2 bits of the response: the request
+// errors IIN2.0 to IIN2.2, or 0 for success, and IIN2.4
+// (ALREADY_EXECUTING, IEEE 1815-2012 4.5.13, p. 87) while the operation
+// requested is still running; other bits are ignored. Without it these
+// functions are answered with IIN2.0.
+//
+// A successful SAVE_CONFIG is answered with a time delay of 0 (g52v2,
+// 4.4.12, p. 60): the handler has saved the configuration when it
+// returns. INITIALIZE_DATA is obsolete, and new designs shall not
+// implement it (4.4.10, p. 58): a handler returns
+// app.IINNoFuncCodeSupport for it.
 type ApplicationHandler interface {
 	Application(ctx context.Context, fc app.FunctionCode, headers []app.Header) app.IIN
 }
@@ -132,6 +150,15 @@ type ApplicationHandler interface {
 // qualifier 0x07 (count 1); with one, the response has no object. A status
 // that does not encode (app.ActivateConfigStatus.Raw) or does not fit the
 // largest response fragment is answered with IIN2.2 (PARAMETER_ERROR).
+//
+// ActivateConfig checks the request; it does not activate. IEEE 1815-2012
+// 4.4.20 (p. 78) has the outstation complete the transmission of the
+// g91v1 response before it starts the activation, and activate nothing
+// when a check fails. The outstation sends the response after
+// ActivateConfig returns, so a handler starts the activation after that,
+// for example from a goroutine. The response's IIN reflect the current
+// conditions: the handler does not set IIN2.5 for a failed check, and
+// IIN1.7 is set by the restart itself, not in anticipation of it.
 type ActivateConfigHandler interface {
 	ActivateConfig(ctx context.Context, headers []app.Header) (app.ActivateConfigStatus, app.IIN)
 }

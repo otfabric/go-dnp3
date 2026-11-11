@@ -34,11 +34,13 @@ type bufEvent struct {
 // eventBuffer holds the unreported events of one association in the order
 // they occurred, which is the order they are reported in.
 type eventBuffer struct {
-	mu       sync.Mutex
-	limit    [numPointTypes]int
-	events   []*bufEvent
-	count    [numPointTypes]int
-	overflow bool
+	mu     sync.Mutex
+	limit  [numPointTypes]int
+	events []*bufEvent
+	count  [numPointTypes]int
+	// overflow marks the types whose buffer lost an event and has had no
+	// room for another one since (IEEE 1815-2012 4.5.12).
+	overflow [numPointTypes]bool
 }
 
 // DefaultEventLimit is the number of events of each point type an
@@ -64,14 +66,14 @@ func (b *eventBuffer) add(evs []event) (discarded [4]int) {
 	for _, e := range evs {
 		if b.limit[e.typ] <= 0 {
 			discarded[e.class]++
-			b.overflow = true
+			b.overflow[e.typ] = true
 			continue
 		}
 		if b.count[e.typ] >= b.limit[e.typ] {
 			if victim := b.oldest(e.typ); victim >= 0 {
 				discarded[b.events[victim].class]++
 				b.removeAt(victim)
-				b.overflow = true
+				b.overflow[e.typ] = true
 			}
 		}
 		b.events = append(b.events, &bufEvent{event: e, at: time.Now()})
@@ -122,10 +124,21 @@ func (b *eventBuffer) iin() app.IIN {
 			i |= app.IINClass3Events
 		}
 	}
-	if b.overflow {
+	if b.overflowed() {
 		i |= app.IINEventBufferOverflow
 	}
 	return i
+}
+
+// overflowed reports whether a buffer that lost an event has not had room
+// for another one since. The caller holds mu.
+func (b *eventBuffer) overflowed() bool {
+	for _, o := range b.overflow {
+		if o {
+			return true
+		}
+	}
+	return false
 }
 
 // pending returns the number of unselected events in the given classes
@@ -171,8 +184,9 @@ func (b *eventBuffer) mark(evs []*bufEvent) {
 }
 
 // confirm removes the given selected events: the master confirmed the
-// response that carried them. It clears the overflow indication once
-// there is room again.
+// response that carried them. The overflow indication (IIN2.3) stays set
+// until every buffer that lost an event has room for one more: IEEE
+// 1815-2012 4.5.12.
 func (b *eventBuffer) confirm(evs []*bufEvent) {
 	if len(evs) == 0 {
 		return
@@ -193,7 +207,11 @@ func (b *eventBuffer) confirm(evs []*bufEvent) {
 	}
 	clear(b.events[len(kept):])
 	b.events = kept
-	b.overflow = false
+	for t, o := range b.overflow {
+		if o && b.limit[t] > 0 && b.count[t] < b.limit[t] {
+			b.overflow[t] = false
+		}
+	}
 }
 
 // release unselects events whose response was not confirmed: they are

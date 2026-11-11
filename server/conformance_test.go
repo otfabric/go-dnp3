@@ -100,6 +100,7 @@ func (m *master) recv() *app.Fragment {
 	m.t.Helper()
 	select {
 	case f := <-m.in:
+		checkResponseHeaders(m.t, f)
 		return f
 	case <-time.After(3 * time.Second):
 		m.t.Fatal("no fragment from the outstation")
@@ -509,7 +510,7 @@ func TestFSFileServer(t *testing.T) {
 	if st != app.FileSuccess || info.Type != app.FileTypeDirectory {
 		t.Fatalf("info: %+v %s", info, st)
 	}
-	if info, st := s.Info(ctx, "/logs/a.txt"); st != app.FileSuccess || info.Permissions != 0o644 || info.Size != 5 {
+	if info, st := s.Info(ctx, "/logs/a.txt"); st != app.FileSuccess || info.Permissions != readPermissions || info.Size != 5 {
 		t.Fatalf("file info %+v", info)
 	}
 	if _, st := s.Info(ctx, "/x"); st != app.FileNotFound {
@@ -983,8 +984,10 @@ const deferWindow = time.Second
 // TestReadDeferredByUnsolicited: a READ that comes while an unsolicited
 // response waits for its confirmation is answered once the confirm timeout
 // expires, before the response is repeated; the repeat carries the
-// indications as they are then (IIN1.7 cleared meanwhile). A READ during
-// the repeat is answered as soon as it is confirmed.
+// indications as they are then (IIN1.7 cleared meanwhile), so it is a
+// regenerated retry with the next sequence number (IEEE 1815-2012 4.6.6
+// Rules 5 and 12, p. 92: an identical retry repeats the octets). A READ
+// during the repeat is answered as soon as it is confirmed.
 func TestReadDeferredByUnsolicited(t *testing.T) {
 	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}), WithConfirmTimeout(deferWindow))
 	null := m.recvFunc(app.FuncUnsolicitedResponse)
@@ -1006,7 +1009,7 @@ func TestReadDeferredByUnsolicited(t *testing.T) {
 		t.Fatal("READ answered before the unsolicited confirm timeout")
 	}
 	retry := m.recv()
-	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != null.Control.Seq {
+	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != app.NextSeq(null.Control.Seq) {
 		t.Fatalf("after the READ: %s", retry)
 	}
 	if retry.IIN.Has(app.IINDeviceRestart) {
@@ -1069,10 +1072,13 @@ func TestDeferredReadSuperseded(t *testing.T) {
 	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 2 {
 		t.Fatalf("after the WRITE: %s", f)
 	}
-	if f := m.recv(); f.Function != app.FuncUnsolicitedResponse || f.Control.Seq != null.Control.Seq {
-		t.Fatalf("at the confirm timeout: %s", f)
+	// The WRITE cleared IIN1.7: the repeat is regenerated, with the next
+	// sequence number (4.6.6 Rules 5 and 12).
+	retry := m.recv()
+	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != app.NextSeq(null.Control.Seq) {
+		t.Fatalf("at the confirm timeout: %s", retry)
 	}
-	m.send(confirm(null.Control.Seq, true))
+	m.send(confirm(retry.Control.Seq, true))
 	m.none(200 * time.Millisecond)
 }
 
@@ -1096,17 +1102,22 @@ func TestUnsolicitedUnlimitedRetries(t *testing.T) {
 
 // TestControlWithRequestStatus: a control whose request carries a nonzero
 // status is not carried out and is echoed with FORMAT_ERROR (TB2014-002),
-// for a SELECT, a DIRECT_OPERATE and an analog output.
+// for a SELECT, a DIRECT_OPERATE and an analog output; but one with
+// NON_PARTICIPATING (126), a no-op, is echoed with 126, not refused, and
+// sets no IIN2.2 (IEEE 1815-2012 Table 11-7 footnote a, p. 330).
 func TestControlWithRequestStatus(t *testing.T) {
 	r := &countingHandler{}
 	m := newMaster(t, WithHandler(r))
 	for i, h := range []struct {
-		fc app.FunctionCode
-		h  app.Header
+		fc   app.FunctionCode
+		h    app.Header
+		want app.CommandStatus
 	}{
-		{app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 126}})},
-		{app.FuncDirectOperate, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 1}})},
-		{app.FuncDirectOperate, app.Indexed(app.G41V2, app.Object{Index: 0, Value: app.AnalogOutput{Value: 1, Status: 126}})},
+		{app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 1}}), app.StatusFormatError},
+		{app.FuncDirectOperate, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 1}}), app.StatusFormatError},
+		{app.FuncDirectOperate, app.Indexed(app.G41V2, app.Object{Index: 0, Value: app.AnalogOutput{Value: 1, Status: 2}}), app.StatusFormatError},
+		{app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 126}}), app.StatusNonParticipating},
+		{app.FuncDirectOperate, app.Indexed(app.G41V2, app.Object{Index: 0, Value: app.AnalogOutput{Value: 1, Status: 126}}), app.StatusNonParticipating},
 	} {
 		m.send(req(uint8(i+1), h.fc, h.h))
 		f := m.recvFunc(app.FuncResponse)
@@ -1120,9 +1131,18 @@ func TestControlWithRequestStatus(t *testing.T) {
 		case app.AnalogOutput:
 			s = v.Status
 		}
-		if s != app.StatusFormatError {
-			t.Fatalf("%s: status %s, want FORMAT_ERROR", h.fc, s)
+		if s != h.want || f.IIN.Has(app.IINParameterError) {
+			t.Fatalf("%s: status %s IIN %s, want %s", h.fc, s, f.IIN, h.want)
 		}
+	}
+	// A SELECT and OPERATE of 126: the OPERATE matches its SELECT and is
+	// echoed with 126, carried out neither.
+	sbo := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 126}})
+	m.send(req(9, app.FuncSelect, sbo))
+	m.recvFunc(app.FuncResponse)
+	m.send(req(10, app.FuncOperate, sbo))
+	if f := m.recvFunc(app.FuncResponse); f.Headers[0].Objects[0].Value.(app.CROB).Status != app.StatusNonParticipating {
+		t.Fatalf("OPERATE of 126 after its SELECT: %v", f)
 	}
 	if r.count() != 0 {
 		t.Fatal("a control with a request status was carried out")

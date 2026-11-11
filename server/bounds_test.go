@@ -49,7 +49,9 @@ func TestFSFileServerLargeFile(t *testing.T) {
 	if st != app.FileSuccess || d.Size != math.MaxUint32 {
 		t.Fatalf("info of a 4 GiB file: %+v %v, want size 0xFFFFFFFF", d, st)
 	}
-	if d.Permissions != app.Permissions(0o644) {
+	// The permissions of every master: read in all three classes (IEEE
+	// 1815-2012 5.3.2), whatever the mode bits.
+	if d.Permissions != readPermissions {
 		t.Fatalf("permissions %v", d.Permissions)
 	}
 }

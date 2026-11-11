@@ -278,6 +278,39 @@ func TestSpec7_5_3_4_RekeyThrottle(t *testing.T) {
 	}
 }
 
+// TestSpecTable7_8_Row11_CloseAfterMaxRekeys: Table 7-8 row 11, p.217:
+// when Rekeys Due to Authentication Failure is past Max Authentication
+// Rekeys, the master stops changing the keys for failures and, over TCP,
+// closes the connection.
+func TestSpecTable7_8_Row11_CloseAfterMaxRekeys(t *testing.T) {
+	_, addr := outstation(t, server.WithSecureAuthentication(server.SecureAuth{User: secauth.User{Number: 1, UpdateKey: testUpdateKey}}))
+	c, err := Dial(testCtx(t), addr, quiet(WithSecureAuthentication(secauth.User{Number: 1, UpdateKey: testUpdateKey}))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	fail := func() {
+		c.onAuthFailure(app.FuncDirectOperate, false, &dnp3.AuthError{Code: app.AuthErrAuthenticationFailed})
+	}
+	for range 3 {
+		fail()
+	}
+	if c.State() != dnp3.StateConnected {
+		t.Fatalf("state %v after 3 failures, want connected", c.State())
+	}
+	fail()
+	deadline := time.Now().Add(3 * time.Second)
+	for c.State() == dnp3.StateConnected {
+		if time.Now().After(deadline) {
+			t.Fatal("the connection stayed open past Max Authentication Rekeys")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := c.SecurityStatistics()[secauth.StatRekeysDueToAuthFailure]; n != 3 {
+		t.Fatalf("%d rekeys due to authentication failure, want 3", n)
+	}
+}
+
 // TestSpec7_5_2_3_2_I_NoAckChallenged: clause 7.5.2.3.2 i), p.208: a
 // master shall wait to see whether the outstation challenges a no-ack
 // request (0x06, 0x08, 0x0A, 0x0C), or send it in aggressive mode; clause

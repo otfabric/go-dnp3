@@ -56,15 +56,20 @@ func TestAnalogOutOfRangeKeepsFlags(t *testing.T) {
 	}
 }
 
-// TestDeadbandMustBeANumber: a NaN, infinite or negative deadband is
-// refused when a point is added and answered with IIN2.2 when written.
+// TestDeadbandMustBeANumber: a NaN or negative deadband is refused when a
+// point is added and answered with IIN2.2 when written. Positive infinity,
+// which prevents event generation (IEEE 1815-2012 A.18.3.2.3), is
+// accepted.
 func TestDeadbandMustBeANumber(t *testing.T) {
 	m := newMaster(t)
 	db := m.srv.Database()
-	for _, d := range []float64{math.NaN(), -1, math.Inf(1)} {
+	for _, d := range []float64{math.NaN(), -1, math.Inf(-1)} {
 		if err := db.AddAnalogInput(5, PointConfig{Deadband: d}, app.Analog{}); !errors.Is(err, dnp3.ErrInvalidOption) {
 			t.Fatalf("deadband %v: %v", d, err)
 		}
+	}
+	if err := db.AddAnalogInput(5, PointConfig{Deadband: math.Inf(1)}, app.Analog{}); err != nil {
+		t.Fatalf("deadband +Inf: %v", err)
 	}
 	for i, d := range []float64{math.NaN(), -1} {
 		m.send(req(uint8(i+1), app.FuncWrite, app.Indexed(app.G34V3, app.Object{Index: 0, Value: app.AnalogDeadband{Value: d}})))

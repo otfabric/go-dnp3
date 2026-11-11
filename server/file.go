@@ -10,6 +10,7 @@ import (
 	"math"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/otfabric/go-dnp3/app"
@@ -64,11 +65,114 @@ type FileAuthenticator interface {
 // openFile is a file an association has open.
 type openFile struct {
 	f        File
+	name     string
 	mode     app.FileMode
 	maxBlock int
-	next     uint32 // next block expected (write) or to send (read)
-	last     *app.FileTransport
-	used     time.Time
+	// size is the size the open of a write declared, unknownFileSize when
+	// the master did not know it, and written the octets written so far.
+	size    uint32
+	written uint64
+	next    uint32 // next block expected (write) or to send (read)
+	last    *app.FileTransport
+	used    time.Time
+}
+
+// unknownFileSize is the size of a file to write whose size the master
+// does not know (IEEE 1815-2012 5.3.8 Rule 8, p. 119).
+const unknownFileSize = 0xFFFFFFFF
+
+// DefaultFileTimeout is how long an open file may go without a request
+// naming its handle before the outstation closes it (IEEE 1815-2012
+// 4.4.17.1.1, p. 67), when WithFileTimeout does not set it.
+const DefaultFileTimeout = 5 * time.Minute
+
+// fileHandles assigns the handles of open files. They are unique to the
+// outstation, across its associations (IEEE 1815-2012 5.3.8 Rule 9,
+// p. 119), and never 0 (4.4.17.1.1, p. 67).
+type fileHandles struct {
+	mu   sync.Mutex
+	last uint32
+	// open maps the handles in use to the names of their files: a file
+	// that is open cannot be deleted (5.3.8 Rule 11, p. 120).
+	open map[uint32]string
+}
+
+// assign returns a new handle for the file name. The handles in use are
+// bounded by the open files of every association, so the search ends.
+func (h *fileHandles) assign(name string) uint32 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.open == nil {
+		h.open = map[uint32]string{}
+	}
+	for {
+		h.last++
+		if _, used := h.open[h.last]; h.last != 0 && !used {
+			h.open[h.last] = name
+			return h.last
+		}
+	}
+}
+
+// release frees a handle whose file was closed.
+func (h *fileHandles) release(handle uint32) {
+	h.mu.Lock()
+	delete(h.open, handle)
+	h.mu.Unlock()
+}
+
+// isOpen reports whether a file of that name is open in any association.
+// Names are compared as the masters sent them.
+func (h *fileHandles) isOpen(name string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, n := range h.open {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// closeFile closes an open file and makes its handle invalid.
+func (a *association) closeFile(handle uint32, abort bool) error {
+	of := a.files[handle]
+	delete(a.files, handle)
+	a.srv.handles.release(handle)
+	return of.f.Close(abort)
+}
+
+// fileDeadline is when the open file used least recently times out, or
+// zero without open files.
+func (a *association) fileDeadline() time.Time {
+	var next time.Time
+	for _, of := range a.files {
+		if at := of.used.Add(a.srv.opts.fileTimeout); next.IsZero() || at.Before(next) {
+			next = at
+		}
+	}
+	return next
+}
+
+// expireFiles closes the files that no request named for the file
+// timeout and reports each with a file transport status event, status
+// HANDLE_EXPIRED (IEEE 1815-2012 4.4.17.1.1, p. 67; 5.3.8 Rule 12,
+// p. 120). The event is in the class of WithFileTimeout; as an event it
+// asks for confirmation (A.27.6.1, p. 679).
+func (a *association) expireFiles(now time.Time) {
+	var evs []event
+	for h, of := range a.files {
+		if now.Sub(of.used) < a.srv.opts.fileTimeout {
+			continue
+		}
+		a.log.Info("file closed after inactivity", "handle", h, "name", of.name)
+		_ = a.closeFile(h, true) // the final state of the file is undefined
+		evs = append(evs, event{typ: fileStatusEvent, index: h, class: a.srv.opts.fileClass,
+			value: app.FileTransportStatus{Handle: h, Block: of.next, Status: app.FileHandleExpired}})
+	}
+	if len(evs) > 0 {
+		a.events.add(evs)
+	}
 }
 
 // file handles the file control function codes.
@@ -92,6 +196,12 @@ func (a *association) file(req *app.Fragment) *response {
 			return &response{iin: app.IINParameterError}
 		}
 		st := app.FileCommandStatus{RequestID: c.RequestID}
+		if c.Mode != app.FileModeRead && c.Mode != app.FileModeWrite && c.Mode != app.FileModeAppend {
+			// Table 11-8 (p. 330): an unsupported or unknown operation
+			// mode; A.27.3 defines read, write and append.
+			st.Status = app.FileInvalidMode
+			return ff(st)
+		}
 		if len(a.files) >= 16 {
 			st.Status = app.FileTooManyOpen
 			return ff(st)
@@ -124,9 +234,14 @@ func (a *association) file(req *app.Fragment) *response {
 		if maxBlock == 0 || maxBlock > limit {
 			maxBlock = limit
 		}
-		a.nextHandle++
-		h := a.nextHandle
-		a.files[h] = &openFile{f: f, mode: c.Mode, maxBlock: maxBlock, used: time.Now()}
+		h := a.srv.handles.assign(c.Name)
+		size := uint32(unknownFileSize)
+		if c.Mode != app.FileModeRead && c.Size != 0 {
+			// A size of 0 is taken as not known, as 0xFFFFFFFF is (5.3.8
+			// Rule 8): masters send it for "no size".
+			size = c.Size
+		}
+		a.files[h] = &openFile{f: f, name: c.Name, mode: c.Mode, maxBlock: maxBlock, size: size, used: time.Now()}
 		st.Handle, st.MaxBlockSize = h, uint16(min(max(maxBlock, 0), 0xFFFF))
 		if c.Mode == app.FileModeRead {
 			st.Size = f.Size()
@@ -138,16 +253,23 @@ func (a *association) file(req *app.Fragment) *response {
 		if !ok {
 			return &response{iin: app.IINParameterError}
 		}
-		st := app.FileCommandStatus{Handle: c.Handle, RequestID: c.RequestID}
-		of, ok := a.files[c.Handle]
-		if !ok {
+		// The answer repeats the request's handle, size, maximum block
+		// size and text (4.4.17.3, p. 71; 4.4.17.5, pp. 73-74); only the
+		// status is the outstation's.
+		st := c
+		st.Status = app.FileSuccess
+		if _, ok := a.files[c.Handle]; !ok {
 			st.Status = app.FileInvalidHandle
 			return ff(st)
 		}
-		delete(a.files, c.Handle)
-		if err := of.f.Close(req.Function == app.FuncAbortFile); err != nil {
-			st.Status = app.FileFatal
-			st.Text = err.Error()
+		abort := req.Function == app.FuncAbortFile
+		if err := a.closeFile(c.Handle, abort); err != nil {
+			// An abort that cannot be done is CANNOT_ABORT (4.4.17.5,
+			// p. 74); a close that fails is FATAL (Table 11-8, p. 330).
+			st.Status, st.Text = app.FileFatal, err.Error()
+			if abort {
+				st.Status = app.FileCannotAbort
+			}
 		}
 		return ff(st)
 
@@ -155,6 +277,10 @@ func (a *association) file(req *app.Fragment) *response {
 		c, ok := v.(app.FileCommand)
 		if !ok {
 			return &response{iin: app.IINParameterError}
+		}
+		if a.srv.handles.isOpen(c.Name) {
+			// An open file may not be deleted (5.3.8 Rule 11, p. 120).
+			return ff(app.FileCommandStatus{RequestID: c.RequestID, Status: app.FileLocked})
 		}
 		return ff(app.FileCommandStatus{RequestID: c.RequestID, Status: fsrv.Delete(ctx, c.Name, c.AuthKey)})
 
@@ -167,10 +293,8 @@ func (a *association) file(req *app.Fragment) *response {
 		if status != app.FileSuccess {
 			return ff(app.FileCommandStatus{RequestID: d.RequestID, Status: status})
 		}
-		info.RequestID = d.RequestID
-		if info.Name == "" {
-			info.Name = d.Name
-		}
+		// The descriptor carries the name asked for (4.4.18, p. 75).
+		info.RequestID, info.Name = d.RequestID, d.Name
 		return ff(info)
 
 	default: // AUTHENTICATE_FILE, the last function the dispatcher routes here
@@ -202,8 +326,15 @@ func gvOf(v app.Value) uint8 {
 	}
 }
 
-// readFile answers a READ of g70v5: the master asks for one block.
+// readFile answers a READ of g70v5: the master asks for one block. An
+// error closes the file and makes its handle invalid (IEEE 1815-2012
+// 5.3.8 Rule 13, p. 120; 4.4.17.1.3, pp. 67-68); a request repeating the
+// block sent last gets it again.
 func (a *association) readFile(h *app.Header, p *readPlan) {
+	fail := func(t app.FileTransport, status app.FileStatus, text string) {
+		p.items = append(p.items, item{h: app.FreeFormat(app.G70V6,
+			app.FileTransportStatus{Handle: t.Handle, Block: t.Block, Status: status, Text: text})})
+	}
 	for _, o := range h.Objects {
 		t, ok := o.Value.(app.FileTransport)
 		if !ok {
@@ -214,8 +345,7 @@ func (a *association) readFile(h *app.Header, p *readPlan) {
 		}
 		of, ok := a.files[t.Handle]
 		if !ok || of.mode != app.FileModeRead {
-			p.items = append(p.items, item{h: app.FreeFormat(app.G70V6,
-				app.FileTransportStatus{Handle: t.Handle, Block: t.Block, Status: app.FileInvalidHandle})})
+			fail(t, app.FileInvalidHandle, "")
 			continue
 		}
 		of.used = time.Now()
@@ -223,16 +353,16 @@ func (a *association) readFile(h *app.Header, p *readPlan) {
 		case of.last != nil && t.Block == of.last.Block:
 			// The master repeats a request whose answer it lost.
 		case t.Block != of.next:
-			p.items = append(p.items, item{h: app.FreeFormat(app.G70V6,
-				app.FileTransportStatus{Handle: t.Handle, Block: t.Block, Status: app.FileBlockSequence})})
+			_ = a.closeFile(t.Handle, true)
+			fail(t, app.FileBlockSequence, "")
 			continue
 		default:
 			buf := make([]byte, of.maxBlock)
 			n, err := io.ReadFull(of.f, buf)
 			last := errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 			if err != nil && !last {
-				p.items = append(p.items, item{h: app.FreeFormat(app.G70V6,
-					app.FileTransportStatus{Handle: t.Handle, Block: t.Block, Status: app.FileFatal, Text: err.Error()})})
+				_ = a.closeFile(t.Handle, true)
+				fail(t, app.FileFatal, err.Error())
 				continue
 			}
 			of.last = &app.FileTransport{Handle: t.Handle, Block: t.Block, Last: last, Data: buf[:n]}
@@ -243,7 +373,8 @@ func (a *association) readFile(h *app.Header, p *readPlan) {
 }
 
 // writeFile handles a WRITE of g70v5 blocks and returns IIN error bits;
-// the transport status is the response.
+// the transport status is the response. An error closes the file and
+// makes its handle invalid (5.3.8 Rule 14, p. 120).
 func (a *association) writeFile(h app.Header) app.IIN {
 	if h.GV != app.G70V5 {
 		return app.IINObjectUnknown
@@ -260,17 +391,25 @@ func (a *association) writeFile(h app.Header) app.IIN {
 			st.Status = app.FileInvalidHandle
 		case t.Block+1 == of.next:
 			// A repeated block that was already written.
+			of.used = time.Now()
 		case t.Block != of.next:
 			st.Status = app.FileBlockSequence
-		case len(t.Data) > of.maxBlock:
-			st.Status = app.FileWriteBlockSize
+		case len(t.Data) > of.maxBlock || (of.size != unknownFileSize && of.written+uint64(len(t.Data)) > uint64(of.size)):
+			// A block larger than negotiated, or octets beyond the size
+			// the open declared (4.4.17.2.1, pp. 68-69): of the codes of a
+			// g70v6 (A.27.6.2.2, p. 680), BUFFER_OVERRUN.
+			st.Status = app.FileBufferOverrun
 		default:
 			of.used = time.Now()
 			if _, err := of.f.Write(t.Data); err != nil {
 				st.Status, st.Text = app.FileFatal, err.Error()
 				break
 			}
+			of.written += uint64(len(t.Data))
 			of.next++
+		}
+		if ok && st.Status != app.FileSuccess && st.Status != app.FileInvalidHandle {
+			_ = a.closeFile(t.Handle, true)
 		}
 		a.pendingFileStatus = append(a.pendingFileStatus, st)
 	}
@@ -279,9 +418,8 @@ func (a *association) writeFile(h app.Header) app.IIN {
 
 // closeFiles aborts the files of a master that went away.
 func (a *association) closeFiles() {
-	for h, of := range a.files {
-		_ = of.f.Close(true)
-		delete(a.files, h)
+	for h := range a.files {
+		_ = a.closeFile(h, true)
 	}
 }
 
@@ -327,7 +465,7 @@ func (s FSFileServer) Open(_ context.Context, req FileRequest) (File, app.FileSt
 			if err != nil {
 				continue
 			}
-			if nb, err := app.AppendFileDescriptor(b, descriptor(e.Name(), fi)); err == nil {
+			if nb, err := app.AppendFileDescriptor(b, s.descriptor(e.Name(), path.Join(p, e.Name()), fi)); err == nil {
 				b = nb
 			}
 		}
@@ -361,18 +499,28 @@ func (s FSFileServer) Info(_ context.Context, name string) (app.FileDescriptor, 
 	if err != nil {
 		return app.FileDescriptor{}, app.FileNotFound
 	}
-	return descriptor(name, info), app.FileSuccess
+	return s.descriptor(name, p, info), app.FileSuccess
 }
 
-func descriptor(name string, info fs.FileInfo) app.FileDescriptor {
+// descriptor describes a file or directory of the file system at p. The
+// size of a directory is the number of its entries (IEEE 1815-2012 4.4.18,
+// p. 75). The permissions are those of every master, which the server does
+// not tell apart, in all three classes: read, and execute for a directory
+// (5.3.2, p. 113); FSFileServer writes nothing.
+func (s FSFileServer) descriptor(name, p string, info fs.FileInfo) app.FileDescriptor {
 	size, _ := fileSize(info) // 0xFFFFFFFF for a file of 4 GiB or more
 	d := app.FileDescriptor{Name: name, Type: app.FileTypeSimple, Size: size,
-		Created: app.TimestampOf(info.ModTime()), Permissions: app.Permissions(info.Mode().Perm() & 0o777)}
+		Created: app.TimestampOf(info.ModTime()), Permissions: readPermissions}
 	if info.IsDir() {
-		d.Type, d.Size = app.FileTypeDirectory, 0
+		entries, _ := fs.ReadDir(s.FS, p)
+		d.Type, d.Size = app.FileTypeDirectory, count32(len(entries))
+		d.Permissions |= app.PermOwnerExecute | app.PermGroupExecute | app.PermWorldExecute
 	}
 	return d
 }
+
+// readPermissions are the permissions of a file FSFileServer serves.
+const readPermissions = app.PermOwnerRead | app.PermGroupRead | app.PermWorldRead
 
 // maxFileBlock is the largest block of a g70v5 object (qualifier 0x5B):
 // its size is two octets and includes the handle and block number.

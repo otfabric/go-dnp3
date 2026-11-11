@@ -92,8 +92,9 @@ On the outstation, a connection ends with:
 `server.WithMasterIPs` without a prefix or with an invalid one,
 `ServeByMasterIP` without routes, with an invalid prefix or without
 exactly one target in a route, `ServeUDPFixed` with a peer that is not a
-UDP address, and `client.WithDualEndpoint` with a nil listener or together
-with `WithStream` fail with `ErrInvalidOption`.
+UDP address, `server.WithFileTimeout` with a timeout of 0 or less or a
+class outside 1..3, and `client.WithDualEndpoint` with a nil listener or
+together with `WithStream` fail with `ErrInvalidOption`.
 
 A `Connect` whose startup sequence fails (a refused session key change, an
 integrity poll without an answer) returns that error and closes the

@@ -70,8 +70,9 @@ of a device profile, and how it has been verified.
 | Application confirmation of events | ✅ | ✅ events removed on confirmation, reported again otherwise |
 | Unsolicited responses, UNS confirmation | ✅ confirms those that ask for it and parsed whole, ignores repeats; `WithUnsolicitedConfirm(false)` confirms none, for tests and diagnostics only | ✅ |
 | Sequence numbers: solicited and unsolicited spaces | ✅ | ✅ |
-| Repeated request (same sequence and octets) | — | ✅ answered with the previous response, not executed again; READ executed again |
-| Multi-fragment requests | — not sent | — ignored |
+| Repeated request (same sequence and octets) | — | ✅ answered with the previous response, not executed again; a READ is executed again, except while the confirmation of its response is awaited, when the response is sent again (Table 6-1 row 17) |
+| Multi-fragment requests, requests with UNS set | — not sent | — discarded without a response (4.3 Rule 4, 4.2.2.4.4) |
+| Requests with CON set | — not sent | ✅ confirmed (4.3 Rule 12) |
 | Maximum objects per control request | — | `WithMaxControls`, default 16; more get TOO_MANY_OBJS |
 
 ## Function codes
@@ -83,16 +84,16 @@ of a device profile, and how it has been verified.
 | 2 | WRITE | ✅ | ✅ time, IIN, deadbands, attributes, octet strings, file blocks |
 | 3, 4 | SELECT, OPERATE | ✅ | ✅ |
 | 5, 6 | DIRECT_OPERATE, _NR | ✅ | ✅ |
-| 7..10 | IMMED_FREEZE, FREEZE_CLEAR, _NR | ✅ | ✅ counters and analog inputs |
-| 11, 12 | FREEZE_AT_TIME, _NR | ✅ 11; 12 with `Request` | ✅ time 0 at once; a time to come and every interval after it (up to `MaxScheduledFreezes` waiting); a time that has passed without an interval is refused (A.23.2). Scheduled freezes belong to the `Server`, not to one master: restarts and reconnections leave them waiting, `Close` stops them |
+| 7..10 | IMMED_FREEZE, FREEZE_CLEAR, _NR | ✅ | ✅ counters and analog inputs; FREEZE_CLEAR of analog inputs is answered IIN2.1 (Table 12-14) |
+| 11, 12 | FREEZE_AT_TIME, _NR | ✅ 11; 12 with `Request` | ✅ per Table 4-11: time 0 and interval 0 at once; a time to come once; time 0 with an interval every interval from the start of the current hour; a time and an interval every interval from that time; the time all ones cancels. A time that has passed without an interval is refused (A.23.2). A new FREEZE_AT_TIME for the same point headers replaces the schedule (up to `MaxScheduledFreezes` waiting). Scheduled freezes belong to the `Server`, not to one master: restarts and reconnections leave them waiting, `Close` stops them |
 | 13, 14 | COLD_RESTART, WARM_RESTART | ✅ | ✅ with `RestartHandler` |
-| 15..19 | INITIALIZE_DATA, INITIALIZE_APPL, START_APPL, STOP_APPL, SAVE_CONFIG | `Request` | ✅ with `ApplicationHandler` |
+| 15..19 | INITIALIZE_DATA, INITIALIZE_APPL, START_APPL, STOP_APPL, SAVE_CONFIG | `Request` | ✅ with `ApplicationHandler`; SAVE_CONFIG answered with g52v2; IIN2.4 passed on. INITIALIZE_DATA is obsolete (4.4.10): without a handler, and with one that returns IIN2.0, it is answered IIN2.0 |
 | 20, 21 | ENABLE_UNSOLICITED, DISABLE_UNSOLICITED | ✅ | ✅ with `WithUnsolicited` |
-| 22 | ASSIGN_CLASS | ✅ | ✅ |
-| 23 | DELAY_MEASURE | ✅ | ✅ |
+| 22 | ASSIGN_CLASS | ✅ | ✅ also command events (g12v0, g41v0); security statistics to class 0 IIN2.0 |
+| 23 | DELAY_MEASURE | ✅ | ✅ timed from the delivery of the fragment; above 65535 ms answered 65535 |
 | 24 | RECORD_CURRENT_TIME | ✅ | ✅ |
 | 25..30 | OPEN_FILE, CLOSE_FILE, DELETE_FILE, GET_FILE_INFO, AUTHENTICATE_FILE, ABORT_FILE | ✅ | ✅ with `WithFileServer` |
-| 31 | ACTIVATE_CONFIG | ✅ `ActivateConfig`, returns the g91v1 status | ✅ with `ActivateConfigHandler`, answered with one g91v1 object (qualifier 0x07); with `ApplicationHandler`, IIN bits only |
+| 31 | ACTIVATE_CONFIG | ✅ `ActivateConfig`, returns the g91v1 status | ✅ with `ActivateConfigHandler`, answered with one g91v1 object (qualifier 0x07); with `ApplicationHandler`, the same g91v1 object with its IIN |
 | 32, 33 | AUTHENTICATE_REQ, AUTH_REQ_NO_ACK | ✅ 32; 33 not sent | ✅ with `WithSecureAuthentication` |
 | 129, 130, 131 | RESPONSE, UNSOLICITED_RESPONSE, AUTHENTICATE_RESP | ✅ | ✅ |
 
@@ -157,17 +158,17 @@ reference outstations do.
 | Integrity poll, event poll, read of ranges, index lists, counts | ✅ | ✅ an event header with a count qualifier (0x07..0x09: g60v2..v4 or an event group) returns at most that many events, the oldest first, and a count of 0 none; the rest stay buffered and indicated (IIN1.1..1.3). A read of an event group returns the events of that group in every class, in the variation asked for (g2v3 and g4v3 after a CTO), and leaves the others buffered. An event header with a range or index qualifier is taken as all events of its group |
 | Event reporting in time order across types | ✅ | ✅ per-master buffers, limits per type, oldest discarded with overflow |
 | Event deadbands | ✅ writes and reads g34 | ✅ per point (`PointConfig.Deadband`) for analog and counter points; analog input deadbands written and read by the master (g34) |
-| Unsolicited: null response at connection, enable/disable per class, hold time and count, retries, retry delay | ✅ | ✅ classes survive connections |
-| Select-before-operate: same objects, next sequence number, select timeout | ✅ | ✅ NO_SELECT, or TIMEOUT once the select timeout has passed; NOT_SUPPORTED with IIN2.2; FORMAT_ERROR for a control whose request carries a status (TB2014-002) |
+| Unsolicited: null response at connection, enable/disable per class, hold time and count, retries, retry delay | ✅ | ✅ classes survive connections; the null response is retried until confirmed; DISABLE_UNSOLICITED ends a pending series; a READ received while a confirmation is awaited is answered after it (4.6.6 Rule 16) |
+| Select-before-operate: same objects, next sequence number, select timeout | ✅ | ✅ NO_SELECT, or TIMEOUT once the select timeout has passed; any other request, or a failed SELECT, ends the selection; a SELECT with the sequence number of the selection and other objects is discarded; NOT_SUPPORTED with IIN2.2; NON_PARTICIPATING (126) in a request echoed (Table 11-7 note a); FORMAT_ERROR for another request status (TB2014-002); NOT_SUPPORTED for a CROB with the queue bit (A.8.1.2.2) |
 | Direct operate, no-ack, pattern control | ✅ | ✅ |
-| Time synchronization, LAN and non-LAN procedures | ✅ automatic on NEED_TIME | ✅ NEED_TIME at start and after an interval |
+| Time synchronization, LAN and non-LAN procedures | ✅ automatic on NEED_TIME | ✅ NEED_TIME at start and after an interval, of the device clock: a time written by one master clears it for all; a master may clear it with WRITE g80v1 index 4 |
 | Restart, delay announced | ✅ | ✅ |
 | Clear of DEVICE_RESTART | ✅ automatic | ✅ |
-| Freeze, freeze-and-clear | ✅ | ✅ a freeze of an unchanged counter sets the frozen snapshot and its time and raises no event (`EventOnChange`, see [Frozen counter events](#frozen-counter-events)) |
+| Freeze, freeze-and-clear | ✅ | ✅ a frozen counter or frozen analog input with an event class raises an event at every freeze, also for an unchanged value (11.9.5.2, 11.9.1.2; see [Frozen counter events](#frozen-counter-events)) |
 | Assign class | ✅ | ✅ a point without an event class follows its value, so that once ASSIGN_CLASS gives it a class, the next event reports a change from the value the master reads |
-| File transfer: read, write, append (`FileOptions.Append`), directory, info, delete, authenticate, abort | ✅ | ✅ |
+| File transfer: read, write, append (`FileOptions.Append`), directory, info, delete, authenticate, abort | ✅ | ✅ an open file no request names for `WithFileTimeout` (default 5 minutes) is closed and reported with a g70v6 HANDLE_EXPIRED event; handles are unique to the outstation; status codes per Table 11-8 |
 | Device attributes | ✅ | ✅ |
-| Broadcast | ✅ `Broadcast` to 0xFFFD, 0xFFFE or 0xFFFF, for the requests that need no answer | ✅ executed without a response, also as a master's first frame; IIN1.0 in the next response; after a broadcast to 0xFFFE or 0xFFFF that response asks for confirmation, and IIN1.0 is reported until it comes |
+| Broadcast | ✅ `Broadcast` to 0xFFFD, 0xFFFE or 0xFFFF, for the requests that need no answer | ✅ executed without a response, also as a master's first frame; IIN1.0 in the next response; after a broadcast to 0xFFFE or 0xFFFF that response asks for confirmation, and IIN1.0 is reported until it comes; a CONFIRM sent to a broadcast address is ignored |
 
 ## Secure Authentication
 
@@ -232,6 +233,35 @@ a pre-shared session key is used directly (outside the standard, see
   association, not to the connection.
 - **DEVICE_RESTART** is set per association when it is created, so that
   every master sees it once.
+- **`Unsolicited.Classes`** enables unsolicited reporting of those classes
+  at startup, before an ENABLE_UNSOLICITED. IEEE 1815-2012 5.1.1.1.1
+  Rule 3 (p. 101) and 4.4.13 (p. 60) do not allow it; it is for masters
+  that never send ENABLE_UNSOLICITED. The default, no classes, follows
+  the standard.
+- **INITIALIZE_DATA** is obsolete, and new designs shall not implement it
+  (4.4.10, p. 58). Without an `ApplicationHandler` it is answered IIN2.0;
+  a handler receives it and should answer IIN2.0.
+- **A repeated READ** is executed again when no confirmation is awaited,
+  as Table 6-1 allows.
+- **IIN1.1 to IIN1.3** do not count the events of an unsolicited response
+  that awaits its confirmation: they are reported. 4.5.2 (p. 82) does not
+  settle this.
+- **DELAY_MEASURE** is timed from the delivery of the request fragment,
+  not from the arrival of its first octet (4.4.15.1).
+- **Open with maximum block size 0** is answered with the outstation's
+  block size: the text (4.4.17.2.2) does not cover 0, and masters use it
+  for "no preference".
+- **FILE_FATAL in g70v4**: an open of a file the outstation cannot serve
+  and a failed close are answered FATAL (19), which Table 11-8 lists for
+  those functions and A.27.4 does not.
+- **Class 0 includes octet strings (g110)** unless the point is
+  `ExcludeFromClass0`: A.41.1.2.3 excludes them, Table 5-1 lists group
+  110 among the objects of class 0.
+- **A read of a type the outstation has no points of**, static or event,
+  is answered IIN2.1, as TB2016-001 and IED certification procedure
+  3.1r1 expect, where Table 4-14 (p. 85) asks for a null response for
+  events defined at the device's subset level. go-dnp3 declares no
+  subset level.
 
 ## Verification status
 
@@ -242,6 +272,7 @@ a pre-shared session key is used directly (outside the standard, see
 | Chaos: corrupted, split and delayed octets and killed connections under load, with and without secure authentication | ✅ `e2e/chaos_test.go` |
 | Link procedures frame by frame; noisy and duplicating lines | ✅ |
 | Outstation conformance with a scripted master | ✅ |
+| Request rows of the subset level tables 14-1 to 14-3 (levels 1 to 3), each answered without an error IIN | ✅ `TestSubsetLevelTables`; not a statement of a subset level |
 | DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
@@ -262,18 +293,17 @@ a pre-shared session key is used directly (outside the standard, see
 
 ## Frozen counter events
 
-go-dnp3's outstation raises a frozen counter event when a freeze changes the
-frozen value or its flags (`EventOnChange`). A freeze of an unchanged counter
-still sets the frozen snapshot and its time of freeze, which g21v5 and g21v6
-report, and raises no event. Every event stays buffered until confirmed.
+go-dnp3's outstation raises a frozen counter event (g23) or frozen analog
+input event (g33) for every frozen point with an event class at every
+freeze, also when the value and flags did not change, as IEEE 1815-2012
+11.9.5.2 (p. 341) and 11.9.1.2 (p. 333) ask. The event carries the time
+of the freeze, as g21v5, g21v6, g23v5 and g23v6 report it. Every event
+stays buffered until confirmed.
 
-This is go-dnp3's policy, and it is covered by `server/freeze_test.go` and
-`interop/counters_test.go`. Whether IEEE 1815 asks for it is not established:
-the text of the standard on this has not been read, so nothing here says the
-standard permits or prohibits this or the other behaviour. Reference
-outstations differ, and both are accepted if consistent; dnp3-interop's
-docs/COMPATIBILITY.md records what each does, what was checked and what is
-still needed.
+This is covered by `server/freeze_test.go`,
+`TestSpec11_9_1_2_FrozenAnalogEventAtEveryFreeze` and
+`interop/counters_test.go` (`TestServerFrozenEventsAtEveryFreeze`).
+Before v1.11.0 the outstation raised an event only for a changed value.
 
 ## Interop coverage
 

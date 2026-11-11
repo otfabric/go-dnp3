@@ -21,6 +21,13 @@ comparison with other stacks are in
   identifies a physical device: it is software-generated or of unknown
   origin. The secure authentication recordings cannot be checked beyond
   their decoding: their keys are not in them.
+- **No subset level is declared**, and the defaults are not tied to one:
+  level-dependent options (event buffers, unsolicited, controls per
+  request, attributes) are the application's to set. The group 0
+  attributes of level 4 are reported only when the application sets
+  them (`WithAttributes`, `WithAttributeSet`).
+- **No XML Device Profile ships.** The "Device Profile" of the dnp3c run
+  is that runner's INI file, not the XML profile of IEEE 1815-2012.
 
 ## Secure Authentication
 
@@ -114,3 +121,18 @@ defines no coding for it.
   binary or analog output status (g10, g40) by itself. The `Handler`
   updates the point with the value the output took, which reports its event
   (g11, g42) when the point has a class.
+- **`Unsolicited.Retries` 0 means 3**: a negative value retries without
+  end; there is no setting for no retries.
+- **INITIALIZE_DATA reaches the `ApplicationHandler`**: the function is
+  obsolete (IEEE 1815-2012 4.4.10); a handler answers it with
+  `app.IINNoFuncCodeSupport`.
+- **Frozen points are not checked against their running point**: a
+  frozen counter or frozen analog input without the counter or analog
+  input of the same index is never frozen.
+- **Unsolicited reporting at startup** (`Unsolicited.Classes`) departs
+  from the standard, which waits for ENABLE_UNSOLICITED; leave it empty
+  for a compliant outstation.
+- **DELAY_MEASURE** reports the time from the delivery of the request
+  fragment.
+- **Secure authentication**: a broadcast that SA discards does not set
+  IIN1.0.

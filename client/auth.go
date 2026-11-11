@@ -362,6 +362,13 @@ func (c *Client) onAuthFailure(fc app.FunctionCode, aggressive bool, err error) 
 	}
 	if c.counters.stats[secauth.StatRekeysDueToAuthFailure] >= c.counters.maxAuthRekeys {
 		c.log.Warn("authentication failed: max authentication rekeys reached, session keys not changed")
+		// Over TCP the connection is closed as well (Table 7-8 row 11): the
+		// key change of the next connection, one for another reason, lifts
+		// the limit.
+		if _, tcp := c.remote.(*net.TCPAddr); tcp && c.ch != nil {
+			c.auth.authRekey = false
+			go c.ch.Close(fmt.Errorf("%w: max authentication rekeys exceeded", dnp3.ErrAuthentication))
+		}
 		return
 	}
 	c.countLocked(secauth.StatRekeysDueToAuthFailure)

@@ -37,6 +37,12 @@ const DefaultEventLimit = 100
 DefaultEventLimit is the number of events of each point type an association buffers when no limit is configured.
 
 ```go
+const DefaultFileTimeout = 5 * time.Minute
+```
+
+DefaultFileTimeout is how long an open file may go without a request naming its handle before the outstation closes it (IEEE 1815-2012 4.4.17.1.1, p. 67), when WithFileTimeout does not set it.
+
+```go
 const DefaultPort = 20000
 ```
 
@@ -58,7 +64,7 @@ DefaultTLSPort is the port of DNP3 over TLS: IEEE 1815-2012 clause 7.8.8 makes 1
 const MaxScheduledFreezes = 16
 ```
 
-MaxScheduledFreezes is how many FREEZE\_AT\_TIME requests the outstation keeps waiting at once; a further one is refused. They belong to the Server: a periodic one keeps its place until Close, whatever happens to the master's connection.
+MaxScheduledFreezes is how many FREEZE\_AT\_TIME schedules the outstation keeps at once; a request for more is refused. A schedule belongs to the Server: a periodic one keeps its place until a new FREEZE\_AT\_TIME for its points or Close, whatever happens to the master's connection.
 
 ## Variables
 
@@ -99,6 +105,8 @@ ActivateConfigHandler is an optional interface of the [Handler](#type-handler) f
 
 headers are the request's objects: file specifications (g70v8, as app.FileSpecification) or octet strings (g110) that name the configurations to activate. ActivateConfig returns the status of requested operation and the IIN2 error bits of the response. Without an error bit the response carries the status in one g91v1 object with qualifier 0x07 (count 1); with one, the response has no object. A status that does not encode (app.ActivateConfigStatus.Raw) or does not fit the largest response fragment is answered with IIN2.2 (PARAMETER\_ERROR).
 
+ActivateConfig checks the request; it does not activate. IEEE 1815-2012 4.4.20 (p. 78) has the outstation complete the transmission of the g91v1 response before it starts the activation, and activate nothing when a check fails. The outstation sends the response after ActivateConfig returns, so a handler starts the activation after that, for example from a goroutine. The response's IIN reflect the current conditions: the handler does not set IIN2.5 for a failed check, and IIN1.7 is set by the restart itself, not in anticipation of it.
+
 ### type ApplicationHandler
 
 ```go
@@ -107,7 +115,9 @@ type ApplicationHandler interface {
 }
 ```
 
-ApplicationHandler is an optional interface of the [Handler](#type-handler) for the function codes that act on the outstation's applications: INITIALIZE\_DATA, INITIALIZE\_APPL, START\_APPL, STOP\_APPL, SAVE\_CONFIG and ACTIVATE\_CONFIG. It returns the IIN2 error bits of the response; 0 is success. Without it these functions are answered with IIN2.0.
+ApplicationHandler is an optional interface of the [Handler](#type-handler) for the function codes that act on the outstation's applications: INITIALIZE\_DATA, INITIALIZE\_APPL, START\_APPL, STOP\_APPL, SAVE\_CONFIG and ACTIVATE\_CONFIG. It returns the IIN2 bits of the response: the request errors IIN2.0 to IIN2.2, or 0 for success, and IIN2.4 (ALREADY\_EXECUTING, IEEE 1815-2012 4.5.13, p. 87) while the operation requested is still running; other bits are ignored. Without it these functions are answered with IIN2.0.
+
+A successful SAVE\_CONFIG is answered with a time delay of 0 (g52v2, 4.4.12, p. 60): the handler has saved the configuration when it returns. INITIALIZE\_DATA is obsolete, and new designs shall not implement it (4.4.10, p. 58): a handler returns app.IINNoFuncCodeSupport for it.
 
 ### type AttributeSetWriteHandler
 
@@ -156,8 +166,17 @@ type Command struct {
 	// Index is the point index.
 	Index uint32
 	// Value is an app.CROB or an app.AnalogOutput. Its Status field is
-	// zero: a control whose request carries another status is answered
-	// with FORMAT_ERROR without calling the Handler (TB2014-002).
+	// zero: a control whose request carries another status does not reach
+	// the Handler. NON_PARTICIPATING (126) is echoed unchanged (IEEE
+	// 1815-2012 Table 11-7 footnote a, p. 330), any other status is
+	// answered with FORMAT_ERROR (TB2014-002), and a CROB with the queue
+	// bit set with NOT_SUPPORTED (A.8.1.2.2, p. 506).
+	//
+	// A CROB with Count 0 is passed on as it came. IEEE 1815-2012
+	// A.8.1.2.2 (p. 506) makes support for it optional; an outstation that
+	// supports it does not change the output, ignores the on and off
+	// times and returns the status it would have returned. That is the
+	// Handler's to do.
 	Value app.Value
 	// Master is the link address of the master that sent the control.
 	Master link.Address
@@ -241,7 +260,7 @@ AddDoubleBitInput adds a double-bit binary input (groups 3 and 4).
 func (db *Database) AddFrozenAnalogInput(index uint32, cfg PointConfig, v app.Analog) error
 ```
 
-AddFrozenAnalogInput adds a frozen analog input (groups 31 and 33).
+AddFrozenAnalogInput adds a frozen analog input (groups 31 and 33). A freeze request copies the analog input of the same index into it and, with an event class, raises a frozen analog input event at every freeze (IEEE 1815-2012 11.9.1.2, p. 333). Add that analog input too, as the database does not check it; one without it is never frozen.
 
 #### func (Database) AddFrozenCounter
 
@@ -249,7 +268,7 @@ AddFrozenAnalogInput adds a frozen analog input (groups 31 and 33).
 func (db *Database) AddFrozenCounter(index uint32, cfg PointConfig, v app.Counter) error
 ```
 
-AddFrozenCounter adds a frozen counter (groups 21 and 23). A freeze request copies the counter of the same index into it.
+AddFrozenCounter adds a frozen counter (groups 21 and 23). A freeze request copies the counter of the same index into it and, with an event class, raises a frozen counter event at every freeze (IEEE 1815-2012 11.9.5.2, p. 341). A frozen counter is the frozen value of the counter of its index: add that counter too, as the database does not check it; one without it is never frozen.
 
 #### func (Database) AddOctetString
 
@@ -698,13 +717,21 @@ func WithConfirmTimeout(d time.Duration) Option
 
 WithConfirmTimeout sets how long the outstation waits for the application confirmation of a response or unsolicited response. The default is 5 seconds.
 
+#### func WithDeadbandIntegerOnly
+
+```go
+func WithDeadbandIntegerOnly(enabled bool) Option
+```
+
+WithDeadbandIntegerOnly reports analog input deadbands (group 34) in variations 1 and 2 only, for masters without floating point, as IEEE 1815-2012 A.18.3.2.3 (p. 609) requires a device that reports variation 3 to be configurable: a deadband is rounded to the nearest integer and limited to 4294967295, and a READ of g34v3 is answered with IIN2.1. Masters can still write any variation.
+
 #### func WithEventLimits
 
 ```go
 func WithEventLimits(limits map[PointType]int) Option
 ```
 
-WithEventLimits sets the number of events of each point type an association buffers; types not named keep DefaultEventLimit. When a buffer is full the oldest event of the type is discarded and the outstation reports IIN2.3 (EVENT\_BUFFER\_OVERFLOW).
+WithEventLimits sets the number of events of each point type an association buffers; types not named keep DefaultEventLimit. When a buffer is full the oldest event of the type is discarded and the outstation reports IIN2.3 (EVENT\_BUFFER\_OVERFLOW) until the master has confirmed enough events for every buffer that lost one to have room for another (IEEE 1815-2012 4.5.12). A limit of 0 buffers no event of the type: an event of it with a class is lost, and IIN2.3 then stays set until a restart; give such points class 0 instead.
 
 #### func WithFileServer
 
@@ -713,6 +740,14 @@ func WithFileServer(fs FileServer) Option
 ```
 
 WithFileServer serves file transfer (group 70) from fs.
+
+#### func WithFileTimeout
+
+```go
+func WithFileTimeout(timeout time.Duration, class Class) Option
+```
+
+WithFileTimeout sets how long an open file may go without a request naming its handle; the default is DefaultFileTimeout. The outstation then closes it, aborted, and reports a file transport status event (g70v6) with status HANDLE\_EXPIRED in the event class (1..3, the default 1), as IEEE 1815-2012 4.4.17.1.1 (p. 67) and 5.3.8 Rule 12 (p. 120) require; the timeout must be configurable up to one hour.
 
 #### func WithHandler
 
@@ -914,6 +949,10 @@ const (
 	// app.AbsoluteTime with Units), for example a schedule. They have no
 	// events and no class.
 	TimeAndInterval
+	// fileStatusEvent are the file transport status events (g70v6) of the
+	// files the outstation closed on its own (IEEE 1815-2012 4.4.17.1.1):
+	// internal, with no points and no static objects.
+
 )
 ```
 
@@ -1034,7 +1073,11 @@ The outstation is the challenger of IEEE 1815-2012 Table 7-8, for one user per m
 ```go
 type Server struct {
 
-	// scheduled FREEZE_AT_TIME
+	// timeSync is the synchronization state of clock.
+
+	// handles assigns file handles, unique to the outstation.
+
+	// FREEZE_AT_TIME schedules, by the points they name
 
 }
 ```
@@ -1113,7 +1156,7 @@ Now returns the time of the outstation's clock, which time synchronization sets.
 func (s *Server) Restart()
 ```
 
-Restart behaves as after a restart of the outstation: every association reports IIN1.7 (DEVICE\_RESTART) again, its event buffer is cleared, unsolicited responses start over with a null unsolicited response, and, with WithTimeSync, its time counts as unsynchronized until the next time synchronization (IIN1.4).
+Restart behaves as after a restart of the outstation: every association reports IIN1.7 (DEVICE\_RESTART) again, its event buffer is cleared, unsolicited responses start over with a null unsolicited response, and, with WithTimeSync, its time counts as unsynchronized until the next time synchronization (IIN1.4). Points get the classes they were added with again, undoing ASSIGN\_CLASS (IEEE 1815-2012 4.4.14, p. 63); deadbands written by a master are kept.
 
 #### func (Server) Serve
 
@@ -1184,8 +1227,14 @@ type Unsolicited struct {
 	// events of the classes the master enables (or of Classes from the
 	// start).
 	Enabled bool
-	// Classes are the classes (1..3) enabled before any ENABLE_UNSOLICITED,
-	// IEEE 1815-2012's "unsolicited allowed at startup".
+	// Classes are the classes (1..3) the outstation reports unsolicited
+	// before any ENABLE_UNSOLICITED, once the master has confirmed the
+	// null unsolicited response. This departs from IEEE 1815-2012, under
+	// which an outstation sends no data unsolicited until the master
+	// enables it with ENABLE_UNSOLICITED (5.1.1.1.1 Rule 3, p. 101;
+	// 4.4.13, p. 60). It is meant for masters that never send
+	// ENABLE_UNSOLICITED; leave it empty, the default, for a master that
+	// enables the classes it wants.
 	Classes []Class
 	// HoldTime is how long new events are collected before they are sent
 	// unsolicited. Zero sends at once.
