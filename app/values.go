@@ -251,7 +251,10 @@ type CROB struct {
 	Count uint8
 	// OnTime and OffTime are in milliseconds.
 	OnTime, OffTime uint32
-	Status          CommandStatus
+	// Status is a UINT7 on the wire, 0 in a request. Master and outstation
+	// set the reserved bit 7 to 0 (IEEE 1815-2012 A.8.1.2.2); this package
+	// sends it as 0 and does not read it.
+	Status CommandStatus
 }
 
 // Code returns the control code octet.
@@ -321,7 +324,9 @@ type AnalogDeadband struct {
 // AnalogOutput is an analog output block (group 41): a set-point command
 // and its echo.
 type AnalogOutput struct {
-	Value  float64
+	Value float64
+	// Status is the control status octet, 0..255, 0 in a request
+	// (IEEE 1815-2012 A.20.1.2.2).
 	Status CommandStatus
 }
 

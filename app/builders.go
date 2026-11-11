@@ -30,7 +30,8 @@ func IndexRange(gv GroupVariation, start, stop uint32) Header {
 }
 
 // IndexList returns a header naming the given indexes of gv without
-// values (qualifier 0x17, 0x28 or 0x39), as in a READ of specific points.
+// values (an index-prefixed qualifier, see [IndexQualifier]), as in a READ
+// of specific points.
 func IndexList(gv GroupVariation, indexes ...uint32) Header {
 	objs := make([]Object, len(indexes))
 	var m uint32
@@ -62,7 +63,8 @@ func Ranged(gv GroupVariation, start uint32, values ...Value) Header {
 }
 
 // Indexed returns a header carrying objects each preceded by its index
-// (qualifier 0x17, 0x28 or 0x39), as used for commands and events.
+// (an index-prefixed qualifier, see [IndexQualifier]), as used for
+// commands and events.
 func Indexed(gv GroupVariation, objs ...Object) Header {
 	var maxIndex uint32
 	for _, o := range objs {

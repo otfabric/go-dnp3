@@ -325,9 +325,11 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		t, _ := d.readTime(&r, c)
 		return BinaryCommandEvent{Value: s&0x80 != 0, Status: CommandStatus(s & 0x7F), Time: t}, r.done()
 	case fCROB:
+		// The status is a UINT7; bit 7 is reserved and set to 0 by the
+		// sender (IEEE 1815-2012 A.8.1.2.2), so it is not read.
 		var v CROB
 		v.setCode(r.u8())
-		v.Count, v.OnTime, v.OffTime, v.Status = r.u8(), r.u32(), r.u32(), CommandStatus(r.u8())
+		v.Count, v.OnTime, v.OffTime, v.Status = r.u8(), r.u32(), r.u32(), CommandStatus(r.u8()&0x7F)
 		return v, r.done()
 	case fCounter:
 		var v Counter
@@ -352,8 +354,10 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 	case fDeadband:
 		return AnalogDeadband{Value: readNum(&r, d.num)}, r.done()
 	case fAnalogOutput:
+		// The control status is a UINT8, 0..255 (IEEE 1815-2012
+		// A.20.1.2.2).
 		v := AnalogOutput{Value: readNum(&r, d.num)}
-		v.Status = CommandStatus(r.u8() & 0x7F)
+		v.Status = CommandStatus(r.u8())
 		return v, r.done()
 	case fAnalogCommandEvent:
 		v := AnalogCommandEvent{Status: CommandStatus(r.u8() & 0x7F)}
@@ -490,7 +494,8 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 		b = append(b, o.Code(), o.Count)
 		b = le32(b, o.OnTime)
 		b = le32(b, o.OffTime)
-		return append(b, byte(o.Status)), nil
+		// The reserved bit 7 of the status is set to 0 (A.8.1.2.2).
+		return append(b, byte(o.Status&0x7F)), nil
 	case fCounter:
 		o, ok := v.(Counter)
 		if !ok {
@@ -537,7 +542,7 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 		if over {
 			return b, invalid("set-point %v does not fit %s", o.Value, gv)
 		}
-		return append(appendNum(b, raw, d.num), byte(o.Status&0x7F)), nil
+		return append(appendNum(b, raw, d.num), byte(o.Status)), nil
 	case fAnalogCommandEvent:
 		o, ok := v.(AnalogCommandEvent)
 		if !ok {

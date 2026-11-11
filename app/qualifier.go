@@ -137,15 +137,38 @@ func CountQualifier(n int) Qualifier {
 	}
 }
 
-// IndexQualifier returns the smallest index-prefixed count qualifier that
-// holds n objects with indexes up to maxIndex.
+// Index-prefixed qualifiers outside the preferred set (IEEE 1815-2012
+// Table 4-6), for the counts and indexes the preferred ones cannot hold.
+const (
+	qual2ByteIndex4ByteCount Qualifier = 0x29
+	qual4ByteIndex1ByteCount Qualifier = 0x37
+	qual4ByteIndex2ByteCount Qualifier = 0x38
+)
+
+// IndexQualifier returns the index-prefixed count qualifier for n objects
+// with indexes up to maxIndex.
+//
+// While the count and the indexes fit two octets it is one of the
+// preferred codes (IEEE 1815-2012 Table 4-7): 0x17 when both fit one
+// octet, else 0x28. Beyond that the index takes four octets only when
+// maxIndex needs them, and the count the fewest octets that hold n,
+// because four-octet indexes should not be used below 65 536 points and
+// four-octet counts should be avoided (4.2.2.7.3.4): 0x29 for more than
+// 65 535 objects with two-octet indexes, and 0x37, 0x38 or 0x39 with
+// four-octet indexes.
 func IndexQualifier(n int, maxIndex uint32) Qualifier {
-	m := max(len32(n), maxIndex)
+	count := len32(n)
 	switch {
-	case m <= 0xFF:
+	case max(count, maxIndex) <= 0xFF:
 		return Qual1ByteIndexCount
-	case m <= 0xFFFF:
+	case max(count, maxIndex) <= 0xFFFF:
 		return Qual2ByteIndexCount
+	case maxIndex <= 0xFFFF:
+		return qual2ByteIndex4ByteCount
+	case count <= 0xFF:
+		return qual4ByteIndex1ByteCount
+	case count <= 0xFFFF:
+		return qual4ByteIndex2ByteCount
 	default:
 		return Qual4ByteIndexCount
 	}
