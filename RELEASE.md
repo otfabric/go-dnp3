@@ -36,6 +36,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - With `WithTLS`, an address without a port uses port 19999 (`client.DefaultTLSPort`, 7.8.8).
 - One `WithSecureAuthentication` option used for several clients no longer races: each client gets its own copy of the user.
 - **A failed `Connect` no longer leaves a reconnect running.** With `WithReconnect`, a `Connect` whose connection broke during its startup sequence returned the error while the client went on reconnecting in the background; the next `Connect` then dialled next to that reconnect, and the channel one of them opened replaced the other's without closing it. The orphan went on answering link status requests, so an outstation that keeps the connection of a connected master (13.2.3.3) refused every later connection. A failed `Connect` now leaves the client disconnected, as documented, and a channel is never replaced while another is open.
+- **No automatic task on the channel of a failed `Connect`.** A task queued during the startup sequence (the restart procedure after IIN1.7, a time synchronization) could send one request on the channel that `Connect` was about to close after the startup failed. Queued tasks now see the client disconnected and are dropped.
 
 ### Outstation
 

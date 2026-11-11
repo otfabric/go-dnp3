@@ -5,8 +5,10 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -254,4 +256,62 @@ func TestSpec13_2_3_1_3_DualEndpointEndsReconnectWait(t *testing.T) {
 	srv.CloseConnections()
 	waitFor(t, "the outstation's next connection", func() bool { return count(dnp3.StateConnected) == 2 })
 	readOne(t, c)
+}
+
+// gateLogger holds the goroutine that logs a warning containing hold until
+// release is closed, at most a second.
+type gateLogger struct {
+	hold    string
+	once    sync.Once
+	reached chan struct{}
+	release chan struct{}
+}
+
+func newGateLogger(hold string) *gateLogger {
+	return &gateLogger{hold: hold, reached: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (*gateLogger) Debugf(string, ...any) {}
+func (*gateLogger) Infof(string, ...any)  {}
+func (*gateLogger) Errorf(string, ...any) {}
+func (l *gateLogger) Warnf(format string, args ...any) {
+	if !strings.Contains(fmt.Sprintf(format, args...), l.hold) {
+		return
+	}
+	l.once.Do(func() { close(l.reached) })
+	select {
+	case <-l.release:
+	case <-time.After(time.Second):
+	}
+}
+
+// TestFailedStartupRunsNoQueuedTask: a task queued during the startup
+// sequence of Connect, here the restart procedure the outstation's IIN1.7
+// asks for (IEEE 1815-2012 clause 5.1.1.1.2 Rule 2), does not run on the
+// channel of a startup that failed: Connect closes that channel and leaves
+// the client disconnected. The logger holds Connect between the failure
+// and the end of the startup sequence, long enough for a task to start.
+func TestFailedStartupRunsNoQueuedTask(t *testing.T) {
+	s := &station{restart: true, silent: map[string]bool{"WRITE g80v1": true}}
+	o := newSpecOutstation(t, s.answer)
+	gate := newGateLogger("startup sequence failed")
+	errc := make(chan error, 1)
+	go func() {
+		_, err := Dial(testCtx(t), o.addr, WithStartup(Startup{DisableUnsolicited: true, Integrity: true}),
+			WithResponseTimeout(200*time.Millisecond), WithLogger(gate))
+		errc <- err
+	}()
+	select {
+	case <-gate.reached:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the startup sequence did not fail")
+	}
+	o.none(t, 300*time.Millisecond)
+	close(gate.release)
+	if err := <-errc; !errors.Is(err, dnp3.ErrTimeout) {
+		t.Fatalf("Connect: %v, want ErrTimeout", err)
+	}
+	if got := described(o.sent()); len(got) != 2 || got[0] != "DISABLE_UNSOLICITED" || got[1] != "WRITE g80v1" {
+		t.Fatalf("requests %v, want [DISABLE_UNSOLICITED WRITE g80v1]", got)
+	}
 }

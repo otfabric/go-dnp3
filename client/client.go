@@ -207,10 +207,13 @@ func (c *Client) establish(ctx context.Context) error {
 		if ch != nil && c.ch == ch {
 			c.ch, c.sess = nil, nil
 		}
+		started := c.started
 		c.mu.Unlock()
 		c.setState(dnp3.StateDisconnected, err)
 		if ch != nil {
 			ch.Close(nil)
+			// connect left the startup sequence open (see there).
+			close(started)
 		}
 		return err
 	}
@@ -297,12 +300,17 @@ func (c *Client) connect(ctx context.Context, hold bool) (*channel.Channel, erro
 	} else if c.opts.auth != nil {
 		c.rekeySoon()
 	}
-	close(started)
 	if err != nil {
 		c.log.Warn("startup sequence failed", "error", err)
-		return ch, err
+		if hold {
+			// establish closes the channel, and ends the startup sequence
+			// only once the client is disconnected: a task queued during
+			// it (taskLoop) must not run on that channel meanwhile.
+			return ch, err
+		}
 	}
-	return ch, nil
+	close(started)
+	return ch, err
 }
 
 // handshakeTimeout bounds the TLS handshake of a connection, so that an
