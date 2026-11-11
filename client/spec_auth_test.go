@@ -61,9 +61,12 @@ func scriptedOutstation(t *testing.T, fn func(f *app.Fragment, raw []byte, send 
 	return l.Addr().String()
 }
 
-// quiet are the options of a client that sends only what a test asks for.
+// quiet are the options of a client that sends only what a test asks for:
+// no startup steps, no automatic integrity poll or restart clear, and no
+// automatic time synchronization on NEED_TIME.
 func quiet(opts ...Option) []Option {
-	return append([]Option{WithStartup(Startup{}), WithAutoIntegrity(false), WithAutoClearRestart(false)}, opts...)
+	return append([]Option{WithStartup(Startup{}), WithAutoIntegrity(false), WithAutoClearRestart(false),
+		WithTimeSync(TimeSyncNone)}, opts...)
 }
 
 // sentRecorder keeps the fragments a master sends.

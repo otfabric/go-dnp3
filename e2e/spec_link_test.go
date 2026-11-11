@@ -114,8 +114,12 @@ func TestSpec13_2_3_2_4_BroadcastSetsIIN(t *testing.T) {
 	go func() { _ = p.srv.ServeUDP(pc) }()
 	cx := ctx(t)
 	crob := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})
+	// The UDP master sends only the broadcast: no startup integrity poll
+	// and no automatic time synchronization, which the outstation, held
+	// by the TCP master of the same address, would not answer.
 	u, err := client.Dial(cx, "outstation", client.WithStream(client.UDP(pc.LocalAddr().String())),
-		client.WithAutoIntegrity(false), client.WithAutoClearRestart(false))
+		client.WithAutoIntegrity(false), client.WithAutoClearRestart(false),
+		client.WithStartup(client.Startup{}), client.WithTimeSync(client.TimeSyncNone))
 	if err != nil {
 		t.Fatal(err)
 	}
