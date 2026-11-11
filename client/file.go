@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
@@ -27,12 +28,40 @@ type FileOptions struct {
 	// Append makes WriteFile add to the end of the file (mode APPEND)
 	// instead of replacing it.
 	Append bool
+	// Created is the time of creation WriteFile gives the file; zero
+	// means the time of the request (IEEE 1815-2012 clause 4.4.17.2.1).
+	Created time.Time
 }
 
 const fileRequestID = 1
 
 // maxFileBlock is the largest block of a g70v5 object (qualifier 0x5B).
 const maxFileBlock = 0xFFFF - 8
+
+// unknownFileSize is the file size of a write whose size is not known
+// (IEEE 1815-2012 clause 4.4.17.2.1).
+const unknownFileSize = 0xFFFFFFFF
+
+// writeOverhead is what a WRITE of one g70v5 object adds to its block: the
+// application header (2), the object header with qualifier 0x5B and a
+// one-octet count (4), the object size (2), the handle and the block
+// number (8).
+const writeOverhead = 2 + 4 + 2 + 8
+
+// maxWriteBlock returns the largest file block a WRITE request may carry
+// under WithMaxRequestFragment, 0 without a limit. With aggressive mode
+// writes the objects of secure authentication take their room as well.
+func (c *Client) maxWriteBlock() int {
+	lim := c.opts.maxTxFragment
+	if lim == 0 {
+		return 0
+	}
+	b := lim - writeOverhead
+	if c.opts.auth != nil && slices.Contains(c.opts.aggressive, app.FuncWrite) {
+		b -= secauth.AggressiveOverhead
+	}
+	return max(b, 1)
+}
 
 // fileObject returns the single object of the response of a file
 // operation, of the expected type or a command status.
@@ -59,10 +88,24 @@ func statusError(op string, v app.Value) error {
 	return nil
 }
 
-// openFile sends OPEN_FILE and returns the outstation's answer.
+// openFile sends OPEN_FILE and returns the outstation's answer. For a
+// write it sets the time of creation, and the size and time are zero for a
+// read (IEEE 1815-2012 clause 4.4.17.2.1).
 func (c *Client) openFile(ctx context.Context, name string, mode app.FileMode, size uint32, o FileOptions) (app.FileCommandStatus, error) {
 	cmd := app.FileCommand{Name: name, Mode: mode, Size: size, MaxBlockSize: o.MaxBlockSize, AuthKey: o.AuthKey,
 		Permissions: o.Permissions, RequestID: fileRequestID}
+	if mode != app.FileModeRead {
+		created := o.Created
+		if created.IsZero() {
+			created = time.Now()
+		}
+		cmd.Created = app.TimestampOf(created)
+		if b := c.maxWriteBlock(); b > 0 && (cmd.MaxBlockSize == 0 || int(cmd.MaxBlockSize) > b) {
+			// The block size of a write is the most the master sends in
+			// one request (clause 4.4.17.2.1).
+			cmd.MaxBlockSize = uint16(min(b, maxFileBlock))
+		}
+	}
 	res, err := c.request(ctx, app.FuncOpenFile, false, app.FreeFormat(app.G70V3, cmd))
 	if err != nil {
 		return app.FileCommandStatus{}, err
@@ -148,11 +191,17 @@ func (c *Client) abortQuietly(handle uint32) {
 
 // WriteFile writes size octets from r to the file name on the outstation,
 // or appends them with FileOptions.Append, and returns the number of
-// octets written.
+// octets written. It sends no more than size octets of r, unless size is
+// 0xFFFFFFFF, an unknown size (IEEE 1815-2012 clause 4.4.17.2.1); a
+// shorter r ends the file early. With WithMaxRequestFragment the blocks
+// are no larger than fits a request.
 func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size uint32, o FileOptions) (int64, error) {
 	mode := app.FileModeWrite
 	if o.Append {
 		mode = app.FileModeAppend
+	}
+	if size != unknownFileSize {
+		r = io.LimitReader(r, int64(size))
 	}
 	st, err := c.openFile(ctx, name, mode, size, o)
 	if err != nil {
@@ -170,6 +219,9 @@ func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size u
 		// An outstation that sized the block for a plain request has no
 		// room for the aggressive mode objects.
 		block -= secauth.AggressiveOverhead
+	}
+	if b := c.maxWriteBlock(); b > 0 {
+		block = min(block, b)
 	}
 	buf := make([]byte, block)
 	var n int64

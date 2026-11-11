@@ -3,7 +3,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -22,8 +21,14 @@ import (
 	"github.com/otfabric/go-dnp3/link"
 )
 
-// DefaultPort is the registered DNP3 port, also used for TLS.
+// DefaultPort is the registered DNP3 port (IEEE 1815-2012 clause
+// 13.2.2.2), the default of an address without a port.
 const DefaultPort = 20000
+
+// DefaultTLSPort is the default port of DNP3 over TLS (IEEE 1815-2012
+// clauses 7.8.8 and 13.2.2.2): the port of an address without one when
+// WithTLS is set.
+const DefaultTLSPort = 19999
 
 // Client is a DNP3 master for one outstation. Create it with [New] or
 // [Dial]. It is safe for concurrent use; requests are executed one at a
@@ -42,7 +47,8 @@ type Client struct {
 	closed  bool
 	dialing bool
 	pending *transaction
-	lastUns []byte // the last unsolicited response, to recognise repeats
+	// proc is the state of the master procedures of the current channel.
+	proc procState
 	// integrity is when the last integrity poll completed, so that an
 	// automatic one queued before it is not run as well.
 	integrity time.Time
@@ -80,7 +86,8 @@ type Client struct {
 }
 
 // New returns a client for the outstation at addr ("host:port"; the port
-// defaults to 20000). The client is not connected until Connect.
+// defaults to DefaultPort, 20000, and with WithTLS to DefaultTLSPort,
+// 19999). The client is not connected until Connect.
 func New(addr string, opts ...Option) (*Client, error) {
 	o := defaultOptions()
 	for _, opt := range opts {
@@ -93,7 +100,11 @@ func New(addr string, opts ...Option) (*Client, error) {
 	}
 	if o.opener == nil {
 		if _, _, err := net.SplitHostPort(addr); err != nil {
-			addr = net.JoinHostPort(addr, strconv.Itoa(DefaultPort))
+			port := DefaultPort
+			if o.tls != nil {
+				port = DefaultTLSPort
+			}
+			addr = net.JoinHostPort(addr, strconv.Itoa(port))
 		}
 	}
 	c := &Client{
@@ -143,8 +154,9 @@ func (c *Client) State() dnp3.State {
 
 // Connect establishes the channel and runs the startup sequence of
 // WithStartup (with secure authentication and an update key, the session
-// key change first). When the sequence fails, the channel is closed and
-// the error returned. It fails with dnp3.ErrBusy when the client is
+// key change first), by default an integrity poll. When the sequence
+// fails, for example because the outstation does not answer it, the
+// channel is closed and the error returned. It fails with dnp3.ErrBusy when the client is
 // connected or connecting. With WithReconnect it needs to succeed only
 // once: a lost channel is re-established by the client, and kept when
 // only the startup sequence of the new one failed.
@@ -214,7 +226,7 @@ func (c *Client) connect(ctx context.Context) error {
 	c.sessionKey, c.lastChallenge = nil, nil
 	started := make(chan struct{})
 	c.started = started
-	c.lastUns = nil
+	c.proc.reset(c.autoTimeSync(stream))
 	c.mu.Unlock()
 	ch.Start()
 	c.wg.Add(1)
@@ -419,6 +431,11 @@ func (c *Client) safeReceive(sess *channel.Session, frag []byte) {
 
 // goroutine.
 func (c *Client) receive(sess *channel.Session, data []byte) {
+	at := time.Now()
+	// No request goes out while a fragment is handled: the confirmation
+	// it may ask for comes first (IEEE 1815-2012 clause 4.3 Rule 13).
+	c.proc.sendMu.Lock()
+	defer c.proc.sendMu.Unlock()
 	f, err := app.Decode(data)
 	if err != nil {
 		c.log.Debug("undecodable fragment dropped", "error", err)
@@ -433,32 +450,26 @@ func (c *Client) receive(sess *channel.Session, data []byte) {
 	if c.log.DebugEnabled() {
 		c.log.Debug("fragment received", "fragment", f.String())
 	}
+	if unsContradicts(f) {
+		// The UNS bit selects the solicited or the unsolicited reception
+		// state machine (IEEE 1815-2012 clauses 6.3 and 6.5), and a
+		// confirmation carries the fragment's UNS bit (clause 4.3 Rule
+		// 18): a fragment whose UNS bit contradicts its function code
+		// (clause 4.2.2.4.4) is neither processed nor confirmed.
+		c.log.Debug("fragment with a UNS bit contradicting its function discarded", "function", f.Function.String(), "uns", f.Control.UNS)
+		return
+	}
 	switch f.Function {
 	case app.FuncResponse, app.FuncAuthResponse:
 		c.mu.Lock()
 		p := c.pending
 		c.mu.Unlock()
-		if p == nil || !p.accept(f, data) {
+		if p == nil || !p.accept(f, data, at) {
+			// IEEE 1815-2012 Table 6-2 row 1: discarded, not confirmed.
 			c.log.Debug("response nobody waits for ignored", "seq", f.Control.Seq)
 		}
 	case app.FuncUnsolicitedResponse:
-		if f.Control.CON {
-			if c.opts.noUnsConfirm {
-				c.log.Debug("unsolicited response not confirmed (WithUnsolicitedConfirm)", "seq", f.Control.Seq)
-			} else {
-				c.confirm(sess, f.Control.Seq, true)
-			}
-		}
-		c.mu.Lock()
-		repeat := bytes.Equal(c.lastUns, data)
-		c.lastUns = data
-		c.mu.Unlock()
-		if repeat {
-			c.log.Debug("repeated unsolicited response ignored", "seq", f.Control.Seq)
-			return
-		}
-		c.events.response(f, true)
-		c.onIIN(f.IIN)
+		c.receiveUnsolicited(sess, f, data)
 	default:
 		c.log.Debug("request function sent to a master ignored", "function", f.Function.String())
 	}

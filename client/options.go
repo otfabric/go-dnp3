@@ -43,7 +43,10 @@ type Reconnect struct {
 // Retry configures automatic retries of the requests that are safe to
 // repeat: READ, the time and unsolicited functions, ASSIGN_CLASS and the
 // file read functions. Controls, freezes, restarts and writes are never
-// repeated.
+// repeated. Each repeat is a new request with the next sequence number
+// (IEEE 1815-2012 clause 4.3 Rule 14), never an application layer retry of
+// the same octets: a repeated time synchronization starts its procedure
+// again with fresh times, as clause 10.3.4.1 requires.
 type Retry struct {
 	// Attempts is the total number of attempts, at least 1.
 	Attempts int
@@ -57,7 +60,10 @@ type Retry struct {
 // Link configures the data link layer.
 type Link struct {
 	// Confirmed sends user data as CONFIRMED_USER_DATA. The default,
-	// unconfirmed, is what IEEE 1815-2012 recommends on TCP.
+	// unconfirmed, is what IEEE 1815-2012 recommends on TCP. Time
+	// synchronization requests (DELAY_MEASURE, RECORD_CURRENT_TIME and a
+	// WRITE of g50v1 or g50v3) always go as UNCONFIRMED_USER_DATA, without
+	// link layer retries (IEEE 1815-2012 clause 10.3.4.1).
 	Confirmed bool
 	// Timeout is the wait for a link layer answer. Zero means 2 seconds.
 	Timeout time.Duration
@@ -69,34 +75,52 @@ type Link struct {
 }
 
 // Startup configures what the client does each time the channel is
-// established, before Connect returns. A step the outstation rejects (an
+// established, before Connect returns: the master startup of IEEE
+// 1815-2012 clause 5.1.1.2. With secure authentication and an update key
+// the session keys are changed first. A step the outstation rejects (an
 // IINError, such as IIN2.0 from an outstation without unsolicited
 // responses) is logged and the sequence goes on; a step without a valid
 // response fails it.
+//
+// The default is Startup{Integrity: true}: clause 5.1.1.2 Rule 1 requires
+// an integrity poll at master startup. WithStartup(Startup{}) runs nothing.
 type Startup struct {
 	// DisableUnsolicited sends DISABLE_UNSOLICITED for classes 1..3 first.
 	DisableUnsolicited bool
 	// Integrity runs an integrity poll. When the outstation has asked for
-	// the time (NEED_TIME) and WithTimeSync is set, the time is
-	// synchronized first, so that the poll's events carry synchronized time.
+	// the time (NEED_TIME) and automatic time synchronization is on, the
+	// time is synchronized first, so that the poll's events carry
+	// synchronized time.
 	Integrity bool
 	// EnableUnsolicited sends ENABLE_UNSOLICITED for these classes last.
+	// WithStartup then also sets DisableUnsolicited and Integrity, the
+	// steps clause 5.1.1.2 Rule 1 requires before it. The classes are
+	// enabled again whenever the outstation reports a restart (IIN1.7,
+	// clause 5.1.1.1.2 Rule 2).
 	EnableUnsolicited []int
 }
 
 // TimeSync selects the time synchronization procedure.
 type TimeSync uint8
 
-// Time synchronization procedures (IEEE 1815-2012 clause 5.2).
+// Time synchronization procedures (IEEE 1815-2012 clause 10.3.3).
 const (
 	// TimeSyncNone disables automatic time synchronization.
 	TimeSyncNone TimeSync = iota
-	// TimeSyncLAN is the LAN procedure: RECORD_CURRENT_TIME, then a
-	// WRITE of the time of that request (g50v3).
+	// TimeSyncLAN is the LAN procedure (clause 10.3.3.2):
+	// RECORD_CURRENT_TIME, then a WRITE of the time of that request
+	// (g50v3). Its function and object are of subset level 4 (IEEE
+	// 1815-2012 Table 12-32); outstations of levels 1 to 3 need not
+	// support them.
 	TimeSyncLAN
-	// TimeSyncNonLAN is the serial procedure: DELAY_MEASURE, then a WRITE
-	// of the current time corrected by the measured delay (g50v1).
+	// TimeSyncNonLAN is the non-LAN procedure (clause 10.3.3.1):
+	// DELAY_MEASURE, then a WRITE of the current time corrected by the
+	// measured delay (g50v1). It is within subset level 1.
 	TimeSyncNonLAN
+	// TimeSyncClearNeedTime does not synchronize the time: it clears
+	// IIN1.4 (NEED_TIME) with a WRITE of g80v1 index 4, as IEEE 1815-2012
+	// clause 4.5.5 recommends where timekeeping is not required.
+	TimeSyncClearNeedTime
 )
 
 // Poll is a request the client repeats on its own.
@@ -121,6 +145,8 @@ type options struct {
 	retry            *Retry
 	responseTimeout  time.Duration
 	maxRxFragment    int
+	maxTxFragment    int // 0: unlimited
+	timeSyncSet      bool
 	link             Link
 	startup          Startup
 	timeSync         TimeSync
@@ -144,6 +170,7 @@ func defaultOptions() options {
 		dialer:           &net.Dialer{Timeout: dialTimeout},
 		responseTimeout:  5 * time.Second,
 		maxRxFragment:    transport.DefaultMaxFragment,
+		startup:          Startup{Integrity: true},
 		autoClearRestart: true,
 		autoIntegrity:    true,
 		queueLimit:       64,
@@ -267,7 +294,10 @@ func WithResponseTimeout(d time.Duration) Option {
 }
 
 // WithMaxFragment sets the largest fragment the client reassembles. The
-// default is 2048.
+// default is 2048. IEEE 1815-2012 clause 4.3 Rule 3 requires a master to
+// receive fragments of at least 2048 octets: values from 249 to 2047 are
+// accepted, for testing and for peers known to send less, but are outside
+// that rule. WithMaxRequestFragment limits the requests the client sends.
 func WithMaxFragment(n int) Option {
 	return func(o *options) error {
 		if n < 249 {
@@ -278,13 +308,34 @@ func WithMaxFragment(n int) Option {
 	}
 }
 
+// WithMaxRequestFragment limits the request fragments the client sends to
+// n octets, at least 249: IEEE 1815-2012 clause 4.3 Rule 4 requires a
+// master to be configurable to restrict its requests to 249 octets, Rule
+// 1 to 2048, and NOTE 2 of the clause asks for no request larger than the
+// outstation can receive. A request that does not fit fails with
+// dnp3.ErrInvalidOption before anything is sent; WriteFile sizes its
+// blocks to fit. By default the size of requests is not limited.
+func WithMaxRequestFragment(n int) Option {
+	return func(o *options) error {
+		if n < 249 {
+			return invalidOption("max request fragment %d below 249", n)
+		}
+		o.maxTxFragment = n
+		return nil
+	}
+}
+
 // WithLink configures the data link layer.
 func WithLink(l Link) Option {
 	return func(o *options) error { o.link = l; return nil }
 }
 
 // WithStartup sets what the client does each time the channel is
-// established.
+// established; see Startup. The default is Startup{Integrity: true};
+// WithStartup(Startup{}) runs no startup step. With EnableUnsolicited
+// classes it also sets DisableUnsolicited and Integrity: IEEE 1815-2012
+// clause 5.1.1.2 Rule 1 requires a master that uses unsolicited reporting
+// to disable it and to run an integrity poll before it enables it.
 func WithStartup(s Startup) Option {
 	return func(o *options) error {
 		for _, c := range s.EnableUnsolicited {
@@ -292,15 +343,33 @@ func WithStartup(s Startup) Option {
 				return invalidOption("unsolicited class %d", c)
 			}
 		}
+		s.EnableUnsolicited = slices.Clone(s.EnableUnsolicited)
+		if len(s.EnableUnsolicited) > 0 {
+			s.DisableUnsolicited, s.Integrity = true, true
+		}
 		o.startup = s
 		return nil
 	}
 }
 
-// WithTimeSync makes the client synchronize the outstation's time with
-// the given procedure whenever the outstation reports IIN1.4 (NEED_TIME).
+// WithTimeSync sets what the client does whenever the outstation reports
+// IIN1.4 (NEED_TIME); IEEE 1815-2012 clauses 4.5.5 and 10.3.3 require the
+// master to send the time promptly. Without this option the client
+// synchronizes the time on its own: with TimeSyncLAN when the stream is a
+// net.Conn (TCP, TLS, UDP) and with TimeSyncNonLAN over other streams,
+// such as a serial port; when an outstation refuses the LAN procedure as
+// not supported (IIN2.0 or IIN2.1), the client uses the non-LAN procedure
+// with it instead. TimeSyncNone turns this off, TimeSyncClearNeedTime
+// clears the indication without synchronizing the time, and TimeSyncLAN
+// or TimeSyncNonLAN always uses that procedure.
 func WithTimeSync(p TimeSync) Option {
-	return func(o *options) error { o.timeSync = p; return nil }
+	return func(o *options) error {
+		if p > TimeSyncClearNeedTime {
+			return invalidOption("time sync procedure %d", p)
+		}
+		o.timeSync, o.timeSyncSet = p, true
+		return nil
+	}
 }
 
 // WithAutoClearRestart controls whether the client clears IIN1.7

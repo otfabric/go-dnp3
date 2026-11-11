@@ -125,7 +125,8 @@ func TestConfirmOnlyWhatWasParsed(t *testing.T) {
 	o := newRawOutstation(t, func(r *app.Fragment) []byte {
 		return response(r.Control.Seq, true, <-bodies...)
 	})
-	c, err := Dial(testCtx(t), o.addr, WithAutoIntegrity(false), WithResponseTimeout(300*time.Millisecond))
+	// No startup integrity poll: each request takes the next body.
+	c, err := Dial(testCtx(t), o.addr, WithAutoIntegrity(false), WithStartup(Startup{}), WithResponseTimeout(300*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -200,9 +200,11 @@ func dialReplay(t *testing.T, master, outstation link.Address, opts ...Option) (
 		}
 		return c, c.RemoteAddr(), nil
 	}
+	// The automatic tasks are off: the replay outstation answers only the
+	// recorded requests.
 	opts = append([]Option{WithStream(opener), WithAddresses(master, outstation),
 		WithStartup(Startup{}), WithAutoIntegrity(false), WithAutoClearRestart(false), WithAutoEventPoll(false),
-		WithResponseTimeout(2 * time.Second), WithMaxFragment(1 << 16)}, opts...)
+		WithTimeSync(TimeSyncNone), WithResponseTimeout(2 * time.Second), WithMaxFragment(1 << 16)}, opts...)
 	c, err := New("replay", opts...)
 	if err != nil {
 		t.Fatal(err)
@@ -300,9 +302,9 @@ func replayClient(t *testing.T, master, outstation link.Address, cases []capture
 // replayUnsolicited sends a conversation's recorded unsolicited responses
 // to a client: each must reach the Handler with the measurements app.Decode
 // reads from it, and one that asks for confirmation must be confirmed with
-// its sequence number and UNS set. A repeat (the same octets as the
-// previous one, IEEE 1815-2012 clause 4.6.2) is confirmed again but not
-// passed to the Handler twice.
+// its sequence number and UNS set. A repeat (the sequence number and the
+// octets after the IIN of the previous one, IEEE 1815-2012 clause 4.6.6
+// Rule 7) is confirmed again but not passed to the Handler twice.
 func replayUnsolicited(t *testing.T, master, outstation link.Address, uns []capture.Fragment) int {
 	t.Helper()
 	var mu sync.Mutex
@@ -322,7 +324,12 @@ func replayUnsolicited(t *testing.T, master, outstation link.Address, uns []capt
 		if err := o.send(f.Raw); err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(f.Raw, prev) {
+		// A repeat has the sequence number of the previous one and the
+		// same octets after the IIN (IEEE 1815-2012 clause 4.6.6 Rule 7),
+		// and is processed again only when it reports a restart (Table
+		// 6-3 row 8).
+		repeat := prev != nil && prev[0]&0x0F == f.Raw[0]&0x0F && bytes.Equal(prev[4:], f.Raw[4:])
+		if !repeat || f.Frag.IIN.Has(app.IINDeviceRestart) {
 			want = append(want, Measurements(f.Frag)...)
 		}
 		prev = f.Raw
