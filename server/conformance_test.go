@@ -100,6 +100,7 @@ func (m *master) recv() *app.Fragment {
 	m.t.Helper()
 	select {
 	case f := <-m.in:
+		checkResponseHeaders(m.t, f)
 		return f
 	case <-time.After(3 * time.Second):
 		m.t.Fatal("no fragment from the outstation")

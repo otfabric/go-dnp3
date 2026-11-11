@@ -31,7 +31,7 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 	// A SELECT replaces the selection, whether it succeeds or not, and an
 	// OPERATE uses it up (IEEE 1815-2012 4.4.4.3 Rules 1 to 3, p. 50). An
 	// OPERATE that matches no SELECT is answered NO_SELECT; one that
-	// matches a SELECT whose timer has run out, TIMEOUT (Table 11-7).
+	// matches a SELECT whose timer has run out, TIMEOUT (Table 11-7, p. 329).
 	s := a.selection
 	a.selection = nil
 	var noSelect, expired bool

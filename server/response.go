@@ -127,7 +127,9 @@ func fitting(h app.Header, room int) int {
 }
 
 // normalize sets the range and count fields of h from its objects and
-// picks the smallest qualifier of the same kind.
+// picks the smallest qualifier of the same kind. A range of virtual
+// addresses (range codes 3 to 5) stays one: its start and stop are not
+// point indexes (IEEE 1815-2012 Table 4-5, p. 33; 4.2.2.7.3.3, p. 34).
 func normalize(h app.Header) app.Header {
 	n := len(h.Objects)
 	if n == 0 {
@@ -136,7 +138,11 @@ func normalize(h app.Header) app.Header {
 	switch {
 	case h.Qualifier.IsRange():
 		h.Start, h.Stop = h.Objects[0].Index, h.Objects[n-1].Index
-		h.Qualifier = app.RangeQualifier(h.Stop)
+		q := app.RangeQualifier(h.Stop)
+		if h.Qualifier.Range() >= 3 {
+			q += app.Qual1ByteVirtualStartStop - app.Qual1ByteStartStop
+		}
+		h.Qualifier = q
 	case h.Qualifier.IsIndexed():
 		var m uint32
 		for _, o := range h.Objects {

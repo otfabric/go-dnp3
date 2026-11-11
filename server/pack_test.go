@@ -83,7 +83,9 @@ func FuzzPack(f *testing.F) {
 			if err != nil {
 				t.Fatalf("fragment %d does not encode: %v", i, err)
 			}
-			if len(b) > max && len(p.headers) > 2 {
+			// No fragment exceeds the configured size (IEEE 1815-2012
+			// 4.3 Rule 1, p. 38), whatever it holds.
+			if len(b) > max {
 				t.Fatalf("fragment %d: %d octets, more than %d", i, len(b), max)
 			}
 			objs := 0

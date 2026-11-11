@@ -15,6 +15,22 @@ import (
 // Spec tests of the outstation's application layer against IEEE 1815-2012.
 // Each names the clause, the printed page and the requirement it checks.
 
+// checkResponseHeaders fails t when a response of the outstation carries a
+// header that Table 4-8 (p. 35) and 4.2.2.7.2.1 (p. 31) do not permit in a
+// response: qualifier 0x06, a class (group 60) or variation 0. Every
+// fragment a test of this package receives passes through it.
+func checkResponseHeaders(t *testing.T, f *app.Fragment) {
+	t.Helper()
+	if f.Function != app.FuncResponse && f.Function != app.FuncUnsolicitedResponse {
+		return
+	}
+	for _, h := range f.Headers {
+		if h.Qualifier == app.QualAll || h.GV.Group() == 60 || h.GV.Variation() == 0 {
+			t.Errorf("response header %s qualifier %#x: not permitted in a response", h.GV, uint8(h.Qualifier))
+		}
+	}
+}
+
 // TestSpec4_3_Rule12_RequestWithCONConfirmed: 4.3 Rule 12 (p. 39):
 // "Outstations that receive a properly formatted fragment with the CON bit
 // set shall" answer it with a confirmation, with the request's sequence
@@ -40,10 +56,11 @@ func TestSpec4_3_Rule12_RequestWithCONConfirmed(t *testing.T) {
 	}
 }
 
-// TestSpec4_3_RequestFlags_Discarded: a request is a single fragment with
-// FIR and FIN set and UNS clear (4.3 Rules 5, 13 and 14, pp. 38-39: masters
-// shall send requests that way, and an outstation does not process UNS
-// requests); one that is not is discarded without a response.
+// TestSpec4_3_RequestFlags_Discarded: a request is a single fragment, FIR
+// and FIN set (4.3 Rule 4, p. 39: masters shall only send requests that fit
+// a single fragment), with UNS clear (4.2.2.4.4, p. 22: masters clear it in
+// requests). A fragment that is not is no request and is discarded without
+// a response.
 func TestSpec4_3_RequestFlags_Discarded(t *testing.T) {
 	m := newMaster(t)
 	for _, c := range []app.Control{
@@ -195,8 +212,8 @@ func TestSpec4_4_4_1_UnknownHeaderExecutesNothing(t *testing.T) {
 }
 
 // TestSpec4_3_Rule1_ControlEchoWithinFragment: the response to a control
-// echoes the request, and a response fragment shall not exceed the
-// configured size (4.3 Rules 1 and 3, p. 38). When the echo cannot fit,
+// echoes the request, and no fragment exceeds the configured maximum size
+// (4.3 Rule 1, p. 38; WithMaxFragment). When the echo cannot fit,
 // nothing is executed and the request is answered with IIN2.2 (4.5.11,
 // p. 85); one octet less and it is executed.
 func TestSpec4_3_Rule1_ControlEchoWithinFragment(t *testing.T) {
