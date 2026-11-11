@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package secauth implements the cryptographic core of DNP3 Secure
-// Authentication version 5 (IEEE 1815-2012 clause 7): the message
+// Authentication version 5 (IEEE 1815-2012 clause 7 and A.45): the message
 // authentication codes and the construction of the data they protect.
 //
 // The procedures that use it are wired into the client and the server
@@ -50,12 +50,20 @@ func MAC(alg app.MACAlgorithm, key, data []byte) ([]byte, error) {
 // Equal reports whether the two MACs are equal, in constant time.
 func Equal(a, b []byte) bool { return subtle.ConstantTimeCompare(a, b) == 1 }
 
-// AuthData is the data a challenge reply authenticates (IEEE 1815-2012
-// clause 7.5.2.1): the full challenge object as it was sent, followed by
-// the critical application fragment that was challenged.
+// AuthData is the data a MAC of secure authentication covers: the
+// challenge fragment, then the authenticated fragment.
 //
-// Both stations build it the same way, so the master's reply MAC and the
-// outstation's verification MAC match when the key matches.
+// For a reply (g120v2, IEEE 1815-2012 A.45.2, Table A-3) challenge is the
+// whole application fragment carrying the challenge as it was sent, and
+// criticalFragment the critical fragment that was challenged, as it was
+// received. For aggressive mode (g120v9, A.45.9, Table A-9) challenge is
+// the fragment of the most recent challenge, and criticalFragment the
+// whole aggressive mode fragment up to its MAC value: the application header, the g120v3
+// object, the objects authenticated, and the object header and size
+// prefix of the g120v9 object itself: every octet but the MAC value.
+//
+// Both stations build it the same way, so the sender's MAC and the
+// receiver's verification MAC match when the key matches.
 func AuthData(challenge, criticalFragment []byte) []byte {
 	out := make([]byte, 0, len(challenge)+len(criticalFragment))
 	out = append(out, challenge...)

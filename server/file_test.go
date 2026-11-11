@@ -175,8 +175,15 @@ func TestFileBlockLimits(t *testing.T) {
 		if c.mode != app.FileModeRead {
 			m = newMaster(t, append(c.opts, WithFileServer(&sink{written: map[string][]byte{}}))...)
 		}
-		m.send(req(1, app.FuncOpenFile, app.FreeFormat(app.G70V3, app.FileCommand{Name: "f", Mode: c.mode, Size: 1, RequestID: 1})))
-		if st := fileStatus(t, m.recvFunc(app.FuncResponse)); st.Status != app.FileSuccess || int(st.MaxBlockSize) != c.want {
+		open, _ := req(1, app.FuncOpenFile, app.FreeFormat(app.G70V3, app.FileCommand{Name: "f", Mode: c.mode, Size: 1, RequestID: 1})).Encode()
+		m.sendRaw(open)
+		f := m.recv()
+		if f.Function == app.FuncAuthResponse {
+			// OPEN_FILE is a mandatory critical function (IEEE 1815-2012
+			// Table 7-7), challenged whatever SecureAuth.Critical lists.
+			f = replyTo(m, f, open, testSessionKey)
+		}
+		if st := fileStatus(t, f); st.Status != app.FileSuccess || int(st.MaxBlockSize) != c.want {
 			t.Errorf("case %d: %+v, want block size %d", i, st, c.want)
 		}
 	}
