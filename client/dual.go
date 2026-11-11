@@ -78,6 +78,12 @@ func (d *dualEndpoint) woken() <-chan struct{} {
 // established while the dial failed.
 func (d *dualEndpoint) open(ctx context.Context) (channel.Stream, net.Addr, error) {
 	d.once.Do(func() {
+		// Under c.mu, as in connect: no accept after Close.
+		d.c.mu.Lock()
+		defer d.c.mu.Unlock()
+		if d.c.closed {
+			return
+		}
 		d.c.wg.Add(1)
 		go d.accept()
 	})

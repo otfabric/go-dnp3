@@ -760,3 +760,97 @@ func TestSpecTable7_8_Row17_22_AggressiveInWaitForReply(t *testing.T) {
 	}
 	m.none(100 * time.Millisecond)
 }
+
+// TestSpecTable7_8_Row24_KeyChangeInWaitForReply: Table 7-8 row 24, p.221:
+// a valid session key change received in Wait for Reply discards the
+// pending critical ASDU, stores the new keys with Key Status OK and is
+// answered with a key status message; the reply to the challenge that
+// comes after it is unexpected in Security Idle and executes nothing, and
+// the new keys authenticate the next critical request.
+func TestSpecTable7_8_Row24_KeyChangeInWaitForReply(t *testing.T) {
+	h := &countingHandler{}
+	m := newMaster(t, WithHandler(h), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, UpdateKey: specUpdateKey}}))
+	st := m.keyStatus(0, 1)
+	chf, raw, critical := m.challenge(req(1, app.FuncDirectOperate, specCROB))
+	// The key change wraps the key status sent before the challenge.
+	st.MACValue = nil
+	msg, _ := app.AppendObjectValue(nil, app.G120V5, st)
+	control, monitoring := bytes.Repeat([]byte{0x31}, 16), bytes.Repeat([]byte{0x32}, 16)
+	plain, _ := secauth.KeyChangeData(control, monitoring, msg)
+	wrapped, _ := secauth.KeyWrap(specUpdateKey, plain)
+	m.send(req(2, app.FuncAuthRequest, app.FreeFormat(app.G120V6, app.AuthSessionKeyChange{KSQ: st.KSQ, User: 1, WrappedKeys: wrapped})))
+	f := m.recvFunc(app.FuncAuthResponse)
+	if done, ok := f.Headers[0].Objects[0].Value.(app.AuthSessionKeyStatus); !ok || done.Status != app.KeyStatusOK || f.Control.Seq != 2 {
+		t.Fatalf("key change in Wait for Reply: %v", f)
+	}
+	m.reply(chf, raw, critical, control)
+	m.send(readIIN(3))
+	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 3 {
+		t.Fatalf("after the late reply: %v, want the response to the READ", f)
+	}
+	if h.count() != 0 {
+		t.Fatalf("%d controls executed: the discarded request ran", h.count())
+	}
+	chf, raw, critical = m.challenge(req(4, app.FuncDirectOperate, specCROB))
+	m.reply(chf, raw, critical, control)
+	if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 4 || h.count() != 1 {
+		t.Fatalf("with the new keys: %v, %d executed", f, h.count())
+	}
+}
+
+// TestSpecTable7_8_Row21_NoAggressiveModeInWaitForReply: Table 7-8 row 21,
+// p.220: with aggressive mode disabled, an aggressive mode request in Wait
+// for Reply, while Error Messages Sent <= Max Error Messages Sent, also
+// discards the pending critical ASDU and transmits error 4, aggressive
+// mode not supported, returning to Security Idle: the reply to the
+// challenge that comes after it executes nothing.
+func TestSpecTable7_8_Row21_NoAggressiveModeInWaitForReply(t *testing.T) {
+	h := &countingHandler{}
+	m := newMaster(t, WithHandler(h), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: testSessionKey}, NoAggressiveMode: true}))
+	chf, raw, critical := m.challenge(req(1, app.FuncDirectOperate, specCROB))
+	ch := chf.Headers[0].Objects[0].Value.(app.AuthChallenge)
+	m.send(aggressiveReq(2, ch.CSQ+1, raw, testSessionKey, specCROB))
+	f := m.recvFunc(app.FuncAuthResponse)
+	if e := authErr(t, f); e.Code != app.AuthErrAggressiveModeNotSupported || f.Control.Seq != 2 {
+		t.Fatalf("aggressive mode in Wait for Reply: %v %+v", f.Control, e)
+	}
+	m.reply(chf, raw, critical, testSessionKey)
+	m.send(readIIN(3))
+	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 3 {
+		t.Fatalf("after the reply: %v, want the response to the READ", f)
+	}
+	if h.count() != 0 {
+		t.Fatalf("%d controls executed: the discarded request ran", h.count())
+	}
+}
+
+// TestSpecTable7_8_Row20_NoAggressiveModeWithoutError: Table 7-8 row 20,
+// p.220: with aggressive mode disabled an aggressive mode request is
+// discarded; the error message is transmitted only while Error Messages
+// Sent <= Max Error Messages Sent (threshold 2, Table 7-6 #10, p.206), and
+// in Wait for Reply the outstation stays there (row 21 applies only below
+// that maximum): the pending critical request runs when its reply comes.
+// Table 6-1 row 4, p.157: a broadcast is never answered, not even with the
+// error.
+func TestSpecTable7_8_Row20_NoAggressiveModeWithoutError(t *testing.T) {
+	h := &countingHandler{}
+	m := newMaster(t, WithHandler(h), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: testSessionKey}, NoAggressiveMode: true}))
+	m.sendBroadcast(aggressiveReq(1, 1, []byte{1}, testSessionKey, specCROB))
+	m.send(readIIN(2))
+	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 2 || h.count() != 0 {
+		t.Fatalf("after the broadcast: %v, %d executed", f, h.count())
+	}
+	for seq := uint8(3); seq <= 5; seq++ {
+		m.send(aggressiveReq(seq, 1, []byte{1}, testSessionKey, specCROB))
+		if e := authErr(t, m.recvFunc(app.FuncAuthResponse)); e.Code != app.AuthErrAggressiveModeNotSupported {
+			t.Fatalf("error %d: %+v", seq, e)
+		}
+	}
+	chf, raw, critical := m.challenge(req(6, app.FuncDirectOperate, specCROB))
+	ch := chf.Headers[0].Objects[0].Value.(app.AuthChallenge)
+	m.send(aggressiveReq(7, ch.CSQ+1, raw, testSessionKey, specCROB))
+	m.reply(chf, raw, critical, testSessionKey)
+	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 6 || h.count() != 1 {
+		t.Fatalf("reply after the silent refusal: %v, %d executed", f, h.count())
+	}
+}

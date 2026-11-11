@@ -7,7 +7,7 @@
 
 ## Summary
 
-A review of the whole library against IEEE 1815-2012, clause by clause, with the fixes it called for and a spec test for each requirement checked: 286 test functions named after their clause (`TestSpec<clause>_…`, see [TESTING.md](TESTING.md#spec-tests)), in the unit tests of every package and in `e2e`. Several defaults and behaviours change where the standard requires it; read **Upgrading** first. Exported API is added, none removed. This is not a certification: the evidence is in INTEROPERABILITY.md.
+A review of the whole library against IEEE 1815-2012, clause by clause, with the fixes it called for and a spec test for each requirement checked: 305 test functions named after their clause (`TestSpec<clause>_…`, see [TESTING.md](TESTING.md#spec-tests)), in the unit tests of every package and in `e2e`. Several defaults and behaviours change where the standard requires it; read **Upgrading** first. Exported API is added, none removed. This is not a certification: the evidence is in INTEROPERABILITY.md.
 
 ## Upgrading
 
@@ -37,6 +37,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - One `WithSecureAuthentication` option used for several clients no longer races: each client gets its own copy of the user.
 - **A failed `Connect` no longer leaves a reconnect running.** With `WithReconnect`, a `Connect` whose connection broke during its startup sequence returned the error while the client went on reconnecting in the background; the next `Connect` then dialled next to that reconnect, and the channel one of them opened replaced the other's without closing it. The orphan went on answering link status requests, so an outstation that keeps the connection of a connected master (13.2.3.3) refused every later connection. A failed `Connect` now leaves the client disconnected, as documented, and a channel is never replaced while another is open.
 - **No automatic task on the channel of a failed `Connect`.** A task queued during the startup sequence (the restart procedure after IIN1.7, a time synchronization) could send one request on the channel that `Connect` was about to close after the startup failed. Queued tasks now see the client disconnected and are dropped.
+- **No goroutine after `Close`.** A `Close` during `Connect` could return before a goroutine of the client started: the channel's watch, the reconnect loop after a startup sequence whose connection was lost, or the dual end point's accept. That goroutine then ran after `Close` (the race detector reported the `sync.WaitGroup` misuse). Each is now registered under the lock where `Close` marks the client closed.
 
 ### Outstation
 
@@ -52,6 +53,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - **Reads**: g50v1 with qualifier 0x07, count 1, returns the time (other qualifiers IIN2.2); packed variations can be read by index; an octet string asked in another length is answered in its own length; g0v255 uses qualifier 0x17; an index or count qualifier on group 0 selects the set; a READ of group 0 without attribute sets is IIN2.1; a virtual range qualifier (0x03–0x05) in a request is answered with the same qualifier.
 - **Point data**: ROLLOVER and reserved flag bits are cleared; a +Inf deadband is accepted and suppresses events; output events are not raised for points left out of class 0; the g13 commanded state of PULSE_ON is 1. `WithDeadbandIntegerOnly` reports analog input deadbands in g34v1 and v2 only (A.18.3.2.3).
 - DELAY_MEASURE above 65535 ms is answered with 65535 ms instead of no answer. WRITE with no values (and WRITE g80v1 with qualifier 0x06) is IIN2.2.
+- **No connection served after `Close`.** A connection that `Server.Serve` or `Group.Serve` accepted as `Close` closed the listener was handed to a goroutine that could start while `Close` waited for the server's goroutines, or after it returned (the race detector reported it). Such a connection is now closed, and `Serve` returns nil.
 
 ### Link layer, transport function and DNP3 over IP
 
@@ -100,7 +102,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 
 ### Testing
 
-- 286 spec test functions named after the clause they check, in `spec_*_test.go` files of `app`, `link`, `transport`, `internal/channel`, `secauth`, `client`, `server` and `e2e`.
+- 305 spec test functions named after the clause they check, in `spec_*_test.go` files of `app`, `link`, `transport`, `internal/channel`, `secauth`, `client`, `server` and `e2e`.
 - `TestSubsetLevelTables` (outstation) and `TestSubsetLevelResponses` (master) walk the request and response rows of Tables 14-2 to 14-4 at subset levels 1 to 3.
 - `make interop`: the suite expects Association ID 0 in the security statistics and opendnp3's refusal of the SAVE_CONFIG delay object; the in-network UDP master (`interop/testdata/udpmaster`) opts out of the startup sequence, since it retries its poll itself.
 - `TestChaos` keeps the last 3000 lines the master and the outstation logged and prints them when a run fails, with the attempts each recovery check needed.

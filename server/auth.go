@@ -183,12 +183,12 @@ type challenge struct {
 	deadline time.Time // when the reply timer expires
 }
 
-// authMax are the moving maxima of IEEE 1815-2012 Table 7-15: the value of
-// a statistic past which the state machine acts. Each is reset to the
-// statistic plus its threshold.
-type authMax struct {
-	authFailures, replyTimeouts, authRekeys, errorsSent uint32
-}
+// authMax are the moving maxima of IEEE 1815-2012 Table 7-15, by
+// statistic: the value of a statistic past which the state machine acts.
+// Each is reset to the statistic plus its threshold. The state machine
+// uses those of Authentication Failures, Reply Timeouts, Authentication
+// Rekeys and Error Messages Sent.
+type authMax [secauth.NumStatistics]uint32
 
 func (a *association) critical(fc app.FunctionCode) bool {
 	sa := a.srv.opts.auth
@@ -202,18 +202,7 @@ func (a *association) resetMax(s secauth.Statistic) {
 	if sa == nil {
 		return
 	}
-	v := a.stats[s] + sa.threshold(s)
-	switch s {
-	case secauth.StatAuthenticationFailures:
-		a.max.authFailures = v
-	case secauth.StatReplyTimeouts:
-		a.max.replyTimeouts = v
-	case secauth.StatRekeysDueToAuthFailure:
-		a.max.authRekeys = v
-	case secauth.StatErrorMessagesSent:
-		a.max.errorsSent = v
-	default:
-	}
+	a.max[s] = a.stats[s] + sa.threshold(s)
 }
 
 // resetAuth is the start-up of secure authentication: Key Status
@@ -257,10 +246,7 @@ func (a *association) sendChallenge(req *app.Fragment, in inbound) {
 	// 32 octets: the standard asks for at least 4, and DSC go-dnp3's
 	// master answers only challenges of 32.
 	data := make([]byte, 32)
-	if _, err := rand.Read(data); err != nil {
-		a.log.Error("no random challenge data", "error", err)
-		return
-	}
+	_, _ = rand.Read(data) // never fails (crypto/rand, Go 1.24)
 	a.csq++
 	// The user is 0, unknown: the master names it in the reply (Table
 	// 7-11, A.45.1).
@@ -311,7 +297,7 @@ func (a *association) onReplyTimer(now time.Time) {
 	a.log.Warn("challenge not answered within the reply timeout", "csq", p.csq)
 	a.count(secauth.StatReplyTimeouts)
 	a.count(secauth.StatDiscardedMessages)
-	if a.stats[secauth.StatReplyTimeouts] > a.max.replyTimeouts {
+	if a.stats[secauth.StatReplyTimeouts] > a.max[secauth.StatReplyTimeouts] {
 		a.log.Warn("max reply timeouts exceeded: session keys invalid", "reply_timeouts", a.stats[secauth.StatReplyTimeouts])
 		a.invalidateKeys(app.KeyStatusCommFail)
 		a.resetMax(secauth.StatReplyTimeouts)
@@ -480,10 +466,7 @@ func (a *association) keyStatusRequest(req *app.Fragment, v app.AuthSessionKeySt
 		a.log.Warn("session key status request for an unknown user", "user", v.User)
 		a.count(secauth.StatUnexpectedMessages)
 		challenge := make([]byte, 32)
-		if _, err := rand.Read(challenge); err != nil {
-			a.log.Error("no random challenge data", "error", err)
-			return
-		}
+		_, _ = rand.Read(challenge) // never fails (crypto/rand, Go 1.24)
 		st := app.AuthSessionKeyStatus{KSQ: a.keys.ksq, User: v.User, KeyWrap: sa.User.KeyWrapAlgorithm(),
 			Status: app.KeyStatusAuthFail, Challenge: challenge}
 		a.sendAuth(req.Control.Seq, app.FreeFormat(app.G120V5, st))
@@ -521,10 +504,7 @@ func (a *association) countKeyStatusRequest(user uint16) {
 func (a *association) sendKeyStatus(seq uint8) {
 	u := a.srv.opts.auth.User
 	challenge := make([]byte, 32)
-	if _, err := rand.Read(challenge); err != nil {
-		a.log.Error("no random challenge data", "error", err)
-		return
-	}
+	_, _ = rand.Read(challenge) // never fails (crypto/rand, Go 1.24)
 	a.expireKeys()
 	k := &a.keys
 	st := app.AuthSessionKeyStatus{KSQ: k.ksq, User: u.Number, KeyWrap: u.KeyWrapAlgorithm(), Status: a.keyStatus(), Challenge: challenge}
@@ -609,7 +589,7 @@ var errKeyChange = errors.New("no matching key status")
 // exceeded Max Error Messages Sent (clause 7.5.2.4); past it the error is
 // only logged until the next valid session key change.
 func (a *association) authError(seq uint8, csq uint32, user uint16, code app.AuthErrorCode) {
-	if a.stats[secauth.StatErrorMessagesSent] > a.max.errorsSent {
+	if a.stats[secauth.StatErrorMessagesSent] > a.max[secauth.StatErrorMessagesSent] {
 		a.log.Debug("authentication error not sent: max error messages sent exceeded", "code", code.String())
 		return
 	}
@@ -668,11 +648,11 @@ func (a *association) verifyReply(req *app.Fragment, r app.AuthReply) {
 // that happened more often than Max Authentication Rekeys allows without
 // a valid key change since, a TCP connection is closed instead.
 func (a *association) checkAuthFailures() {
-	if a.stats[secauth.StatAuthenticationFailures] <= a.max.authFailures {
+	if a.stats[secauth.StatAuthenticationFailures] <= a.max[secauth.StatAuthenticationFailures] {
 		return
 	}
 	a.resetMax(secauth.StatAuthenticationFailures)
-	if a.stats[secauth.StatRekeysDueToAuthFailure] <= a.max.authRekeys {
+	if a.stats[secauth.StatRekeysDueToAuthFailure] <= a.max[secauth.StatRekeysDueToAuthFailure] {
 		a.log.Warn("max authentication failures exceeded: session keys invalid", "failures", a.stats[secauth.StatAuthenticationFailures])
 		a.invalidateKeys(app.KeyStatusAuthFail)
 		a.count(secauth.StatRekeysDueToAuthFailure)
@@ -709,7 +689,7 @@ func (a *association) aggressive(req *app.Fragment, in inbound) *app.Fragment {
 		a.log.Warn("aggressive mode request discarded: aggressive mode is disabled", "seq", req.Control.Seq)
 		a.count(secauth.StatUnexpectedMessages)
 		a.count(secauth.StatDiscardedMessages)
-		if broadcast || a.stats[secauth.StatErrorMessagesSent] > a.max.errorsSent {
+		if broadcast || a.stats[secauth.StatErrorMessagesSent] > a.max[secauth.StatErrorMessagesSent] {
 			return nil
 		}
 		if waiting {

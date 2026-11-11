@@ -326,3 +326,50 @@ func TestSpec4_4_18_FSFileServerDescriptors(t *testing.T) {
 		t.Fatalf("file: %+v %s", f, st)
 	}
 }
+
+// TestSpec4_4_17_1_1_OnlyIdleFileExpires: 4.4.17.1.1 (p. 67): the timeout
+// is per file: of two open files only the one that no request named for
+// the file timeout is closed and reported with HANDLE_EXPIRED (5.3.8 Rule
+// 12, p. 120); the other stays open and is written and closed as usual.
+// The test makes the first file's last request an hour old.
+func TestSpec4_4_17_1_1_OnlyIdleFileExpires(t *testing.T) {
+	s := &sink{written: map[string][]byte{}}
+	m := newFileMaster(t, WithFileServer(s), WithFileTimeout(time.Hour, 1))
+	idle := m.open(app.FileCommand{Name: "/idle", Mode: app.FileModeWrite, RequestID: 1})
+	busy := m.open(app.FileCommand{Name: "/busy", Mode: app.FileModeWrite, RequestID: 2})
+	if idle.Status != app.FileSuccess || busy.Status != app.FileSuccess {
+		t.Fatalf("open: %+v %+v", idle, busy)
+	}
+	a := m.srv.association(1)
+	onAssoc(t, a, func() bool {
+		a.files[idle.Handle].used = time.Now().Add(-2 * time.Hour)
+		return true
+	})
+	var ev *app.Fragment
+	eventually(t, "the HANDLE_EXPIRED event", func() bool {
+		m.send(req(m.next(), app.FuncRead, app.AllObjects(app.G60V2)))
+		if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 0 {
+			ev = f
+			return true
+		}
+		return false
+	})
+	if ts := transportStatus(t, ev); len(ev.Headers[0].Objects) != 1 || ts.Handle != idle.Handle || ts.Status != app.FileHandleExpired {
+		t.Fatalf("events %v", ev)
+	}
+	m.send(confirm(m.seq, false))
+	if got := m.write(busy.Handle, 0, "ok"); got.Status != app.FileSuccess {
+		t.Fatalf("write to the other file: %s", got.Status)
+	}
+	if got := m.write(idle.Handle, 0, "x"); got.Status != app.FileInvalidHandle {
+		t.Fatalf("write to the expired file: %s", got.Status)
+	}
+	if got := m.closeFile(app.FuncCloseFile, app.FileCommandStatus{Handle: busy.Handle}); got.Status != app.FileSuccess {
+		t.Fatalf("close: %s", got.Status)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.aborted != 1 || string(s.written["/busy"]) != "ok" {
+		t.Fatalf("%d aborted, written %q", s.aborted, s.written)
+	}
+}

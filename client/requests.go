@@ -407,10 +407,7 @@ func firstFailure(hs []app.Header, statuses []app.CommandStatus) error {
 	i := 0
 	for _, h := range hs {
 		for _, o := range h.Objects {
-			if i == len(statuses) {
-				return nil
-			}
-			if statuses[i] != app.StatusSuccess {
+			if i < len(statuses) && statuses[i] != app.StatusSuccess {
 				return &dnp3.CommandError{GV: h.GV, Index: o.Index, Status: statuses[i]}
 			}
 			i++

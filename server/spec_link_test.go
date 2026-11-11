@@ -700,13 +700,28 @@ func TestSpec9_2_5_2_ReservedAddressesIgnored(t *testing.T) {
 
 // TestSpec13_2_2_2_DefaultPorts checks the ports of clauses 13.2.2.2 (p.
 // 378) and 7.8.8 (p. 258): 20000 for DNP3 over TCP and UDP, 19999 over TLS.
-// Listening on them is not tested: tests use port 0.
+// ListenAndServe("") listens on them; listening is not tested (tests use
+// port 0), the address it is given is.
 func TestSpec13_2_2_2_DefaultPorts(t *testing.T) {
 	if DefaultPort != 20000 || DefaultTLSPort != 19999 {
 		t.Fatalf("ports %d and %d", DefaultPort, DefaultTLSPort)
 	}
 	if defaultPort(false) != DefaultPort || defaultPort(true) != DefaultTLSPort {
 		t.Fatalf("defaultPort: %d without TLS, %d with", defaultPort(false), defaultPort(true))
+	}
+	for _, tc := range []struct {
+		addr string
+		tls  bool
+		want string
+	}{
+		{"", false, ":20000"},
+		{"", true, ":19999"},
+		{"127.0.0.1:0", false, "127.0.0.1:0"},
+		{"127.0.0.1:0", true, "127.0.0.1:0"},
+	} {
+		if got := listenAddr(tc.addr, tc.tls); got != tc.want {
+			t.Errorf("listenAddr(%q, TLS %v) = %q, want %q", tc.addr, tc.tls, got, tc.want)
+		}
 	}
 }
 
@@ -1011,4 +1026,186 @@ func TestSpecTable13_2_Rows5And6_ServerReset(t *testing.T) {
 	q := dialRaw(t, "tcp", addr)
 	q.write(rls(10))
 	q.linkStatus(10)
+}
+
+// TestSpec13_2_3_3_ThirdConnectionDuringProbe checks clause 13.2.3.3 (p.
+// 382) and its NOTE 2: while the keep-alive probes the master's current
+// connection for a second connection, a third one of the master is
+// rejected at once, without waiting for the probe; the answered probe
+// rejects the second one, and the current connection keeps serving.
+func TestSpec13_2_3_3_ThirdConnectionDuringProbe(t *testing.T) {
+	addr := serveTCP(t, newServer(t, WithMasters(1), WithLink(Link{Timeout: 30 * time.Second})))
+	old := dialRaw(t, "tcp", addr)
+	old.request(10, readIIN(1))
+	if f := old.response(10); f.Control.Seq != 1 {
+		t.Fatalf("response %s", f)
+	}
+	second := dialRaw(t, "tcp", addr)
+	old.probed() // unanswered for now: the probe runs
+	third := dialRaw(t, "tcp", addr)
+	if fs := third.closed(); len(fs) != 0 {
+		t.Fatalf("frames to the third connection: %v", fs)
+	}
+	old.answerProbe()
+	if fs := second.closed(); len(fs) != 0 {
+		t.Fatalf("frames to the second connection: %v", fs)
+	}
+	old.request(10, readIIN(2))
+	if f := old.response(10); f.Control.Seq != 2 {
+		t.Fatalf("response %s", f)
+	}
+}
+
+// TestSpec13_2_3_3_HeldRequestsBounded: the requests a new connection of
+// the master sends while the current one is probed (clause 13.2.3.3 NOTE
+// 2, p. 382) are held, at most maxHeld of them; once the probe fails and
+// the new connection is taken (Table 13-2 row 4, p. 383), the held ones are
+// answered in the order they came, and those beyond the bound are lost, as
+// on the line.
+func TestSpec13_2_3_3_HeldRequestsBounded(t *testing.T) {
+	s := newServer(t, WithMasters(1), WithLink(Link{Timeout: 30 * time.Second}))
+	addr := serveTCP(t, s)
+	old := dialRaw(t, "tcp", addr)
+	old.request(10, readIIN(1))
+	old.response(10)
+	second := dialRaw(t, "tcp", addr)
+	old.probed()
+	a := s.association(1)
+	release := blockAssoc(t, a)
+	for i := range maxHeld + 2 {
+		second.request(10, readIIN(uint8(i)))
+	}
+	waitQueued(t, a, maxHeld+2)
+	// The current connection goes: the probe fails after the requests.
+	_ = old.conn.Close()
+	waitQueued(t, a, maxHeld+3)
+	release()
+	for i := range maxHeld {
+		if f := second.response(10); f.Control.Seq != uint8(i) {
+			t.Fatalf("held request %d: response %s", i, f)
+		}
+	}
+	second.request(10, readIIN(12))
+	if f := second.response(10); f.Control.Seq != 12 {
+		t.Fatalf("response %s: a request beyond the %d held was answered", f, maxHeld)
+	}
+}
+
+// TestSpec13_2_3_3_CurrentConnectionGoneDuringProbe: when the master's
+// current connection goes while it is probed for a new connection (clause
+// 13.2.3.3 NOTE 2, p. 382), and another connection of the master took its
+// place before the probe's result was handled, the new connection is
+// measured against that one: it is probed in turn and, the probe answered,
+// the new connection is rejected.
+func TestSpec13_2_3_3_CurrentConnectionGoneDuringProbe(t *testing.T) {
+	s := newServer(t, WithMasters(1), WithLink(Link{Timeout: 30 * time.Second}))
+	addr := serveTCP(t, s)
+	old := dialRaw(t, "tcp", addr)
+	old.request(10, readIIN(1))
+	old.response(10)
+	second := dialRaw(t, "tcp", addr)
+	old.probed()
+	a := s.association(1)
+	release := blockAssoc(t, a)
+	third := dialRaw(t, "tcp", addr)
+	waitQueued(t, a, 1) // the third connection, queued before the probe's result
+	_ = old.conn.Close()
+	waitQueued(t, a, 2)
+	release()
+	// The third connection took the gone one's place, and is probed for
+	// the second, whose probe ended without deciding.
+	third.probed()
+	third.answerProbe()
+	if fs := second.closed(); len(fs) != 0 {
+		t.Fatalf("frames to the second connection: %v", fs)
+	}
+	third.request(10, readIIN(2))
+	if f := third.response(10); f.Control.Seq != 2 {
+		t.Fatalf("response %s", f)
+	}
+}
+
+// TestSpec13_2_3_3_ConnectionGoneBeforeTaken: a connection of the master
+// that is already closed when the association comes to take it is not
+// taken: the current connection keeps serving, and is not probed (clause
+// 13.2.3.3 NOTE 2, p. 382, probes for a new connection that stands).
+func TestSpec13_2_3_3_ConnectionGoneBeforeTaken(t *testing.T) {
+	s := newServer(t, WithMasters(1))
+	addr := serveTCP(t, s)
+	m := dialRaw(t, "tcp", addr)
+	m.request(10, readIIN(1))
+	m.response(10)
+	a := s.association(1)
+	release := blockAssoc(t, a)
+	late := dialRaw(t, "tcp", addr)
+	waitQueued(t, a, 1)
+	_ = late.conn.Close()
+	eventually(t, "the late connection closed", func() bool { return s.connections() == 1 })
+	release()
+	if onAssoc(t, a, func() bool { return a.probing }) {
+		t.Fatal("the current connection is probed for a closed one")
+	}
+	m.request(10, readIIN(2))
+	if f := m.response(10); f.Control.Seq != 2 {
+		t.Fatalf("response %s", f)
+	}
+}
+
+// TestSpecTable13_1_DatagramTakesOverFromGoneConnection checks clause
+// 13.2.3.3 (p. 382) with Table 13-1 (p. 381) for a master that speaks over
+// TCP and UDP: its datagram is not taken while its TCP connection stands
+// (the probe of the connection is answered, and the request it carried is
+// dropped); once the connection is gone, its next datagram takes the
+// association and is answered.
+func TestSpecTable13_1_DatagramTakesOverFromGoneConnection(t *testing.T) {
+	s := newServer(t)
+	tcpAddr := serveTCP(t, s)
+	udpAddr, _ := serveUDP(t, s)
+	tcp := dialRaw(t, "tcp", tcpAddr)
+	tcp.request(10, readIIN(1))
+	tcp.response(10)
+	a := s.association(1)
+	udp := dialRaw(t, "udp", udpAddr)
+	udp.request(10, readIIN(2))
+	tcp.probed()
+	tcp.answerProbe()
+	eventually(t, "the probe decided", func() bool { return !onAssoc(t, a, func() bool { return a.probing }) })
+	_ = tcp.conn.Close()
+	eventually(t, "the TCP connection gone", func() bool { return onAssoc(t, a, func() bool { return a.sess == nil }) })
+	udp.request(10, readIIN(3))
+	if f := udp.response(10); f.Control.Seq != 3 {
+		t.Fatalf("response %s, want the one to the datagram after the connection went", f)
+	}
+}
+
+// TestSpec13_2_3_1_4_MasterIPsGroup checks clause 13.2.3.1.4 a (p. 379,
+// should: validate connection requests from masters by IP address) for a
+// Group: a connection is taken only from an address every outstation of
+// the group allows; one that any of them refuses is closed without an
+// answer.
+func TestSpec13_2_3_1_4_MasterIPsGroup(t *testing.T) {
+	lp := netip.MustParsePrefix
+	serve := func(t *testing.T, servers ...*Server) string {
+		t.Helper()
+		g, err := NewGroup(servers...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = g.Close() })
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() { _ = g.Serve(l) }()
+		return l.Addr().String()
+	}
+	denied := dialRaw(t, "tcp", serve(t, newServer(t, WithAddress(10)), newServer(t, WithAddress(11), WithMasterIPs(lp("192.0.2.0/24")))))
+	if fs := denied.closed(); len(fs) != 0 {
+		t.Fatalf("frames to a refused master: %v", fs)
+	}
+	allowed := dialRaw(t, "tcp", serve(t, newServer(t, WithAddress(10)), newServer(t, WithAddress(11), WithMasterIPs(lp("127.0.0.0/8")))))
+	for _, o := range []link.Address{10, 11} {
+		allowed.write(rls(o))
+		allowed.linkStatus(o)
+	}
 }

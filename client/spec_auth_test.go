@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -842,5 +843,112 @@ func TestSpec7_4_1_6_AggressiveOverRequestLimit(t *testing.T) {
 	}
 	if s := c.SecurityStatistics(); s[secauth.StatAuthenticationFailures] != 0 {
 		t.Fatalf("authentication failures %d", s[secauth.StatAuthenticationFailures])
+	}
+}
+
+// TestSpec7_6_1_4_3_IntervalDisabled: clause 7.6.1.4.3 (p. 243), the key
+// change interval disabled (WithKeyChangeInterval(0)): only the key change
+// count changes the session keys. The wait between attempts
+// without session keys (keyRetryIdle) passes without a Key Change Timeout
+// while the master has session keys; without them, it is one: Max Rekeys
+// Due to Restarts is reset and a key change is queued. The bubble's fake
+// clock runs the 15-minute waits at once.
+func TestSpec7_6_1_4_3_IntervalDisabled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := authClient(t, secauth.User{Number: 1, UpdateKey: testUpdateKey}, WithKeyChangeInterval(0))
+		maxRestartRekeys := func() uint32 {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			return c.counters.maxRestartRekeys
+		}
+		const restarts = 5
+		c.mu.Lock()
+		c.auth.sessionKey = bytes.Repeat([]byte{1}, 16)
+		c.counters.stats[secauth.StatRekeysDueToRestarts] = restarts
+		c.mu.Unlock()
+		before := maxRestartRekeys()
+
+		time.Sleep(keyRetryIdle + time.Second)
+		synctest.Wait()
+		if got := maxRestartRekeys(); got != before {
+			t.Fatalf("with session keys: Max Rekeys Due to Restarts %d, was %d: a Key Change Timeout", got, before)
+		}
+
+		c.mu.Lock()
+		c.auth.sessionKey = nil
+		c.mu.Unlock()
+		time.Sleep(keyRetryIdle)
+		synctest.Wait()
+		want := restarts + uint32(secauth.StatRekeysDueToRestarts.DefaultThreshold())
+		if got := maxRestartRekeys(); got != want {
+			t.Fatalf("without session keys: Max Rekeys Due to Restarts %d, want %d", got, want)
+		}
+	})
+}
+
+// TestSpecTable7_13_CriticalNotSentWithoutKeys: IEEE 1815-2012 Table 7-13
+// row 7 (p.232): a master without valid session keys discards a
+// challenge; Table 7-8 row 16 (p.219): an outstation waiting for a reply
+// discards a key status request. A critical request sent without keys
+// could only fail, and would keep the outstation waiting for the reply
+// while the master tries to change the keys: requests sent again at once
+// then kept the keys from ever being changed (found by TestChaos). It
+// fails at once, unsent, and asks for the key change; a non-critical
+// request goes on (clause 7.3.6). The controls repeated meanwhile do not
+// keep the keys away.
+func TestSpecTable7_13_CriticalNotSentWithoutKeys(t *testing.T) {
+	user := secauth.User{Number: 1, UpdateKey: testUpdateKey}
+	var executed atomic.Int64
+	accept := server.HandlerFunc(func(context.Context, server.Command, server.OperateType) app.CommandStatus {
+		executed.Add(1)
+		return app.StatusSuccess
+	})
+	srv, addr := outstation(t, server.WithHandler(accept), server.WithSecureAuthentication(server.SecureAuth{User: user}))
+	var lose atomic.Bool
+	sent := &sentRecorder{}
+	c, err := New(authDropper(t, addr, lose.Load), quiet(WithSecureAuthentication(user), WithKeyChangeInterval(time.Hour),
+		WithResponseTimeout(300*time.Millisecond), WithReconnect(Reconnect{MinDelay: 10 * time.Millisecond}), WithMetrics(sent))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if err := c.Connect(testCtx(t)); err != nil {
+		t.Fatal(err)
+	}
+	// The reconnection's key change loses every answer: it stays up
+	// without session keys (TestRekeyAfterFailedKeyChange).
+	lose.Store(true)
+	before := len(sent.aggressive(app.FuncDirectOperate))
+	srv.CloseConnections()
+	waitFor(t, "the reconnection without session keys", func() bool {
+		return c.State() == dnp3.StateConnected && c.controlKey() == nil &&
+			c.SecurityStatistics()[secauth.StatFailedSessionKeyChanges] >= 1
+	})
+	if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); !errors.Is(err, dnp3.ErrAuthentication) {
+		t.Fatalf("control without session keys: %v", err)
+	}
+	if n := len(sent.aggressive(app.FuncDirectOperate)); n != before {
+		t.Fatalf("%d controls sent without session keys", n-before)
+	}
+	if _, err := c.Read(testCtx(t), app.AllObjects(app.G1V0)); err != nil {
+		t.Fatalf("non-critical read without session keys: %v", err)
+	}
+
+	lose.Store(false)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		ctx, cancel := context.WithTimeout(testCtx(t), 2*time.Second)
+		_, err := c.Operate(ctx, DirectOperate, CROB(0, app.OpLatchOn, 0, 0))
+		cancel()
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no control within 5 s of the answers coming through: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if executed.Load() != 1 {
+		t.Fatalf("%d controls executed, want 1", executed.Load())
 	}
 }

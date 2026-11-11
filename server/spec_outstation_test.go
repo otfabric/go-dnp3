@@ -5,9 +5,11 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
 	"github.com/otfabric/go-dnp3/link"
 )
@@ -551,5 +553,70 @@ func TestSpecA_25_2_DelayMeasureCapped(t *testing.T) {
 	d := r.plans[0].headers[0].Objects[0].Value.(app.TimeDelay).Delay
 	if r.plans[0].headers[0].GV != app.G52V2 || d != 65535*time.Millisecond {
 		t.Fatalf("delay %v", d)
+	}
+}
+
+// TestSpec4_5_12_ZeroEventLimit: 4.5.12 (p. 86): IIN2.3 is set once an
+// event is lost, and stays set until every event buffer has room for one
+// more event. WithEventLimits may give a type no buffer at all: an event of
+// it is lost at once, reported to dnp3.ServerMetrics, and IIN2.3 stays set,
+// also after events of other types were read and confirmed, until a
+// restart.
+func TestSpec4_5_12_ZeroEventLimit(t *testing.T) {
+	rec := &recMetrics{}
+	m := newMaster(t, WithMetrics(rec), WithEventLimits(map[PointType]int{BinaryInput: 0}))
+	db := m.srv.Database()
+	_ = db.UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	if _, d, _ := rec.snapshot(); d[1] != 1 {
+		t.Fatalf("discarded %v, want one class 1 event", d)
+	}
+	_ = db.UpdateAnalogInput(0, app.Analog{Value: 7, Flags: app.FlagOnline})
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1, 2)...))
+	f := m.recvFunc(app.FuncResponse)
+	if len(f.Headers) != 1 || f.Headers[0].GV.Group() != 32 || !f.IIN.Has(app.IINEventBufferOverflow) || !f.Control.CON {
+		t.Fatalf("event poll: %v", f)
+	}
+	m.send(confirm(1, false))
+	m.send(readIIN(2))
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINEventBufferOverflow) {
+		t.Fatalf("after the confirmation: IIN %s", f.IIN)
+	}
+	m.srv.Restart()
+	m.send(readIIN(3))
+	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINEventBufferOverflow) {
+		t.Fatalf("after a restart: IIN %s", f.IIN)
+	}
+}
+
+// TestSpec4_6_6_Rule13_UnsolicitedGivenUp: 4.6.6 Rule 13 (p. 92): once the
+// configured retries of an unsolicited response have gone unconfirmed,
+// the series ends and its events are reported later, here to a READ. The
+// end is reported to dnp3.ServerMetrics as a timeout, as a confirmed
+// response (the null one) is reported without an error, and every request
+// handled is reported too.
+func TestSpec4_6_6_Rule13_UnsolicitedGivenUp(t *testing.T) {
+	rec := &recMetrics{}
+	m := unsolMaster(t, Unsolicited{Classes: []Class{1}, Retries: 1}, WithMetrics(rec))
+	_ = m.srv.Database().UpdateBinaryInput(1, app.Binary{Value: true, Flags: app.FlagOnline})
+	for range 2 { // the response and its one retry, unconfirmed
+		if u := m.recvFunc(app.FuncUnsolicitedResponse); len(u.Headers) != 1 {
+			t.Fatalf("unsolicited %v", u)
+		}
+	}
+	var unsol []unsolReport
+	eventually(t, "the series given up", func() bool {
+		_, _, unsol = rec.snapshot()
+		return len(unsol) == 2
+	})
+	if unsol[0].events != 0 || unsol[0].err != nil || unsol[1].events != 1 || !errors.Is(unsol[1].err, dnp3.ErrTimeout) {
+		t.Fatalf("unsolicited reports %+v", unsol)
+	}
+	m.send(req(1, app.FuncRead, app.ClassHeaders(1)...))
+	f := m.recvFunc(app.FuncResponse)
+	if len(f.Headers) != 1 || f.Headers[0].GV.Group() != 2 || f.Headers[0].Objects[0].Index != 1 {
+		t.Fatalf("READ after the series ended: %v", f)
+	}
+	if handled, _, _ := rec.snapshot(); handled == 0 {
+		t.Fatal("no request reported handled")
 	}
 }

@@ -445,3 +445,20 @@ func TestSpecTable6_2_Row18_FragmentTimeout(t *testing.T) {
 		t.Fatalf("incomplete response: %v", err)
 	}
 }
+
+// TestSpec4_3_Rule4_BroadcastLimit: clause 4.3 Rule 4 (p. 39) limits every
+// request the master sends, broadcasts included: a broadcast over
+// WithMaxRequestFragment fails with dnp3.ErrInvalidOption, unsent.
+func TestSpec4_3_Rule4_BroadcastLimit(t *testing.T) {
+	o := newSpecOutstation(t, func(req specFrag) [][]byte { return [][]byte{empty(req, 0)} })
+	c := specDial(t, o, append(specQuiet, WithMaxRequestFragment(249))...)
+	objs := make([]app.Object, 30)
+	for i := range objs {
+		objs[i] = app.Object{Index: uint32(i), Value: app.CROB{Op: app.OpLatchOn, Count: 1}}
+	}
+	err := c.Broadcast(testCtx(t), link.BroadcastNoConfirm, app.FuncDirectOperateNoAck, app.Indexed(app.G12V1, objs...))
+	if !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatalf("broadcast over the limit: %v", err)
+	}
+	o.none(t, 100*time.Millisecond)
+}

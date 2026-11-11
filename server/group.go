@@ -59,10 +59,7 @@ func (g *Group) Servers() []*Server { return append([]*Server(nil), g.servers...
 // until Close. An empty addr is ":20000", or ":19999" ([DefaultTLSPort])
 // with TLS.
 func (g *Group) ListenAndServe(addr string) error {
-	if addr == "" {
-		addr = fmt.Sprintf(":%d", defaultPort(g.servers[0].opts.tls != nil))
-	}
-	l, err := net.Listen("tcp", addr)
+	l, err := net.Listen("tcp", listenAddr(addr, g.servers[0].opts.tls != nil))
 	if err != nil {
 		return err
 	}
@@ -116,15 +113,32 @@ func (g *Group) Serve(l net.Listener) error {
 			_ = c.Close()
 			continue
 		}
-		g.wg.Go(func() {
+		if !g.spawn(func() {
 			defer g.release()
 			if err := handshake(c); err != nil {
 				g.servers[0].log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
 			} else {
 				_ = g.ServeConn(c, c.RemoteAddr())
 			}
-		})
+		}) {
+			// Accepted as Close closed the listener.
+			g.release()
+			_ = c.Close()
+			return nil
+		}
 	}
+}
+
+// spawn is Server.spawn for the group: f runs in a goroutine that Close
+// waits for, unless the group is closed.
+func (g *Group) spawn(f func()) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return false
+	}
+	g.wg.Go(f)
+	return true
 }
 
 // ServeConn serves one stream, for example a serial port, for every

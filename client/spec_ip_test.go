@@ -652,3 +652,44 @@ func TestSpec10_4_5_UnsolicitedDuringRequest(t *testing.T) {
 		t.Fatal("the unsolicited response was not processed")
 	}
 }
+
+// TestSpec13_2_3_1_3_DualEndpointEndsReconnectWait: clause 13.2.3.1.3 (p.
+// 379), dual end point: a master waiting to reconnect after its connection
+// was lost takes the connection the outstation establishes meanwhile at
+// once, without waiting out its reconnect delay (an hour here).
+func TestSpec13_2_3_1_3_DualEndpointEndsReconnectWait(t *testing.T) {
+	l := listenTCP(t)
+	var mu sync.Mutex
+	var states []dnp3.State
+	count := func(s dnp3.State) int {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, x := range states {
+			if x == s {
+				n++
+			}
+		}
+		return n
+	}
+	c, err := New(deadAddr(t), WithDualEndpoint(l, nil), WithAutoIntegrity(false),
+		WithReconnect(Reconnect{MinDelay: time.Hour, MaxDelay: time.Hour}),
+		WithStateHandler(func(s dnp3.State, _ error) {
+			mu.Lock()
+			states = append(states, s)
+			mu.Unlock()
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if err := c.Connect(testCtx(t)); !errors.Is(err, dnp3.ErrConnectFailed) {
+		t.Fatalf("Connect to nobody: %v", err)
+	}
+	srv := dualServer(t, l)
+	waitFor(t, "the outstation's connection", func() bool { return count(dnp3.StateConnected) == 1 })
+	readOne(t, c)
+	srv.CloseConnections()
+	waitFor(t, "the outstation's next connection", func() bool { return count(dnp3.StateConnected) == 2 })
+	readOne(t, c)
+}
