@@ -5,10 +5,12 @@ package client
 import (
 	"crypto/tls"
 	"errors"
+	"sync"
 	"testing"
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/secauth"
 )
 
 // TestSpec7_8_8_TLSDefaultPort: IEEE 1815-2012 clause 7.8.8 (printed page
@@ -52,5 +54,30 @@ func TestSpec4_5_13_AlreadyExecuting(t *testing.T) {
 	var ie *dnp3.IINError
 	if !errors.As(err, &ie) || !ie.IIN.Has(app.IINAlreadyExecuting) {
 		t.Fatalf("response with IIN2.4: %v", err)
+	}
+}
+
+// TestSecureAuthenticationOptionShared: one WithSecureAuthentication
+// Option used by two clients at once gives each its own copy of the user,
+// with user number 0 taken as 1; under the race detector it shows that
+// applying the Option writes nothing it shares.
+func TestSecureAuthenticationOptionShared(t *testing.T) {
+	opt := WithSecureAuthentication(secauth.User{Key: []byte("0123456789abcdef0123456789abcdef")})
+	var got [2]options
+	var wg sync.WaitGroup
+	for i := range got {
+		wg.Go(func() {
+			got[i] = defaultOptions()
+			if err := opt(&got[i]); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if got[0].auth == nil || got[1].auth == nil || got[0].auth == got[1].auth {
+		t.Fatalf("users %p %p: want one per client", got[0].auth, got[1].auth)
+	}
+	if got[0].auth.Number != 1 || got[1].auth.Number != 1 {
+		t.Fatalf("user numbers %d %d, want 1", got[0].auth.Number, got[1].auth.Number)
 	}
 }

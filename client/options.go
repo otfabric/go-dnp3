@@ -446,13 +446,15 @@ func WithQueueLimit(n int) Option {
 // this option a challenge fails the request with dnp3.ErrAuthentication.
 func WithSecureAuthentication(u secauth.User) Option {
 	return func(o *options) error {
-		if err := u.Validate(); err != nil {
+		// A copy per client: an Option may be used for several.
+		user := u
+		if err := user.Validate(); err != nil {
 			return invalidOption("%v", err)
 		}
-		if u.Number == 0 {
-			u.Number = 1 // 0 is reserved for an unknown user
+		if user.Number == 0 {
+			user.Number = 1 // 0 is reserved for an unknown user
 		}
-		o.auth = &u
+		o.auth = &user
 		return nil
 	}
 }
