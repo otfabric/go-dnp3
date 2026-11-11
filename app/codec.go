@@ -39,9 +39,9 @@ type Header struct {
 
 	// Objects is nil for a header that names points without values: the
 	// headers of READ, freeze, assign class and unsolicited control
-	// requests. When such a header names points by an index list
-	// (qualifiers 0x17, 0x28, 0x39), Objects holds the indexes with a nil
-	// Value.
+	// requests. When such a header names points by an index list (an
+	// index-prefixed qualifier such as 0x17 or 0x28), Objects holds the
+	// indexes with a nil Value.
 	Objects []Object
 }
 
@@ -98,6 +98,12 @@ func (f *Fragment) HeaderLen() int {
 func (f *Fragment) Encode() ([]byte, error) { return f.AppendEncode(nil) }
 
 // AppendEncode appends the wire encoding of f to b.
+//
+// A response (function 129..131) cannot carry a header with qualifier
+// 0x06 ([ErrInvalidQualifier]), nor one of group 60 or of a request-only
+// variation such as variation 0 ([ErrInvalidValue]): IEEE 1815-2012
+// Table 4-8, 4.2.2.7.1.1 and 4.2.2.7.2.1. [Decode] refuses them in a
+// response too.
 func (f *Fragment) AppendEncode(b []byte) ([]byte, error) {
 	b = append(b, f.Control.Byte(), byte(f.Function))
 	if f.Function.IsResponse() {
@@ -106,6 +112,11 @@ func (f *Fragment) AppendEncode(b []byte) ([]byte, error) {
 	var c codecCtx
 	for i := range f.Headers {
 		var err error
+		if f.Function.IsResponse() {
+			if err = responseHeader(&f.Headers[i], ErrInvalidValue); err != nil {
+				return b, fmt.Errorf("header %d (%s): %w", i, f.Headers[i].GV, err)
+			}
+		}
 		if b, err = f.Headers[i].appendEncode(b, &c); err != nil {
 			return b, fmt.Errorf("header %d (%s): %w", i, f.Headers[i].GV, err)
 		}
@@ -158,6 +169,34 @@ func Decode(b []byte) (*Fragment, error) {
 	return f, nil
 }
 
+// responseHeader returns an error wrapping bad, or [ErrInvalidQualifier]
+// for the qualifier, when a response cannot carry h. A response names the
+// points of its objects with specific groups and variations
+// (IEEE 1815-2012):
+//
+//   - qualifier 0x06 is "not permitted in a response" (Table 4-8): it does
+//     not identify the indexes (4.4.2 NOTE 1);
+//   - group 60 is for master requests only; the response "shall contain
+//     specific group identifiers" (4.2.2.7.1.1);
+//   - variation 0 is for master requests only (4.2.2.7.2.1), and the other
+//     variations without objects (g0v254) are requests too.
+//
+// The objects of a variation 0 or class header would have no size, so a
+// receiver cannot parse what follows them; the decoder refuses all three
+// forms, as the encoder does.
+func responseHeader(h *Header, bad error) error {
+	switch {
+	case h.Qualifier == QualAll:
+		return fmt.Errorf("%w: %s in a response (IEEE 1815-2012 Table 4-8)", ErrInvalidQualifier, h.Qualifier)
+	case h.GV.Group() == 60:
+		return fmt.Errorf("%w: class object %s in a response (IEEE 1815-2012 4.2.2.7.1.1)", bad, h.GV)
+	}
+	if d := lookup(h.GV); d != nil && (d.fam == fAny || d.fam == fNone) {
+		return fmt.Errorf("%w: %s, a request-only variation, in a response (IEEE 1815-2012 4.2.2.7.2.1)", bad, h.GV)
+	}
+	return nil
+}
+
 // objectsFollow reports whether objects follow a header with this
 // qualifier in a fragment with function fc.
 func objectsFollow(fc FunctionCode, gv GroupVariation, q Qualifier) bool {
@@ -181,6 +220,11 @@ func decodeHeader(b []byte, fc FunctionCode, c *codecCtx) (Header, int, error) {
 	q := h.Qualifier
 	if !q.Valid() {
 		return h, 0, fmt.Errorf("%w: %s for %s", ErrInvalidQualifier, q, h.GV)
+	}
+	if fc.IsResponse() {
+		if err := responseHeader(&h, ErrMalformed); err != nil {
+			return h, 0, err
+		}
 	}
 	p := 3
 	w := q.rangeWidth()

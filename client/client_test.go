@@ -142,7 +142,8 @@ func TestConnectTwice(t *testing.T) {
 func TestTimeoutAndRetry(t *testing.T) {
 	addr := silent(t)
 	m := &metrics{}
-	c, err := Dial(testCtx(t), addr, WithResponseTimeout(100*time.Millisecond),
+	// No startup integrity poll: the silent outstation would fail Dial.
+	c, err := Dial(testCtx(t), addr, WithResponseTimeout(100*time.Millisecond), WithStartup(Startup{}),
 		WithRetry(Retry{Attempts: 3, Backoff: 10 * time.Millisecond}), WithMetrics(m))
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +175,8 @@ func TestTimeoutAndRetry(t *testing.T) {
 
 func TestQueueLimit(t *testing.T) {
 	addr := silent(t)
-	c, err := Dial(testCtx(t), addr, WithResponseTimeout(time.Second), WithQueueLimit(1))
+	// No startup integrity poll: the silent outstation would fail Dial.
+	c, err := Dial(testCtx(t), addr, WithResponseTimeout(time.Second), WithQueueLimit(1), WithStartup(Startup{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +319,7 @@ func TestEchoMismatch(t *testing.T) {
 	}
 	for name, echo := range cases {
 		res := &Result{Fragments: []*app.Fragment{{Function: app.FuncResponse, Headers: echo}}}
-		if _, err := echoStatuses(req, res); !errors.Is(err, dnp3.ErrProtocol) {
+		if _, err := echoStatuses(req, res, false); !errors.Is(err, dnp3.ErrProtocol) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}

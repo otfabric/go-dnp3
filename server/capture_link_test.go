@@ -5,6 +5,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"slices"
 	"strings"
@@ -121,9 +122,7 @@ func TestCaptureServerLinkReplay(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%d", r.File.ID, si), func(t *testing.T) {
 				cs := masterChunks(s, master)
 				chunks += len(cs)
-				for k, v := range replayLink(t, r.File.ID, masterOutstation, outstation, s, master, cs) {
-					got[k] = v
-				}
+				maps.Copy(got, replayLink(t, r.File.ID, masterOutstation, outstation, s, master, cs))
 			})
 		}
 	}

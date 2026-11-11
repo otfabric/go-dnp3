@@ -27,10 +27,35 @@ func UDP(addr string) StreamOpener {
 	}
 }
 
+// UDPFrom is UDP with the local address the datagrams are sent from, for
+// an outstation that sends its responses to a fixed port of the master
+// (IEEE 1815-2012 Table 13-1, case 1) or takes requests from known ports
+// only. local is "host:port"; an empty host is any address.
+//
+//	c, err := client.New(addr, client.WithStream(client.UDPFrom(":20000", addr)))
+func UDPFrom(local, remote string) StreamOpener {
+	return func(ctx context.Context) (io.ReadWriteCloser, net.Addr, error) {
+		la, err := net.ResolveUDPAddr("udp", local)
+		if err != nil {
+			return nil, nil, err
+		}
+		d := net.Dialer{LocalAddr: la}
+		conn, err := d.DialContext(ctx, "udp", remote)
+		if err != nil {
+			return nil, nil, err
+		}
+		return udpConn{conn}, conn.RemoteAddr(), nil
+	}
+}
+
 // udpConn is a connected UDP socket whose errors for one datagram do not
 // end the channel: an ICMP port unreachable, while the outstation is not
 // listening yet or restarts, makes the next read fail with ECONNREFUSED,
 // and the request is repeated by the response timeout instead.
+//
+// The channel reads it a datagram at a time (channel.DatagramStream), so
+// that a datagram that carries several frames is read whole (IEEE
+// 1815-2012 clause 13.2.3.2.3).
 type udpConn struct{ net.Conn }
 
 func (u udpConn) Read(b []byte) (int, error) {
@@ -41,6 +66,16 @@ func (u udpConn) Read(b []byte) (int, error) {
 		}
 		time.Sleep(time.Millisecond) // a socket that keeps failing does not spin
 	}
+}
+
+// ReadDatagram returns the next datagram, whole.
+func (u udpConn) ReadDatagram() ([]byte, error) {
+	dg := make([]byte, 65535)
+	n, err := u.Read(dg)
+	if err != nil {
+		return nil, err
+	}
+	return dg[:n], nil
 }
 
 func (u udpConn) Write(b []byte) (int, error) {

@@ -11,7 +11,8 @@ import "fmt"
 // MACAlgorithm identifies the MAC algorithm and the length of the MAC.
 type MACAlgorithm uint8
 
-// MAC algorithms (IEEE 1815-2012 Table A-12).
+// MAC algorithms: the MAC algorithm field of g120v1 (IEEE 1815-2012
+// A.45.1.2.2).
 const (
 	MACNone              MACAlgorithm = 0
 	MACHMACSHA1Trunc4    MACAlgorithm = 1 // obsolete
@@ -103,7 +104,8 @@ func (k KeyStatus) String() string {
 // AuthErrorCode is the error code of an authentication error object.
 type AuthErrorCode uint8
 
-// Authentication error codes (IEEE 1815-2012 Table A-14).
+// Authentication error codes: the error code of g120v7 (IEEE 1815-2012
+// A.45.7.2.2).
 const (
 	AuthErrAuthenticationFailed        AuthErrorCode = 1
 	AuthErrAggressiveModeNotSupported  AuthErrorCode = 4

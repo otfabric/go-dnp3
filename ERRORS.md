@@ -25,14 +25,16 @@ How failures are reported, and how to tell them apart.
 | The client or server was closed | `dnp3.ErrClosed` | `errors.Is` |
 | Too many requests waiting; `Connect` while connected | wraps `dnp3.ErrBusy` | `errors.Is` |
 | A response with NO_FUNC_CODE_SUPPORT, OBJECT_UNKNOWN, PARAMETER_ERROR or ALREADY_EXECUTING | `*dnp3.IINError` | `errors.As` |
-| A control echoed with a status other than SUCCESS | `*dnp3.CommandError` | `errors.As` |
+| A control echoed with a status other than SUCCESS, or a control response cut at the first failed object (4.4.4.3 Rule 6) | `*dnp3.CommandError` with that status | `errors.As` |
 | A file operation refused | `*dnp3.FileError` | `errors.As` |
-| An authentication error from the peer | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
-| A challenge without secure authentication configured, for another MAC algorithm, or before the session keys were changed | wraps `dnp3.ErrAuthentication` (with an update key, the client then changes the keys at once) | `errors.Is` |
+| An authentication error from the peer | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication`; also from a no-ack request whose challenge reply was refused | `errors.As`, `errors.Is` |
+| A challenge without secure authentication configured, for another MAC algorithm (an 8-octet MAC over TCP/UDP unless `WithChallengeMACs` allows it), or before the session keys were changed | wraps `dnp3.ErrAuthentication` (with an update key, the client then changes the keys at once) | `errors.Is` |
+| A critical request while the session keys are not valid yet, with an update key: a function Table 7-7 marks MANDATORY, or one `WithAggressiveMode` names | wraps `dnp3.ErrAuthentication`; the request is not sent, and the client changes the keys at once | `errors.Is` |
 | An aggressive mode request, or a challenge reply that came too late, refused | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
-| A response that does not fit the request (a control echo that differs, a missing or unexpected object, a wrong file block, an `ActivateConfig` response without a valid g91v1 status) | wraps `dnp3.ErrProtocol`; a fragment with an unexpected sequence number is ignored, so the request times out | `errors.Is` |
+| A session key change whose key status is not authentic (wrong MAC with the last monitoring key), names another user or key wrap algorithm, or whose confirmation is not OK | wraps `dnp3.ErrAuthentication` | `errors.Is` |
+| A response that does not fit the request (a control echo that differs, a missing or unexpected object, a wrong file block, an `ActivateConfig` response without a valid g91v1 status) | wraps `dnp3.ErrProtocol`. Awaiting the first fragment, one with another sequence number or without FIR is ignored; during a multi-fragment response, an unexpected fragment abandons the response with `ErrProtocol` (Table 6-2); a SELECT echo that differs from the request in any octet is `ErrProtocol`, and no OPERATE is sent | `errors.Is` |
 | Headers of a request that do not encode | the `app` codec error (for example `app.ErrInvalidValue`) | `errors.Is` |
-| An option or argument that cannot be used | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
+| An option or argument that cannot be used, a request larger than `WithMaxRequestFragment`, a `Command` with Queue set or a status other than 0 or 126, a `TimeSync` value beyond `TimeSyncClearNeedTime` | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
 | `Client.Broadcast` | only local errors: `ErrInvalidOption` (not a broadcast address, a function that needs an answer), `ErrNotConnected`, send errors; the outstations answer nothing, IIN1.0 shows in their next response | `errors.Is` |
 | The caller's context ended | `context.Canceled`, `context.DeadlineExceeded` | `errors.Is` |
 
@@ -75,6 +77,26 @@ a failed write, a keep-alive that went unanswered (that one wraps
 `ErrTimeout` too). The request that was waiting fails with it; a client with
 `WithReconnect` reconnects, and the next request can succeed.
 
+A NACK with DFC set to a confirmed frame (`Link.Confirmed`) fails the
+send with `ErrProtocol` ("secondary station is busy"); the frame is not
+repeated (Table 9-6).
+
+On the outstation, a connection ends with:
+
+- `ErrClosed` when its master is already connected over another
+  connection that answers a link status request (13.2.3.3);
+- `ErrConnectionLost`, "replaced by a new connection", for the old
+  connection that did not answer it;
+- `ErrTimeout` when no master sent a frame within the keep-alive interval
+  and the link timeout.
+
+`server.WithMasterIPs` without a prefix or with an invalid one,
+`ServeByMasterIP` without routes, with an invalid prefix or without
+exactly one target in a route, `ServeUDPFixed` with a peer that is not a
+UDP address, `server.WithFileTimeout` with a timeout of 0 or less or a
+class outside 1..3, and `client.WithDualEndpoint` with a nil listener or
+together with `WithStream` fail with `ErrInvalidOption`.
+
 A `Connect` whose startup sequence fails (a refused session key change, an
 integrity poll without an answer) returns that error and closes the
 channel: the client is `StateDisconnected`. A step the outstation answers
@@ -97,7 +119,14 @@ parse). `app.ParseActivateConfigStatus` fails with `app.ErrMalformed`, and
 `app.ActivateConfigStatus.Raw` with `app.ErrInvalidValue` for a status that
 does not fit the object; an outstation answers an `ActivateConfigHandler`
 status that does not encode, or does not fit a fragment, with
-PARAMETER_ERROR. A request whose
+PARAMETER_ERROR. `app.Fragment.Encode` fails with `app.ErrInvalidValue`
+for a BCD value that does not fit its variation, a floating-point
+attribute of a size other than 4 or 8 octets, a g81v1 fill above 127, and,
+in a response, a group 60 or variation 0 header (`app.ErrInvalidQualifier`
+for qualifier 0x06). `app.Decode` reports the same headers in a response,
+a floating-point attribute of another size and a BCD sign character
+outside the most significant position with `app.ErrMalformed`
+(`app.ErrInvalidQualifier` for qualifier 0x06). A request whose
 own headers do not encode fails with the codec error itself. An outstation
 answers a request it cannot decode with the IIN2 bit the standard prescribes (OBJECT_UNKNOWN for
 `ErrUnknownObject`, NO_FUNC_CODE_SUPPORT for `ErrUnknownFunction`,
@@ -114,6 +143,8 @@ PARAMETER_ERROR otherwise).
 | `transport.ErrEmpty` | A segment without a header octet |
 | `transport.ErrNoFirst` | A segment without FIR while no fragment was being assembled |
 | `transport.ErrSequence` | A segment whose sequence number does not follow the previous one; the partial fragment is discarded |
+| `transport.ErrDuplicate` | A segment that repeats the previous one octet for octet (Table 8-1); it is discarded and the fragment goes on. Not an error of the channel |
+| `transport.ErrNoData` | A segment with a transport header and no data octets (8.2.2) |
 | `transport.ErrTooLarge` | A fragment grew beyond the reassembler's limit and is discarded |
 | `secauth.ErrKeyWrap` | Wrapped key data does not unwrap: a wrong key, damaged data, a failed integrity check, a wrong session key length, or a key status message that differs from the last one sent |
 
@@ -126,6 +157,11 @@ fragment. Whichever ends first decides the error: the context's own error,
 or one wrapping `ErrTimeout`. A canceled request does not cancel what the
 outstation already received; a control that timed out may have been
 executed.
+
+With secure authentication, an outstation stops sending error messages past
+Max Error Messages Sent (3 by default) until the next session key change: a
+master with a wrong key then gets `dnp3.ErrTimeout` instead of
+`*dnp3.AuthError`.
 
 ## Retries
 

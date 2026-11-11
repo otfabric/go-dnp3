@@ -63,7 +63,7 @@ var families = map[string]string{
 	"timeInterval": "fTimeInterval", "timeIntervalUnits": "fTimeIntervalUnits", "cto": "fCTO",
 	"delayCoarse": "fDelayCoarse", "delayFine": "fDelayFine", "octets": "fOctets", "bcd": "fBCD",
 	"uint8": "fUint8", "dataSetChars": "fDataSetChars", "secStat": "fSecStat", "attribute": "fAttribute", "raw": "fRaw", "activation": "fActivation",
-	"fileAuth": "fFileAuth", "fileCommand": "fFileCommand", "fileCommandStatus": "fFileCommandStatus",
+	"bufferFill": "fBufferFill", "fileAuth": "fFileAuth", "fileCommand": "fFileCommand", "fileCommandStatus": "fFileCommandStatus",
 	"fileTransport": "fFileTransport", "fileTransportStatus": "fFileTransportStatus",
 	"fileDescriptor": "fFileDescriptor", "fileSpec": "fFileSpec", "auth": "fAuth",
 }

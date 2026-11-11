@@ -21,10 +21,26 @@ API.md lists the whole API; INTEROPERABILITY.md what is implemented, clause by c
 ## Constants
 
 ```go
+const (
+	DefaultExpectedKeyChangeInterval = 30 * time.Minute
+	DefaultExpectedKeyChangeCount    = 2000
+	DefaultMaxKeyStatusRequests      = 5
+)
+```
+
+The defaults of the expected session key change (IEEE 1815-2012 clause 7.6.1.4.5, which recommends twice the master's 15 minutes and 1000 messages) and of the maximum session key status count (7.6.1.4.6).
+
+```go
 const DefaultEventLimit = 100
 ```
 
 DefaultEventLimit is the number of events of each point type an association buffers when no limit is configured.
+
+```go
+const DefaultFileTimeout = 5 * time.Minute
+```
+
+DefaultFileTimeout is how long an open file may go without a request naming its handle before the outstation closes it (IEEE 1815-2012 4.4.17.1.1, p. 67), when WithFileTimeout does not set it.
 
 ```go
 const DefaultPort = 20000
@@ -33,16 +49,22 @@ const DefaultPort = 20000
 DefaultPort is the registered DNP3 port.
 
 ```go
-const DefaultReplyTimeout = 10 * time.Second
+const DefaultReplyTimeout = 2 * time.Second
 ```
 
-DefaultReplyTimeout is how long a challenge waits for its reply when SecureAuth.ReplyTimeout is zero.
+DefaultReplyTimeout is how long a challenge waits for its reply when SecureAuth.ReplyTimeout is zero: 2 seconds (IEEE 1815-2012 clause 7.6.1.4.1).
+
+```go
+const DefaultTLSPort = 19999
+```
+
+DefaultTLSPort is the port of DNP3 over TLS: IEEE 1815-2012 clause 7.8.8 makes 19999 the default, and clause 13.2.2.2 requires devices that use TLS to support it.
 
 ```go
 const MaxScheduledFreezes = 16
 ```
 
-MaxScheduledFreezes is how many FREEZE\_AT\_TIME requests the outstation keeps waiting at once; a further one is refused. They belong to the Server: a periodic one keeps its place until Close, whatever happens to the master's connection.
+MaxScheduledFreezes is how many FREEZE\_AT\_TIME schedules the outstation keeps at once; a request for more is refused. A schedule belongs to the Server: a periodic one keeps its place until a new FREEZE\_AT\_TIME for its points or Close, whatever happens to the master's connection.
 
 ## Variables
 
@@ -51,6 +73,23 @@ var DefaultCritical = secauth.DefaultCritical
 ```
 
 DefaultCritical are the function codes challenged by default: the ones that change the outstation's state.
+
+## Functions
+
+### func ServeByMasterIP
+
+```go
+func ServeByMasterIP(l net.Listener, routes ...Route) error
+```
+
+ServeByMasterIP accepts connections on l and gives each to the route of the master's IP address: method 1 of IEEE 1815-2012 clause 13.2.3.5.1, which clause 13.2.3.5.4 requires of an outstation that supports multiple masters. The first route whose prefix holds the address takes the connection; one that no route takes is closed. Method 2, a port for each master, is a listener for each Server or Group.
+
+The targets serve the connections as their own Serve does, with their TLS handshake, WithMaxConnections and WithMasterIPs; give l a listener of tls.NewListener for TLS. Closing a target closes its connections; closing l stops the accepting. ServeByMasterIP returns the error that stopped l, wrapping net.ErrClosed after l.Close.
+
+	l, _ := net.Listen("tcp", ":20000")
+	go server.ServeByMasterIP(l,
+		server.Route{Masters: netip.MustParsePrefix("192.0.2.1/32"), Server: scada},
+		server.Route{Masters: netip.MustParsePrefix("198.51.100.0/24"), Group: engineering})
 
 ## Types
 
@@ -66,6 +105,8 @@ ActivateConfigHandler is an optional interface of the [Handler](#type-handler) f
 
 headers are the request's objects: file specifications (g70v8, as app.FileSpecification) or octet strings (g110) that name the configurations to activate. ActivateConfig returns the status of requested operation and the IIN2 error bits of the response. Without an error bit the response carries the status in one g91v1 object with qualifier 0x07 (count 1); with one, the response has no object. A status that does not encode (app.ActivateConfigStatus.Raw) or does not fit the largest response fragment is answered with IIN2.2 (PARAMETER\_ERROR).
 
+ActivateConfig checks the request; it does not activate. IEEE 1815-2012 4.4.20 (p. 78) has the outstation complete the transmission of the g91v1 response before it starts the activation, and activate nothing when a check fails. The outstation sends the response after ActivateConfig returns, so a handler starts the activation after that, for example from a goroutine. The response's IIN reflect the current conditions: the handler does not set IIN2.5 for a failed check, and IIN1.7 is set by the restart itself, not in anticipation of it.
+
 ### type ApplicationHandler
 
 ```go
@@ -74,7 +115,9 @@ type ApplicationHandler interface {
 }
 ```
 
-ApplicationHandler is an optional interface of the [Handler](#type-handler) for the function codes that act on the outstation's applications: INITIALIZE\_DATA, INITIALIZE\_APPL, START\_APPL, STOP\_APPL, SAVE\_CONFIG and ACTIVATE\_CONFIG. It returns the IIN2 error bits of the response; 0 is success. Without it these functions are answered with IIN2.0.
+ApplicationHandler is an optional interface of the [Handler](#type-handler) for the function codes that act on the outstation's applications: INITIALIZE\_DATA, INITIALIZE\_APPL, START\_APPL, STOP\_APPL, SAVE\_CONFIG and ACTIVATE\_CONFIG. It returns the IIN2 bits of the response: the request errors IIN2.0 to IIN2.2, or 0 for success, and IIN2.4 (ALREADY\_EXECUTING, IEEE 1815-2012 4.5.13, p. 87) while the operation requested is still running; other bits are ignored. Without it these functions are answered with IIN2.0.
+
+A successful SAVE\_CONFIG is answered with a time delay of 0 (g52v2, 4.4.12, p. 60): the handler has saved the configuration when it returns. INITIALIZE\_DATA is obsolete, and new designs shall not implement it (4.4.10, p. 58): a handler returns app.IINNoFuncCodeSupport for it.
 
 ### type AttributeSetWriteHandler
 
@@ -123,8 +166,17 @@ type Command struct {
 	// Index is the point index.
 	Index uint32
 	// Value is an app.CROB or an app.AnalogOutput. Its Status field is
-	// zero: a control whose request carries another status is answered
-	// with FORMAT_ERROR without calling the Handler (TB2014-002).
+	// zero: a control whose request carries another status does not reach
+	// the Handler. NON_PARTICIPATING (126) is echoed unchanged (IEEE
+	// 1815-2012 Table 11-7 footnote a, p. 330), any other status is
+	// answered with FORMAT_ERROR (TB2014-002), and a CROB with the queue
+	// bit set with NOT_SUPPORTED (A.8.1.2.2, p. 506).
+	//
+	// A CROB with Count 0 is passed on as it came. IEEE 1815-2012
+	// A.8.1.2.2 (p. 506) makes support for it optional; an outstation that
+	// supports it does not change the output, ignores the on and off
+	// times and returns the status it would have returned. That is the
+	// Handler's to do.
 	Value app.Value
 	// Master is the link address of the master that sent the control.
 	Master link.Address
@@ -208,7 +260,7 @@ AddDoubleBitInput adds a double-bit binary input (groups 3 and 4).
 func (db *Database) AddFrozenAnalogInput(index uint32, cfg PointConfig, v app.Analog) error
 ```
 
-AddFrozenAnalogInput adds a frozen analog input (groups 31 and 33).
+AddFrozenAnalogInput adds a frozen analog input (groups 31 and 33). A freeze request copies the analog input of the same index into it and, with an event class, raises a frozen analog input event at every freeze (IEEE 1815-2012 11.9.1.2, p. 333). Add that analog input too, as the database does not check it; one without it is never frozen.
 
 #### func (Database) AddFrozenCounter
 
@@ -216,7 +268,7 @@ AddFrozenAnalogInput adds a frozen analog input (groups 31 and 33).
 func (db *Database) AddFrozenCounter(index uint32, cfg PointConfig, v app.Counter) error
 ```
 
-AddFrozenCounter adds a frozen counter (groups 21 and 23). A freeze request copies the counter of the same index into it.
+AddFrozenCounter adds a frozen counter (groups 21 and 23). A freeze request copies the counter of the same index into it and, with an event class, raises a frozen counter event at every freeze (IEEE 1815-2012 11.9.5.2, p. 341). A frozen counter is the frozen value of the counter of its index: add that counter too, as the database does not check it; one without it is never frozen.
 
 #### func (Database) AddOctetString
 
@@ -472,7 +524,7 @@ Close stops the listeners and closes every server of the group, and with them th
 func (g *Group) ListenAndServe(addr string) error
 ```
 
-ListenAndServe listens on the TCP address addr (":20000" when empty), with the TLS configuration of the first server's WithTLS when it has one, and serves until Close.
+ListenAndServe listens on the TCP address addr, with the TLS configuration of the first server's WithTLS when it has one, and serves until Close. An empty addr is ":20000", or ":19999" (DefaultTLSPort) with TLS.
 
 #### func (Group) Serve
 
@@ -551,15 +603,21 @@ Select returns app.StatusSuccess.
 
 ```go
 type Link struct {
-	// Confirmed sends user data as CONFIRMED_USER_DATA. The default,
-	// unconfirmed, is what IEEE 1815-2012 recommends on TCP.
+	// Confirmed sends user data as CONFIRMED_USER_DATA. Set it on serial
+	// links only: IEEE 1815-2012 clause 13.2.1.1 forbids confirmed link
+	// frames over TCP and UDP, and a channel on a network stream with it
+	// logs a warning. The default is UNCONFIRMED_USER_DATA.
 	Confirmed bool
 	// Timeout is the wait for a link layer answer. Zero means 2 seconds.
 	Timeout time.Duration
 	// Retries is the number of repeats of an unanswered primary frame.
 	Retries int
-	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent.
-	// Zero means 60 seconds; a negative value disables it.
+	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent
+	// (the keep-alive of IEEE 1815-2012 clause 13.2.3.3.1); a peer that
+	// does not answer it ends the connection. Zero means 60 seconds; any
+	// positive duration is taken. A negative value disables it, which the
+	// clause allows for testing only: in service, set a long interval
+	// instead.
 	KeepAlive time.Duration
 }
 ```
@@ -659,13 +717,21 @@ func WithConfirmTimeout(d time.Duration) Option
 
 WithConfirmTimeout sets how long the outstation waits for the application confirmation of a response or unsolicited response. The default is 5 seconds.
 
+#### func WithDeadbandIntegerOnly
+
+```go
+func WithDeadbandIntegerOnly(enabled bool) Option
+```
+
+WithDeadbandIntegerOnly reports analog input deadbands (group 34) in variations 1 and 2 only, for masters without floating point, as IEEE 1815-2012 A.18.3.2.3 (p. 609) requires a device that reports variation 3 to be configurable: a deadband is rounded to the nearest integer and limited to 4294967295, and a READ of g34v3 is answered with IIN2.1. Masters can still write any variation.
+
 #### func WithEventLimits
 
 ```go
 func WithEventLimits(limits map[PointType]int) Option
 ```
 
-WithEventLimits sets the number of events of each point type an association buffers; types not named keep DefaultEventLimit. When a buffer is full the oldest event of the type is discarded and the outstation reports IIN2.3 (EVENT\_BUFFER\_OVERFLOW).
+WithEventLimits sets the number of events of each point type an association buffers; types not named keep DefaultEventLimit. When a buffer is full the oldest event of the type is discarded and the outstation reports IIN2.3 (EVENT\_BUFFER\_OVERFLOW) until the master has confirmed enough events for every buffer that lost one to have room for another (IEEE 1815-2012 4.5.12). A limit of 0 buffers no event of the type: an event of it with a class is lost, and IIN2.3 then stays set until a restart; give such points class 0 instead.
 
 #### func WithFileServer
 
@@ -674,6 +740,14 @@ func WithFileServer(fs FileServer) Option
 ```
 
 WithFileServer serves file transfer (group 70) from fs.
+
+#### func WithFileTimeout
+
+```go
+func WithFileTimeout(timeout time.Duration, class Class) Option
+```
+
+WithFileTimeout sets how long an open file may go without a request naming its handle; the default is DefaultFileTimeout. The outstation then closes it, aborted, and reports a file transport status event (g70v6) with status HANDLE\_EXPIRED in the event class (1..3, the default 1), as IEEE 1815-2012 4.4.17.1.1 (p. 67) and 5.3.8 Rule 12 (p. 120) require; the timeout must be configurable up to one hour.
 
 #### func WithHandler
 
@@ -698,6 +772,16 @@ func WithLogger(l dnp3.Logger) Option
 ```
 
 WithLogger sets the logger; logging is silent by default.
+
+#### func WithMasterIPs
+
+```go
+func WithMasterIPs(prefixes ...netip.Prefix) Option
+```
+
+WithMasterIPs limits the masters to those whose IP address lies in one of prefixes: a TCP connection from another address is closed when it is accepted, and a UDP datagram from another address is ignored. The default accepts any address. IEEE 1815-2012 clause 13.2.3.2.2 d requires an outstation to be configurable to accept UDP requests only from specific master IP addresses, and clause 13.2.3.1.4 a recommends the same validation of TCP connection requests. A single address is a prefix of its full length, such as netip.MustParsePrefix("192.0.2.7/32").
+
+The check applies to Serve, ListenAndServe, ServeUDP, ServeUDPTo and ServeUDPFixed; ServeConn serves the stream it is given.
 
 #### func WithMasters
 
@@ -742,7 +826,7 @@ WithMetrics sets the metrics callbacks. A value that also implements dnp3.Server
 #### func WithSecureAuthentication
 
 ```go
-func WithSecureAuthentication(sa SecureAuth) Option
+func WithSecureAuthentication(cfg SecureAuth) Option
 ```
 
 WithSecureAuthentication enables Secure Authentication: critical requests are executed only after the master answered a challenge with the right MAC, or when they carry it themselves in aggressive mode. The outstation takes part in the session key change and keeps the security statistics (g121, g122) per master. A user number of 0, which IEEE 1815-2012 reserves for an unknown user, is taken as 1, the default user.
@@ -865,6 +949,10 @@ const (
 	// app.AbsoluteTime with Units), for example a schedule. They have no
 	// events and no class.
 	TimeAndInterval
+	// fileStatusEvent are the file transport status events (g70v6) of the
+	// files the outstation closed on its own (IEEE 1815-2012 4.4.17.1.1):
+	// internal, with no points and no static objects.
+
 )
 ```
 
@@ -906,6 +994,18 @@ type RestartHandler interface {
 
 RestartHandler is an optional interface of the [Handler](#type-handler): without it, COLD\_RESTART and WARM\_RESTART are answered with IIN2.0 (NO\_FUNC\_CODE\_SUPPORT).
 
+### type Route
+
+```go
+type Route struct {
+	Masters netip.Prefix
+	Server  *Server
+	Group   *Group
+}
+```
+
+A Route assigns the connections of the masters whose IP address lies in Masters to one outstation, Server, or to the outstations of one Group. Exactly one of Server and Group is set.
+
 ### type SecureAuth
 
 ```go
@@ -913,29 +1013,71 @@ type SecureAuth struct {
 	// User is the user and its key.
 	User secauth.User
 	// Critical are the function codes the outstation challenges. Nil
-	// selects DefaultCritical.
+	// selects DefaultCritical. The codes Table 7-7 marks MANDATORY
+	// (secauth.MandatoryCritical) are challenged whatever the list says
+	// (clause 7.5.2.3.2 a): a list without them is completed with them.
 	Critical []app.FunctionCode
-	// ReplyTimeout is how long a challenge waits for the master's reply;
-	// a later reply counts as a reply timeout and is refused. Zero
-	// selects DefaultReplyTimeout.
+	// ReplyTimeout is how long a challenge waits for the master's reply
+	// (clause 7.6.1.4.1). When it expires, the challenged request is
+	// discarded and counted as a reply timeout; past Max Reply Timeouts
+	// the session keys become invalid (COMM_FAIL, Table 7-8). Zero selects
+	// DefaultReplyTimeout.
 	ReplyTimeout time.Duration
 	// StatisticsClass is the event class of security statistic events
-	// (g122); zero selects class 1. StatisticsThreshold is the number of
-	// increments of a statistic between two of its events; zero selects
-	// 10.
+	// (g122); zero selects class 1. StatisticsThreshold, when set (at most
+	// 65 535), is the event threshold of every statistic Thresholds does
+	// not name: the number of increments between two of its events.
 	StatisticsClass     Class
 	StatisticsThreshold uint32
+	// Thresholds sets the event threshold (1..65 535) of single statistics
+	// (clause 7.6.1.4.2). A statistic neither names nor StatisticsThreshold
+	// covers has the default of IEEE 1815-2012 Table 7-6
+	// (secauth.Statistic.DefaultThreshold). The thresholds of
+	// authentication failures, reply timeouts, rekeys due to authentication
+	// failure and error messages sent are also the steps of the maxima the
+	// state machine acts on (Table 7-15): for example, error messages stop
+	// once Error Messages Sent exceeds Max Error Messages Sent, until the
+	// next valid session key change.
+	Thresholds map[secauth.Statistic]uint16
+	// NoAggressiveMode refuses aggressive mode requests (clause 7.6.1.4.7):
+	// they are discarded and, within Max Error Messages Sent, answered with
+	// error 4, aggressive mode not supported.
+	NoAggressiveMode bool
+	// ExpectedKeyChangeInterval is how long session keys stay valid
+	// without a session key change (clause 7.6.1.4.5): once it has passed,
+	// the key status is NOT_INIT until the master changes them. Zero
+	// selects DefaultExpectedKeyChangeInterval; a negative value disables
+	// the interval, leaving ExpectedKeyChangeCount. It does not apply to a
+	// pre-shared session key.
+	ExpectedKeyChangeInterval time.Duration
+	// ExpectedKeyChangeCount is how many authentication messages
+	// (challenges, replies and aggressive mode requests) the session keys
+	// serve before they become invalid without a session key change
+	// (clause 7.6.1.4.5). Zero selects DefaultExpectedKeyChangeCount.
+	ExpectedKeyChangeCount uint32
+	// MaxKeyStatusRequests is how many session key status requests the
+	// outstation takes within the expected key change interval before it
+	// reports, as an error in its log, that the limit was exceeded
+	// (clause 7.6.1.4.6). The requests are still answered. 2..255; zero
+	// selects DefaultMaxKeyStatusRequests.
+	MaxKeyStatusRequests int
 }
 ```
 
 SecureAuth configures DNP3 Secure Authentication version 5 (see package secauth): with an update key, the master negotiates the session keys with the session key change; without, a pre-shared session key is used.
+
+The outstation is the challenger of IEEE 1815-2012 Table 7-8, for one user per master (association).
 
 ### type Server
 
 ```go
 type Server struct {
 
-	// scheduled FREEZE_AT_TIME
+	// timeSync is the synchronization state of clock.
+
+	// handles assigns file handles, unique to the outstation.
+
+	// FREEZE_AT_TIME schedules, by the points they name
 
 }
 ```
@@ -988,7 +1130,9 @@ Database returns the point database.
 func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error
 ```
 
-DialAndServe is the outstation's end of a TCP connection that the outstation establishes (the dual end point of IEEE 1815-2012 annex A.3, for an outstation behind a firewall or on a dial-out link): it connects to the master at addr, with TLS when WithTLS was given (the outstation is then the TLS client: the configuration's RootCAs verify the master, its Certificates are presented, ServerName defaults to the host of addr), serves the connection like an accepted one, and connects again when it ends, with the delays of r. It returns when ctx is done (ctx.Err()) or the server is closed (nil).
+DialAndServe is the outstation's end of a TCP connection that the outstation establishes (the dual end point of IEEE 1815-2012 clause 13.2.3.1.3, for an outstation behind a firewall or on a dial-out link): it connects to the master at addr, with TLS when WithTLS was given (the outstation is then the TLS client: the configuration's RootCAs verify the master, its Certificates are presented, ServerName defaults to the host of addr), serves the connection like an accepted one, and connects again when it ends, with the delays of r. It returns when ctx is done (ctx.Err()) or the server is closed (nil).
+
+Only one connection to the master stands at a time, and the master's own has priority (clause 13.2.3.1.3): while a master is connected to the server's listener, DialAndServe does not connect, and checks again every r.MinDelay.
 
 #### func (Server) ListenAndServe
 
@@ -996,7 +1140,7 @@ DialAndServe is the outstation's end of a TCP connection that the outstation est
 func (s *Server) ListenAndServe(addr string) error
 ```
 
-ListenAndServe listens on the TCP address addr (":20000" when empty), with TLS when WithTLS was given, and serves until Close.
+ListenAndServe listens on the TCP address addr, with TLS when WithTLS was given, and serves until Close. An empty addr is ":20000", or ":19999" (DefaultTLSPort) with TLS.
 
 #### func (Server) Now
 
@@ -1012,7 +1156,7 @@ Now returns the time of the outstation's clock, which time synchronization sets.
 func (s *Server) Restart()
 ```
 
-Restart behaves as after a restart of the outstation: every association reports IIN1.7 (DEVICE\_RESTART) again, its event buffer is cleared, unsolicited responses start over with a null unsolicited response, and, with WithTimeSync, its time counts as unsynchronized until the next time synchronization (IIN1.4).
+Restart behaves as after a restart of the outstation: every association reports IIN1.7 (DEVICE\_RESTART) again, its event buffer is cleared, unsolicited responses start over with a null unsolicited response, and, with WithTimeSync, its time counts as unsynchronized until the next time synchronization (IIN1.4). Points get the classes they were added with again, undoing ASSIGN\_CLASS (IEEE 1815-2012 4.4.14, p. 63); deadbands written by a master are kept.
 
 #### func (Server) Serve
 
@@ -1039,6 +1183,14 @@ func (s *Server) ServeUDP(pc net.PacketConn) error
 ServeUDP serves DNP3 over UDP on pc until Close. Each datagram carries link frames; responses go to the address the last datagram came from, so one socket serves one master at a time (a master behind another address takes over the socket when it sends).
 
 Until a master has sent a datagram there is nowhere to send to: what the outstation sends before (the null unsolicited response, for one) is dropped, as an unreachable datagram would be, and repeated by the unsolicited retries. Use ServeUDPTo to name the master's address up front.
+
+#### func (Server) ServeUDPFixed
+
+```go
+func (s *Server) ServeUDPFixed(pc net.PacketConn, peer net.Addr) error
+```
+
+ServeUDPFixed serves DNP3 over UDP on pc with responses always sent to peer, the master's address and port: case 1 of IEEE 1815-2012 Table 13-1, "send responses to a fixed port at the master", where ServeUDP is case 2 (reply to the port the request came from). Datagrams are taken from peer's IP address only, from any of its ports; WithMasterIPs, when given, applies as well.
 
 #### func (Server) ServeUDPTo
 
@@ -1075,8 +1227,14 @@ type Unsolicited struct {
 	// events of the classes the master enables (or of Classes from the
 	// start).
 	Enabled bool
-	// Classes are the classes (1..3) enabled before any ENABLE_UNSOLICITED,
-	// IEEE 1815-2012's "unsolicited allowed at startup".
+	// Classes are the classes (1..3) the outstation reports unsolicited
+	// before any ENABLE_UNSOLICITED, once the master has confirmed the
+	// null unsolicited response. This departs from IEEE 1815-2012, under
+	// which an outstation sends no data unsolicited until the master
+	// enables it with ENABLE_UNSOLICITED (5.1.1.1.1 Rule 3, p. 101;
+	// 4.4.13, p. 60). It is meant for masters that never send
+	// ENABLE_UNSOLICITED; leave it empty, the default, for a master that
+	// enables the classes it wants.
 	Classes []Class
 	// HoldTime is how long new events are collected before they are sent
 	// unsolicited. Zero sends at once.

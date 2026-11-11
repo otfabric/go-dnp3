@@ -108,13 +108,33 @@ func TestFileWrite(t *testing.T) {
 	}{
 		{0, "abcd", app.FileSuccess},
 		{0, "abcd", app.FileSuccess}, // a repeat of the last block is not written twice
-		{2, "efgh", app.FileBlockSequence},
-		{1, "efghi", app.FileWriteBlockSize},
 		{1, "ef", app.FileSuccess},
 	} {
 		if got := write(h, c.block, false, []byte(c.data)); got.Status != c.want {
 			t.Fatalf("block %d %q: %s, want %s", c.block, c.data, got.Status, c.want)
 		}
+	}
+	// An error closes the file, aborted, and its handle is invalid after
+	// it (IEEE 1815-2012 5.3.8 Rule 14): a block out of sequence, and one
+	// larger than negotiated (BUFFER_OVERRUN, of the g70v6 codes).
+	for _, c := range []struct {
+		block uint32
+		data  string
+		want  app.FileStatus
+	}{
+		{2, "efgh", app.FileBlockSequence},
+		{0, "efghi", app.FileBufferOverrun},
+	} {
+		e := open(app.FileModeWrite, 4)
+		if got := write(e.Handle, c.block, false, []byte(c.data)); got.Status != c.want {
+			t.Fatalf("block %d %q: %s, want %s", c.block, c.data, got.Status, c.want)
+		}
+		if got := write(e.Handle, 0, false, []byte("ab")); got.Status != app.FileInvalidHandle {
+			t.Fatalf("write after %s: %s", c.want, got.Status)
+		}
+	}
+	if s.aborted != 2 {
+		t.Fatalf("%d files aborted after errors, want 2", s.aborted)
 	}
 	if got := write(h+100, 0, true, []byte("x")); got.Status != app.FileInvalidHandle {
 		t.Fatalf("unknown handle: %s", got.Status)
@@ -134,7 +154,7 @@ func TestFileWrite(t *testing.T) {
 	if w.MaxBlockSize != uint16(transport.DefaultMaxFragment-20) {
 		t.Fatalf("default block size %d", w.MaxBlockSize)
 	}
-	if st := closeFile(app.FuncAbortFile, w.Handle); st.Status != app.FileSuccess || s.aborted != 1 {
+	if st := closeFile(app.FuncAbortFile, w.Handle); st.Status != app.FileSuccess || s.aborted != 3 {
 		t.Fatalf("abort: %+v, %d aborted", st, s.aborted)
 	}
 	// At most 16 files are open at once.
@@ -175,8 +195,15 @@ func TestFileBlockLimits(t *testing.T) {
 		if c.mode != app.FileModeRead {
 			m = newMaster(t, append(c.opts, WithFileServer(&sink{written: map[string][]byte{}}))...)
 		}
-		m.send(req(1, app.FuncOpenFile, app.FreeFormat(app.G70V3, app.FileCommand{Name: "f", Mode: c.mode, Size: 1, RequestID: 1})))
-		if st := fileStatus(t, m.recvFunc(app.FuncResponse)); st.Status != app.FileSuccess || int(st.MaxBlockSize) != c.want {
+		open, _ := req(1, app.FuncOpenFile, app.FreeFormat(app.G70V3, app.FileCommand{Name: "f", Mode: c.mode, Size: 1, RequestID: 1})).Encode()
+		m.sendRaw(open)
+		f := m.recv()
+		if f.Function == app.FuncAuthResponse {
+			// OPEN_FILE is a mandatory critical function (IEEE 1815-2012
+			// Table 7-7), challenged whatever SecureAuth.Critical lists.
+			f = replyTo(m, f, open, testSessionKey)
+		}
+		if st := fileStatus(t, f); st.Status != app.FileSuccess || int(st.MaxBlockSize) != c.want {
 			t.Errorf("case %d: %+v, want block size %d", i, st, c.want)
 		}
 	}

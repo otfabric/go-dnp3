@@ -306,9 +306,14 @@ func TestServerSecurityStatistics(t *testing.T) {
 			if !r.OK || len(r.Objects) != int(secauth.NumStatistics) {
 				t.Fatalf("read of the statistics: ok=%v %s, %d objects", r.OK, r.errorCode(), len(r.Objects))
 			}
+			// Association ID 0: measured on the association that reads it
+			// (IEEE 1815-2012 A.46.1.2.2, p. 759).
 			for _, o := range r.Objects {
-				if o.Association == nil || *o.Association != float64(a.fixture(t).Outstation.MasterAddress) {
-					t.Errorf("statistic %d: association %v", o.Index, o.Association)
+				switch {
+				case o.Association == nil:
+					t.Errorf("statistic %d: no association", o.Index)
+				case *o.Association != 0:
+					t.Errorf("statistic %d: association %v, want 0", o.Index, *o.Association)
 				}
 			}
 			r = runClient(t, a, port, "event-poll", "--classes", "3", "--sa-update-key", key)

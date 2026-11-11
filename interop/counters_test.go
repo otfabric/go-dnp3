@@ -171,10 +171,12 @@ func objectsOf(r *result, group int) string {
 	return strings.Join(out, " ")
 }
 
-// TestServerFrozenEventsOnChange: go-dnp3's outstation raises a frozen counter
-// event only for a frozen value that changed, as every reference master sees
-// it, with the time of the freeze in g23v5, g23v6 and g21v5.
-func TestServerFrozenEventsOnChange(t *testing.T) {
+// TestServerFrozenEventsAtEveryFreeze: go-dnp3's outstation raises a frozen
+// counter event for every frozen counter with a class at each freeze, also
+// for an unchanged value (IEEE 1815-2012 11.9.5.2, p. 341), as every
+// reference master sees it, with the time of the freeze in g23v5, g23v6 and
+// g21v5.
+func TestServerFrozenEventsAtEveryFreeze(t *testing.T) {
 	requireDocker(t)
 	for _, a := range adapters(t) {
 		t.Run(a.name, func(t *testing.T) {
@@ -203,9 +205,9 @@ func TestServerFrozenEventsOnChange(t *testing.T) {
 			}
 			poll("g23v5:0=100 g23v6:1=200", freeze())
 
-			// Unchanged: no event, and the snapshot still moves.
+			// Unchanged: the events again, and the snapshot moves.
 			from := freeze()
-			poll("", from)
+			poll("g23v5:0=100 g23v6:1=200", from)
 			r := runClient(t, a, port, "read", "--group", "21", "--variation", "5", "--start", "0", "--stop", "1")
 			if got := objectsOf(r, 21); got != "g21v5:0=100 g21v5:1=200" {
 				t.Fatalf("g21v5: %q", got)
@@ -216,11 +218,11 @@ func TestServerFrozenEventsOnChange(t *testing.T) {
 				}
 			}
 
-			// One value changes: that event alone.
+			// One value changes: both events, with the new value.
 			if err := st.srv.Database().UpdateCounter(0, app.Counter{Value: 105, Flags: app.FlagOnline}); err != nil {
 				t.Fatal(err)
 			}
-			poll("g23v5:0=105", freeze())
+			poll("g23v5:0=105 g23v6:1=200", freeze())
 		})
 	}
 }

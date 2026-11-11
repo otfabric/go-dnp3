@@ -3,7 +3,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -20,10 +19,17 @@ import (
 	"github.com/otfabric/go-dnp3/internal/channel"
 	"github.com/otfabric/go-dnp3/internal/logx"
 	"github.com/otfabric/go-dnp3/link"
+	"github.com/otfabric/go-dnp3/secauth"
 )
 
-// DefaultPort is the registered DNP3 port, also used for TLS.
+// DefaultPort is the registered DNP3 port (IEEE 1815-2012 clause
+// 13.2.2.2), the default of an address without a port.
 const DefaultPort = 20000
+
+// DefaultTLSPort is the default port of DNP3 over TLS (IEEE 1815-2012
+// clauses 7.8.8 and 13.2.2.2): the port of an address without one when
+// WithTLS is set.
+const DefaultTLSPort = 19999
 
 // Client is a DNP3 master for one outstation. Create it with [New] or
 // [Dial]. It is safe for concurrent use; requests are executed one at a
@@ -41,23 +47,25 @@ type Client struct {
 	state   dnp3.State
 	closed  bool
 	dialing bool
-	pending *transaction
-	lastUns []byte // the last unsolicited response, to recognise repeats
+	// held is the channel whose startup sequence a Connect runs: its loss
+	// is that Connect's error, not a reason to reconnect. When its watch
+	// sees it lost, it sets heldLost and heldErr for the Connect.
+	held     *channel.Channel
+	heldLost bool
+	heldErr  error
+	pending  *transaction
+	// proc is the state of the master procedures of the current channel.
+	proc procState
 	// integrity is when the last integrity poll completed, so that an
 	// automatic one queued before it is not run as well.
 	integrity time.Time
 	// started is closed when the startup sequence of the current channel
 	// has ended: automatic tasks wait for it.
 	started chan struct{}
-	// sessionKey is the control direction session key negotiated on the
-	// current channel, nil before the first session key change.
-	sessionKey []byte
-	// lastChallenge is the last challenge (g120v1 fragment) received on
-	// the current channel and csq the challenge sequence number aggressive
-	// mode requests continue from.
-	lastChallenge []byte
-	lastMAC       app.MACAlgorithm
-	csq           uint32
+	// auth is the secure authentication state of the current channel and
+	// counters the security statistics.
+	auth     authState
+	counters authCounters
 	// rekey asks the key change loop for a key change now.
 	rekey chan struct{}
 
@@ -77,10 +85,14 @@ type Client struct {
 	// needTime is the NEED_TIME indication of the outstation's latest
 	// response.
 	needTime atomic.Bool
+
+	// dual is the dual end point of WithDualEndpoint, nil without.
+	dual *dualEndpoint
 }
 
 // New returns a client for the outstation at addr ("host:port"; the port
-// defaults to 20000). The client is not connected until Connect.
+// defaults to DefaultPort, 20000, and with WithTLS to DefaultTLSPort,
+// 19999). The client is not connected until Connect.
 func New(addr string, opts ...Option) (*Client, error) {
 	o := defaultOptions()
 	for _, opt := range opts {
@@ -91,9 +103,16 @@ func New(addr string, opts ...Option) (*Client, error) {
 	if o.aggressive != nil && o.auth == nil {
 		return nil, invalidOption("WithAggressiveMode needs WithSecureAuthentication")
 	}
+	if o.dualListener != nil && o.opener != nil {
+		return nil, invalidOption("WithDualEndpoint and WithStream exclude each other")
+	}
 	if o.opener == nil {
 		if _, _, err := net.SplitHostPort(addr); err != nil {
-			addr = net.JoinHostPort(addr, strconv.Itoa(DefaultPort))
+			port := DefaultPort
+			if o.tls != nil {
+				port = DefaultTLSPort
+			}
+			addr = net.JoinHostPort(addr, strconv.Itoa(port))
 		}
 	}
 	c := &Client{
@@ -106,7 +125,11 @@ func New(addr string, opts ...Option) (*Client, error) {
 		closeCh: make(chan struct{}),
 		rekey:   make(chan struct{}, 1),
 	}
+	c.counters = newAuthCounters()
 	c.rm, _ = o.metrics.(dnp3.RequestMetrics)
+	if o.dualListener != nil {
+		c.dual = &dualEndpoint{c: c, l: o.dualListener, allow: o.dualAllow, wake: make(chan struct{}, 1)}
+	}
 	c.events = newDispatcher(c)
 	c.wg.Add(2)
 	go c.events.run()
@@ -143,8 +166,9 @@ func (c *Client) State() dnp3.State {
 
 // Connect establishes the channel and runs the startup sequence of
 // WithStartup (with secure authentication and an update key, the session
-// key change first). When the sequence fails, the channel is closed and
-// the error returned. It fails with dnp3.ErrBusy when the client is
+// key change first), by default an integrity poll. When the sequence
+// fails, for example because the outstation does not answer it, the
+// channel is closed and the error returned. It fails with dnp3.ErrBusy when the client is
 // connected or connecting. With WithReconnect it needs to succeed only
 // once: a lost channel is re-established by the client, and kept when
 // only the startup sequence of the new one failed.
@@ -160,30 +184,67 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 	c.dialing = true
 	c.mu.Unlock()
+	return c.establish(ctx)
+}
+
+// establish connects a client that is dialing and not connected, and
+// leaves it disconnected when that fails.
+//
+// The channel is held during its startup sequence: when it is lost then,
+// its watch leaves the outcome here instead of reconnecting, so that a
+// failed Connect leaves no reconnect behind it, which would dial next to
+// the caller's next Connect.
+func (c *Client) establish(ctx context.Context) error {
 	c.setState(dnp3.StateConnecting, nil)
-	err := c.connect(ctx)
+	ch, err := c.connect(ctx, true)
+	c.mu.Lock()
+	lost, lostErr := c.heldLost, c.heldErr
+	c.held, c.heldLost, c.heldErr = nil, false, nil
 	if err != nil {
 		// A channel whose startup sequence failed is closed: Connect
 		// either connects or leaves the client disconnected.
-		c.mu.Lock()
 		c.dialing = false
-		ch := c.ch
-		c.ch, c.sess = nil, nil
+		if ch != nil && c.ch == ch {
+			c.ch, c.sess = nil, nil
+		}
+		started := c.started
 		c.mu.Unlock()
 		c.setState(dnp3.StateDisconnected, err)
 		if ch != nil {
 			ch.Close(nil)
+			// connect left the startup sequence open (see there).
+			close(started)
 		}
+		return err
 	}
-	return err
+	if !lost {
+		c.mu.Unlock()
+		return nil
+	}
+	// The startup sequence succeeded and the channel was lost right
+	// after it: what its watch would have done.
+	reconnect := !c.closed && c.opts.reconnect != nil && lostErr != nil
+	if reconnect {
+		c.dialing = true
+	}
+	c.mu.Unlock()
+	if !reconnect {
+		c.setState(dnp3.StateDisconnected, lostErr)
+		return nil
+	}
+	c.setState(dnp3.StateConnecting, lostErr)
+	c.wg.Go(c.reconnectLoop)
+	return nil
 }
 
-// connect opens the stream and starts the channel. The caller has set
-// dialing.
-func (c *Client) connect(ctx context.Context) error {
+// connect opens the stream and starts the channel, held for the startup
+// sequence when hold is set (see establish). The caller has set dialing.
+// It returns the channel it started, also when its startup sequence
+// failed.
+func (c *Client) connect(ctx context.Context, hold bool) (*channel.Channel, error) {
 	stream, remote, err := c.open(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %w", dnp3.ErrConnectFailed, err)
+		return nil, fmt.Errorf("%w: %w", dnp3.ErrConnectFailed, err)
 	}
 	ka := c.opts.link.KeepAlive
 	if ka == 0 {
@@ -207,14 +268,25 @@ func (c *Client) connect(ctx context.Context) error {
 	if c.closed {
 		c.mu.Unlock()
 		ch.Close(nil)
-		return dnp3.ErrClosed
+		return nil, dnp3.ErrClosed
+	}
+	if c.ch != nil {
+		// Never two channels: one replaced without being closed would go on
+		// answering the outstation's link status requests, and an
+		// outstation keeps the connection of a connected master (IEEE
+		// 1815-2012 clause 13.2.3.3).
+		c.mu.Unlock()
+		ch.Close(nil)
+		return nil, fmt.Errorf("%w: already connected", dnp3.ErrBusy)
 	}
 	c.ch, c.sess, c.remote, c.dialing = ch, sess, remote, false
-	clear(c.sessionKey)
-	c.sessionKey, c.lastChallenge = nil, nil
+	if hold {
+		c.held = ch
+	}
+	c.auth.reset()
 	started := make(chan struct{})
 	c.started = started
-	c.lastUns = nil
+	c.proc.reset(c.autoTimeSync(stream))
 	c.mu.Unlock()
 	ch.Start()
 	c.wg.Add(1)
@@ -228,12 +300,17 @@ func (c *Client) connect(ctx context.Context) error {
 	} else if c.opts.auth != nil {
 		c.rekeySoon()
 	}
-	close(started)
 	if err != nil {
 		c.log.Warn("startup sequence failed", "error", err)
-		return err
+		if hold {
+			// establish closes the channel, and ends the startup sequence
+			// only once the client is disconnected: a task queued during
+			// it (taskLoop) must not run on that channel meanwhile.
+			return ch, err
+		}
 	}
-	return nil
+	close(started)
+	return ch, err
 }
 
 // handshakeTimeout bounds the TLS handshake of a connection, so that an
@@ -247,9 +324,21 @@ func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, e
 	if c.opts.opener != nil {
 		return c.opts.opener(ctx)
 	}
-	conn, err := c.opts.dialer.DialContext(ctx, "tcp", c.addr)
+	if c.dual != nil {
+		return c.dual.open(ctx)
+	}
+	conn, err := c.dial(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+	return conn, conn.RemoteAddr(), nil
+}
+
+// dial opens a TCP connection to the outstation, with TLS when configured.
+func (c *Client) dial(ctx context.Context) (net.Conn, error) {
+	conn, err := c.opts.dialer.DialContext(ctx, "tcp", c.addr)
+	if err != nil {
+		return nil, err
 	}
 	if c.opts.tls != nil {
 		cfg := c.opts.tls.Clone()
@@ -263,11 +352,11 @@ func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, e
 		cancel()
 		if err != nil {
 			_ = conn.Close()
-			return nil, nil, fmt.Errorf("TLS handshake: %w", err)
+			return nil, fmt.Errorf("TLS handshake: %w", err)
 		}
 		conn = tc
 	}
-	return conn, conn.RemoteAddr(), nil
+	return conn, nil
 }
 
 // watch waits for a channel to end and reconnects when configured.
@@ -281,7 +370,11 @@ func (c *Client) watch(ch *channel.Channel) {
 	}
 	p := c.pending
 	closed := c.closed
-	reconnect := !closed && c.opts.reconnect != nil && err != nil
+	held := c.held == ch
+	if held {
+		c.held, c.heldLost, c.heldErr = nil, true, err
+	}
+	reconnect := !closed && !held && c.opts.reconnect != nil && err != nil
 	if reconnect {
 		c.dialing = true
 	}
@@ -293,6 +386,9 @@ func (c *Client) watch(ch *channel.Channel) {
 		return
 	}
 	c.log.Warn("connection lost", "error", err)
+	if held {
+		return // the Connect running its startup sequence decides
+	}
 	if !reconnect {
 		c.setState(dnp3.StateDisconnected, err)
 		return
@@ -313,6 +409,9 @@ func (c *Client) reconnectLoop() {
 			c.mu.Unlock()
 			return
 		case <-timer.C:
+		case <-c.dual.woken():
+			// The outstation connected to the dual end point: the attempt
+			// takes its connection now.
 		}
 		// Close ends an attempt in progress, not only the wait between
 		// attempts.
@@ -324,7 +423,7 @@ func (c *Client) reconnectLoop() {
 			case <-ctx.Done():
 			}
 		}()
-		err := c.connect(ctx)
+		_, err := c.connect(ctx, false)
 		cancel()
 		if err == nil {
 			return
@@ -375,6 +474,7 @@ func (c *Client) Close() error {
 	if ch != nil {
 		ch.Close(nil)
 	}
+	c.dual.close()
 	c.wg.Wait()
 	// The dispatcher has stopped: the last notification is delivered here,
 	// after every earlier one.
@@ -419,6 +519,11 @@ func (c *Client) safeReceive(sess *channel.Session, frag []byte) {
 
 // goroutine.
 func (c *Client) receive(sess *channel.Session, data []byte) {
+	at := time.Now()
+	// No request goes out while a fragment is handled: the confirmation
+	// it may ask for comes first (IEEE 1815-2012 clause 4.3 Rule 13).
+	c.proc.sendMu.Lock()
+	defer c.proc.sendMu.Unlock()
 	f, err := app.Decode(data)
 	if err != nil {
 		c.log.Debug("undecodable fragment dropped", "error", err)
@@ -427,56 +532,59 @@ func (c *Client) receive(sess *channel.Session, data []byte) {
 		}
 		return
 	}
+	c.count(secauth.StatTotalMessagesReceived)
 	if m := c.opts.metrics; m != nil {
 		m.OnFragmentReceived(c.remoteAddr(), f, len(data))
 	}
 	if c.log.DebugEnabled() {
 		c.log.Debug("fragment received", "fragment", f.String())
 	}
+	if unsContradicts(f) {
+		// The UNS bit selects the solicited or the unsolicited reception
+		// state machine (IEEE 1815-2012 clauses 6.3 and 6.5), and a
+		// confirmation carries the fragment's UNS bit (clause 4.3 Rule
+		// 18): a fragment whose UNS bit contradicts its function code
+		// (clause 4.2.2.4.4) is neither processed nor confirmed.
+		c.log.Debug("fragment with a UNS bit contradicting its function discarded", "function", f.Function.String(), "uns", f.Control.UNS)
+		return
+	}
 	switch f.Function {
 	case app.FuncResponse, app.FuncAuthResponse:
 		c.mu.Lock()
 		p := c.pending
 		c.mu.Unlock()
-		if p == nil || !p.accept(f, data) {
-			c.log.Debug("response nobody waits for ignored", "seq", f.Control.Seq)
+		if p == nil || !p.accept(f, data, at) {
+			// IEEE 1815-2012 Table 6-2 row 1: a response nobody waits for
+			// is discarded, not confirmed. onStrayAuth logs it, or answers
+			// a challenge of a confirmation sent before (clause 7.5.2.3.2
+			// j).
+			c.onStrayAuth(sess, f, data)
 		}
 	case app.FuncUnsolicitedResponse:
-		if f.Control.CON {
-			if c.opts.noUnsConfirm {
-				c.log.Debug("unsolicited response not confirmed (WithUnsolicitedConfirm)", "seq", f.Control.Seq)
-			} else {
-				c.confirm(sess, f.Control.Seq, true)
-			}
-		}
-		c.mu.Lock()
-		repeat := bytes.Equal(c.lastUns, data)
-		c.lastUns = data
-		c.mu.Unlock()
-		if repeat {
-			c.log.Debug("repeated unsolicited response ignored", "seq", f.Control.Seq)
-			return
-		}
-		c.events.response(f, true)
-		c.onIIN(f.IIN)
+		c.receiveUnsolicited(sess, f, data)
 	default:
 		c.log.Debug("request function sent to a master ignored", "function", f.Function.String())
 	}
 }
 
-// confirm sends an application confirmation.
-func (c *Client) confirm(sess *channel.Session, seq uint8, uns bool) {
-	f := &app.Fragment{Control: app.Control{FIR: true, FIN: true, UNS: uns, Seq: seq}, Function: app.FuncConfirm}
-	data, _ := f.Encode()
+// sendConfirm sends the application confirmation f (confirmResponse makes
+// it), and keeps it: the outstation may challenge it.
+func (c *Client) sendConfirm(sess *channel.Session, f *app.Fragment) {
+	data, err := f.Encode()
+	if err != nil {
+		c.log.Debug("confirmation not sent", "error", err)
+		return
+	}
+	c.mu.Lock()
+	c.auth.lastConfirm = data
+	c.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), c.opts.responseTimeout)
 	defer cancel()
 	if err := sess.Send(ctx, data); err != nil {
 		c.log.Debug("confirmation not sent", "error", err)
 		return
 	}
-	if m := c.opts.metrics; m != nil {
-		m.OnFragmentSent(c.remoteAddr(), f, len(data))
-	}
+	c.sent(f, len(data))
 }
 
 func addrString(a net.Addr) string {

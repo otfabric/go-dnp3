@@ -70,6 +70,7 @@ The master for one outstation.
 | `(*Client).Connect(ctx)` | Open the channel and run the startup sequence; when the sequence fails, the channel is closed and the client is disconnected |
 | `(*Client).Close()` | Close, stop reconnecting and the tasks; waits for the client's goroutines |
 | `(*Client).State()`, `Addr()`, `Outstation()` | Accessors |
+| `(*Client).SecurityStatistics()` | The master's security statistics, indexed by `secauth.Statistic` (session key changes, challenges answered, errors received, ...); all zero without secure authentication |
 
 ### Options
 
@@ -80,28 +81,34 @@ The master for one outstation.
 | `WithStateHandler(func(State, error))` | none | Channel state changes |
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer; the TLS handshake that follows is bounded to 10 s |
-| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`), an outstation that connects (`Accept(net.Listener)`, the dual end point), a pipe |
+| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`, or `UDPFrom(local, remote)` from a fixed local port), an outstation that connects (`Accept(net.Listener)`, listening only), a pipe |
+| `WithDualEndpoint(net.Listener, allow)` | off | The TCP dual end point (13.2.3.1.3): dial the outstation and take the connections it establishes on the listener, one at a time, the master's own first; `allow` validates the outstation's address. `Close` closes the listener; excludes `WithStream` |
 | `WithTLS(*tls.Config)` | off | TLS |
 | `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`) |
-| `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`) |
+| `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`); each repeat is a new request with the next SEQ, and a time synchronization starts again with fresh times |
 | `WithResponseTimeout(d)` | 5 s | Per response fragment |
-| `WithMaxFragment(n)` | 2048 | Largest fragment reassembled |
-| `WithLink(Link)` | unconfirmed | `Confirmed`, `Timeout`, `Retries`, `KeepAlive` |
-| `WithStartup(Startup)` | nothing | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect |
-| `WithTimeSync(TimeSync)` | `TimeSyncNone` | Synchronize on NEED_TIME: `TimeSyncLAN`, `TimeSyncNonLAN` |
+| `WithMaxFragment(n)` | 2048 | Largest fragment reassembled; below 2048 is outside 4.3 Rule 3 |
+| `WithMaxRequestFragment(n)` | unlimited | Largest request sent, at least 249 (4.3 Rule 4); a larger one fails with `ErrInvalidOption`; a critical request that fits only without the aggressive mode objects is sent challenged; `WriteFile` sizes blocks to fit |
+| `WithLink(Link)` | unconfirmed | `Confirmed` (serial only: 13.2.1.1 forbids it over IP), `Timeout` (2 s), `Retries`, `KeepAlive` (60 s, any positive duration; negative disables it, for testing only); time synchronization messages always unconfirmed (10.3.4.1) |
+| `WithStartup(Startup)` | `Integrity` | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect; `EnableUnsolicited` also sets the other two (5.1.1.2 Rule 1); `Startup{}` runs nothing; `EnableUnsolicited` is sent again after an outstation restart |
+| `WithTimeSync(TimeSync)` | LAN over a `net.Conn`, non-LAN otherwise, with a fallback to non-LAN | What NEED_TIME triggers: `TimeSyncLAN`, `TimeSyncNonLAN`, `TimeSyncClearNeedTime` (WRITE g80v1 index 4), `TimeSyncNone` (nothing) |
 | `WithAutoClearRestart(bool)` | on | Clear DEVICE_RESTART when reported |
-| `WithAutoIntegrity(bool)` | on | Integrity poll on restart and overflow |
+| `WithAutoIntegrity(bool)` | on | Integrity poll on restart (restart procedure), overflow, and a same-SEQ new unsolicited response |
 | `WithAutoEventPoll(bool)` | off | Poll the classes the IIN reports events for |
 | `WithSolicitedConfirm(bool)` | on | Confirm solicited responses that ask for it. Off is for tests and diagnostics only: the outstation keeps the events it sent, and a multi-fragment response stalls after its first fragment |
 | `WithUnsolicitedConfirm(bool)` | on | Confirm unsolicited responses that ask for it. Off is for tests and diagnostics only: the outstation repeats them; a repeat reaches the `Handler` once |
 | `WithPoll(Poll)` | none | A periodic READ (`Interval`, `Headers`); repeatable |
 | `WithQueueLimit(n)` | 64 | Requests that may wait for their turn |
-| `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key (on connect, at the interval, and again soon after an authentication failure, with a backoff from 1 s while there are no keys), challenge replies |
-| `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed |
-| `WithChallengeMACs(algs...)` | all but HMAC-SHA-1/4 | The MAC algorithms an outstation's challenge may ask for; the reply and the aggressive mode requests use the challenge's algorithm |
-| `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, after the first challenge; `New` refuses it without `WithSecureAuthentication` |
+| `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key (on connect, at the interval, after the key change count, after an outstation restart, and again soon after an authentication failure, at most 3 times until a change succeeds; while there are no keys a backoff from 1 s, at most 3 retries, then the interval), challenge replies, the key status authenticated with the last monitoring key |
+| `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed; 0 turns the interval off, leaving the count |
+| `WithKeyChangeCount(n)` | 1000 (`DefaultKeyChangeCount`) | The session keys are also changed after n authentication messages sent or received; 1..`MaxKeyChangeCount` (2^31) |
+| `WithChallengeMACs(algs...)` | all but HMAC-SHA-1/4, and over TCP/UDP the 8-octet truncations | The MAC algorithms an outstation's challenge may ask for; the reply and the aggressive mode requests use the challenge's algorithm |
+| `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, once a challenge was answered since the last key change; a refused request makes the next one challenged, error 4 turns it off for the connection; `New` refuses it without `WithSecureAuthentication` |
 
-Constant: `DefaultPort` (20000), the port `Dial` uses when the address has none.
+Constants: `DefaultPort` (20000), the port `Dial` uses when the address has none;
+`DefaultTLSPort` (19999), the port with `WithTLS`;
+`DefaultKeyChangeCount` (1000) and `MaxKeyChangeCount` (2^31), the default and
+the largest session key change count.
 
 ### Requests
 
@@ -125,11 +132,12 @@ Every request takes a `context.Context` and returns a `*Result` (its fields
 | `Freeze(ctx, clear, noAck, headers...)` | IMMED_FREEZE, FREEZE_CLEAR and their `_NR` forms |
 | `FreezeAtTime(ctx, at, interval, headers...)` | FREEZE_AT_TIME; an interval below 0 or of 2^32 ms or more is an `ErrInvalidOption` |
 | `ClearRestart(ctx)` | WRITE g80v1 index 7 |
+| `ClearNeedTime(ctx)` | WRITE g80v1 index 4 |
 | `ReadAttributes(ctx, variation)`, `WriteAttribute(ctx, variation, a)` | READ / WRITE g0, set 0 |
 | `ReadAttributeSet(ctx, set, variation)`, `WriteAttributeSet(ctx, set, variation, a)` | The same for another set |
 | `Write(ctx, headers...)` | WRITE |
 | `Request(ctx, fc, headers...)` | Any function code |
-| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`) |
+| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`, `Created`) |
 | `Broadcast(ctx, dest, fc, headers...)` | A request to a broadcast address (`link.BroadcastNoConfirm` 0xFFFD, `BroadcastConfirm` 0xFFFE, `BroadcastOptionalConfirm` 0xFFFF); no answer, IIN1.0 in the next response |
 
 Commands: `Command{Index, Value, GV}`, built with `CROB(index, op, on, off)`
@@ -156,11 +164,13 @@ The outstation.
 | Symbol | Meaning |
 |--------|---------|
 | `New(opts...)` | An outstation |
-| `(*Server).ListenAndServe(addr)` | TCP (with `WithTLS`, TLS) on addr, `:20000` when empty |
+| `(*Server).ListenAndServe(addr)` | TCP (with `WithTLS`, TLS) on addr; when empty `:20000`, or `:19999` with TLS |
 | `(*Server).Serve(net.Listener)` | Accept on any listener |
 | `(*Server).ServeConn(io.ReadWriteCloser, net.Addr)` | Serve one stream: serial, a pipe |
 | `(*Server).ServeUDP(net.PacketConn)` | DNP3 over UDP; answers the address that sent last |
 | `(*Server).ServeUDPTo(net.PacketConn, net.Addr)` | The same, with the master's address known from the start |
+| `(*Server).ServeUDPFixed(net.PacketConn, net.Addr)` | DNP3 over UDP answering one fixed master port (Table 13-1 case 1); datagrams from other IP addresses are ignored |
+| `ServeByMasterIP(net.Listener, routes...)` | Multiple masters, method 1 (13.2.3.5.1): each connection goes to the first `Route{Masters, Server or Group}` whose prefix holds the master's IP address; others are closed |
 | `NewGroup(servers...)` | Several outstations, each a `Server` at its own address, on the same connections (multi-drop); `(*Group).ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `Servers`, `Close` |
 | `(*Server).DialAndServe(ctx, addr, Redial)` | The dual end point: connect to the master, serve, reconnect (`Redial{MinDelay, MaxDelay}`, 1 s and 1 min); `ctx.Err()` when ctx ends, `nil` after `Close` |
 | `(*Server).Address()` | The outstation's link address |
@@ -178,6 +188,7 @@ The outstation.
 | `WithAddress(a)` | 10 | Outstation link address |
 | `WithMasters(addrs...)` | any | Masters answered; their associations exist from the start |
 | `WithSelfAddress(bool)` | off | Accept the self address 0xFFFC |
+| `WithMasterIPs(prefixes...)` | any | Masters by IP address: other TCP connections are closed at accept, other UDP datagrams ignored |
 | `WithHandler(Handler)` | `NopHandler` | Controls, and the optional handler interfaces |
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithTLS(*tls.Config)` | off | TLS for `ListenAndServe`, and the TLS client configuration of `DialAndServe` |
@@ -187,16 +198,19 @@ The outstation.
 | `WithSelectTimeout(d)` | 10 s | A SELECT's validity |
 | `WithMaxControls(n)` | 16 | Controls per request; more get TOO_MANY_OBJS |
 | `WithUnsolicited(Unsolicited)` | disabled | `Enabled`, `Classes`, `HoldTime`, `HoldCount`, `Retries`, `RetryDelay` |
-| `WithLink(Link)` | unconfirmed | `Confirmed`, `Timeout`, `Retries`, `KeepAlive` |
+| `WithLink(Link)` | unconfirmed | As for the client. A TCP connection on which no master sends a frame within `KeepAlive` and `Timeout` is closed |
 | `WithEventLimits(map[PointType]int)` | 100 each | Events buffered per type and master |
 | `WithTimeSync(interval)` | never | NEED_TIME at start and after the interval |
+| `WithDeadbandIntegerOnly(bool)` | off | Analog input deadbands (g34) in variations 1 and 2 only; a READ of g34v3 gets IIN2.1 |
 | `WithAttributes(map[uint8]app.Attribute)` | none | Device attributes of set 0 |
 | `WithAttributeSet(set, attrs, writable...)` | none | Device attributes of another set; the writable variations take a value of the same type |
 | `WithFileServer(FileServer)` | none | File transfer |
-| `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 10 s), `StatisticsClass` (default 1), `StatisticsThreshold` (default 10) |
+| `WithFileTimeout(d, class)` | 5 min, class 1 | An open file no request names for `d` is closed and reported with a g70v6 HANDLE_EXPIRED event in `class` |
+| `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`; always completed with `secauth.MandatoryCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 2 s), `StatisticsClass` (default 1), `StatisticsThreshold` (all statistics; unset: the defaults of Table 7-6), `Thresholds` (per statistic, 1..65 535), `NoAggressiveMode`, `ExpectedKeyChangeInterval` (default 30 min, negative: off), `ExpectedKeyChangeCount` (default 2000), `MaxKeyStatusRequests` (default 5, 2..255) |
 
-Constants: `DefaultPort` (20000), `DefaultEventLimit` (100),
-`DefaultReplyTimeout`, `MaxScheduledFreezes` (16: the FREEZE_AT_TIME
+Constants: `DefaultPort` (20000), `DefaultTLSPort` (19999), `DefaultEventLimit` (100),
+`DefaultFileTimeout` (5 min), `DefaultReplyTimeout` (2 s), `DefaultExpectedKeyChangeInterval` (30 min),
+`DefaultExpectedKeyChangeCount` (2000), `DefaultMaxKeyStatusRequests` (5), `MaxScheduledFreezes` (16: the FREEZE_AT_TIME
 requests the server keeps waiting at once; a periodic one keeps its place
 until `Close`); the variable `DefaultCritical`. `Class` is an event class
 (1..3) as `PointConfig`, `Unsolicited` and `SecureAuth` take it.
@@ -238,17 +252,17 @@ directories.
 
 | Symbol | Meaning |
 |--------|---------|
-| `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `HeaderLen`, `String`; `Decode(b)`; `AppendObjectValue(b, gv, v)` encodes one object without header, as a free-format object carries it |
+| `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `HeaderLen`, `String`; `Decode(b)`; `AppendObjectValue(b, gv, v)` encodes one object without header, as a free-format object carries it; a response refuses qualifier 0x06, group 60 and request-only variations (Table 4-8) |
 | `Header{GV, Qualifier, Start, Stop, Count, Objects}` | `EncodedLen`, `String` |
 | `Object{Index, Value}`, `Value` | The closed set of value types |
 | `GroupVariation`, `GV(g, v)`, `G1V0` ... `G122V2`, `OctetStringGV(g, n)` (variation 0 for n outside 1..255) | `Group`, `Variation`, `Name`, `Known`, `IsEvent`, `Size`; [OBJECTS.md](OBJECTS.md) lists them all |
 | `FunctionCode`, `Func*` | `String`, `Defined`, `IsResponse`, `NoAck` |
 | `IIN`, `IIN*` | `Has`, `IIN1`, `IIN2`, `String`; `IINBit` |
 | `Control{FIR, FIN, CON, UNS, Seq}`, `SingleControl`, `ParseControl`, `NextSeq` | The application control octet (`Byte`, `String`) |
-| `Qualifier`, `Qual*`, `RangeQualifier`, `CountQualifier`, `IndexQualifier` | Qualifier codes (`IsRange`, `IsCount`, `IsIndexed`, `IsFreeFormat`, `Prefix`, `Range`, `Valid`) |
+| `Qualifier`, `Qual*`, `RangeQualifier`, `CountQualifier`, `IndexQualifier` | Qualifier codes (`IsRange`, `IsCount`, `IsIndexed`, `IsFreeFormat`, `Prefix`, `Range`, `Valid`); `IndexQualifier` picks 0x17 or 0x28 while the count and indexes fit, else 0x29, 0x37, 0x38 or 0x39 (Table 4-7, 4.2.2.7.3.4) |
 | `AllObjects`, `ClassHeaders`, `IndexRange`, `IndexList`, `CountOf`, `Ranged`, `Indexed`, `Counted`, `FreeFormat` | Header constructors |
 | `Timestamp`, `TimestampOf`, `Now`, `MaxTimestamp` | DNP3 time (`Time`, `String`) |
-| Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD`, `UnsignedInteger`, `DataSetCharacteristics` (g86v2, `Flags DataSetFlags`), `SecurityStatistic`, `Raw` |
+| Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD` (`Value`, `Negative`), `UnsignedInteger`, `DataSetCharacteristics` (g86v2, `Flags DataSetFlags`), `BufferFillStatus` (g81v1, `Fill`, `Overflow`, `Buffer`), `SecurityStatistic`, `Raw` |
 | Enumerations | `Flags`, `DoubleBit`, `CommandStatus`, `OpType`, `TripClose`, `IntervalUnit`, `DataSetFlags` (`DataSetReadable` ... `DataSetMasterDefined`) |
 | Attributes | `Attribute`, `AttrType`, `Attr*` variations, `StringAttribute`, `UintAttribute`, `IntAttribute`, `FloatAttribute`, `TimeAttribute`, `ListAttribute`, `AttributeListEntry`; read with `Text`, `Uint`, `Int`, `Float`, `List` |
 | Activation status (g91v1) | `ActivateConfigStatus{Delay, Results}`, `ActivateConfigResult{Code, Text}`; `ParseActivateConfigStatus(data)` reads the data of the `Raw` that `Decode` returns for g91v1, `ActivateConfigStatus.Raw()` makes one. g91v1 decodes with a count, range or free-format qualifier |
@@ -261,7 +275,7 @@ directories.
 `Header` (`NewHeader`, `FIR`, `FIN`, `Seq`), `Segmenter` (`Segment`,
 `Seq`), `Reassembler` (`NewReassembler`, `Add`, `Reset`, `Pending`),
 `MaxSegment`, `MaxSegmentData`, `DefaultMaxFragment`; errors `ErrEmpty`, `ErrNoFirst`,
-`ErrSequence`, `ErrTooLarge`.
+`ErrSequence`, `ErrTooLarge`, `ErrDuplicate`, `ErrNoData`.
 
 ## Package `link`
 
@@ -279,7 +293,9 @@ directories.
 `KeyWrap(kek, plaintext)`, `KeyUnwrap(kek, wrapped)` (RFC 3394, `ErrKeyWrap`),
 `KeyChangeData(control, monitoring, keyStatus)`, `ParseKeyChangeData(plain, keyStatus...)`,
 `User{Number, UpdateKey, Key, MAC}` (`Algorithm`, `KeyWrapAlgorithm`, `SessionKeyLen`, `Validate`).
-`Statistic` (`StatUnexpectedMessages` ... `StatRekeysDueToRestarts`, `NumStatistics`, `String`): the
-security statistics as g121 indexes. `DefaultCritical`: the function codes challenged by default
-and sent in aggressive mode. `AggressiveOverhead`: what aggressive mode adds to a request.
+`Statistic` (`StatUnexpectedMessages` ... `StatRekeysDueToRestarts`, `NumStatistics`, `String`,
+`DefaultThreshold`): the security statistics as g121 indexes, with the default event thresholds
+of Table 7-6. `DefaultCritical`: the function codes challenged by default and sent in aggressive
+mode. `MandatoryCritical`: the codes Table 7-7 marks MANDATORY, which package server always
+challenges. `AggressiveOverhead`: what aggressive mode adds to a request.
 

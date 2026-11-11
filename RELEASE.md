@@ -1,5 +1,118 @@
 # go-dnp3 Releases
 
+## v1.11.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.10.0
+
+## Summary
+
+A review of the whole library against IEEE 1815-2012, clause by clause, with the fixes it called for and a spec test for each requirement checked: 286 test functions named after their clause (`TestSpec<clause>_…`, see [TESTING.md](TESTING.md#spec-tests)), in the unit tests of every package and in `e2e`. Several defaults and behaviours change where the standard requires it; read **Upgrading** first. Exported API is added, none removed. This is not a certification: the evidence is in INTEROPERABILITY.md.
+
+## Upgrading
+
+- **The master runs an integrity poll at connect, and answers NEED_TIME by itself** (5.1.1.2, 4.5.5). `WithStartup(client.Startup{})` and `WithTimeSync(client.TimeSyncNone)` restore the old behaviour, for example for one-shot tools.
+- **An outstation rejects a second connection of a master that is connected** when the first connection answers a link status request (13.2.3.3); a broken first connection is still replaced. Two clients with the same link addresses can no longer share one outstation.
+- **Aggressive mode MAC follows Table A-9**: it does not interoperate with go-dnp3 releases before this one. Upgrade both ends.
+- **Secure Authentication timing**: the outstation's reply timeout is 2 s (was 10 s), session keys expire after 30 minutes or 2000 messages without a change, and more function codes are challenged by default.
+- **TLS uses port 19999 by default** (7.8.8): `ListenAndServe("")` with `WithTLS`, and a client with `WithTLS` given an address without a port. Plain TCP stays on 20000.
+- **SAVE_CONFIG is answered with a Delay Time object** (g52v2, 4.4.12): a master that expects a response without objects, such as opendnp3's, reports a bad response.
+- **Security statistics carry Association ID 0** (A.46.1.2.2: measured on the association that reads them), not the master's address.
+- **Frozen counter and frozen analog input events are raised at every freeze**, also for an unchanged value (11.9.5.2, 11.9.1.2): a master that polls events sees one per freeze and point.
+- **Responses with qualifier 0x06, group 60 or variation 0 are refused** by the codec: these headers are for requests only.
+- **A master with an update key does not send a critical request without valid session keys**: a function Table 7-7 marks MANDATORY, or one `WithAggressiveMode` names, fails at once with `dnp3.ErrAuthentication`, unsent, and the session keys are changed. Before, it was sent, and failed on the challenge.
+
+## Changes
+
+### Master
+
+- **Startup and restart procedures.** `Connect` runs an integrity poll by default (`Startup{Integrity: true}`, 5.1.1.2). `EnableUnsolicited` classes also disable unsolicited reporting and poll first (5.1.1.2 Rule 1). When an outstation reports a restart (IIN1.7), the client runs the procedure of 5.1.1.1.2 in order: session key change (with secure authentication), clear of IIN1.7, time synchronization, integrity poll, ENABLE_UNSOLICITED for the `Startup.EnableUnsolicited` classes. At connect, IIN1.7 is cleared once, right after DISABLE_UNSOLICITED.
+- **NEED_TIME is answered** (4.5.5): the LAN procedure over TCP, TLS and UDP, the non-LAN one over other streams, and non-LAN from then on when an outstation refuses LAN. `TimeSyncClearNeedTime` clears the indication instead of setting the clock; `TimeSyncNone` does nothing. Time synchronization requests always go as UNCONFIRMED_USER_DATA (10.3.4.1). The LAN procedure writes the time at which RECORD_CURRENT_TIME left; the non-LAN one measures the round trip to the arrival of the response, before it is decoded. `DelayMeasure` reports the round trip of the attempt that was answered.
+- **Select before operate**: OPERATE follows only an echo equal to the request octet for octet (4.4.4.3 Rule 8); another echo fails with `dnp3.ErrProtocol`. A control response that stops at the first failed object (4.4.4.3 Rule 6) reports that object's status as a `*dnp3.CommandError`. A `Command` with the Queue bit, or with a status other than 0 or 126, fails with `dnp3.ErrInvalidOption` before anything is sent (A.8.1.2.2).
+- **Multi-fragment responses** (Table 6-2): a repeat of the last fragment is confirmed again; any other unexpected fragment abandons the response with `dnp3.ErrProtocol`.
+- **Unsolicited responses**: a repeat is one with the sequence number and the octets after the IIN of the previous one. A repeat that reports a restart is processed; one with the same sequence number and new content is processed and followed by an integrity poll (4.6.6 Rule 7). A response whose UNS bit contradicts its function code is ignored and not confirmed. The confirmation goes out before the next request (4.3 Rule 13).
+- Values of the variations without flags (g1v1, g3v1, g10v1, g20v5–8, g21v9–12, g30v3–4, g31v5–6) read as ONLINE (11.6.5); they read as zero flags before.
+- `WriteFile` sets the file's time of creation (`FileOptions.Created`, default now), sends no more than the size it was given, and sizes blocks to `WithMaxRequestFragment`.
+- With `WithTLS`, an address without a port uses port 19999 (`client.DefaultTLSPort`, 7.8.8).
+- One `WithSecureAuthentication` option used for several clients no longer races: each client gets its own copy of the user.
+- **A failed `Connect` no longer leaves a reconnect running.** With `WithReconnect`, a `Connect` whose connection broke during its startup sequence returned the error while the client went on reconnecting in the background; the next `Connect` then dialled next to that reconnect, and the channel one of them opened replaced the other's without closing it. The orphan went on answering link status requests, so an outstation that keeps the connection of a connected master (13.2.3.3) refused every later connection. A failed `Connect` now leaves the client disconnected, as documented, and a channel is never replaced while another is open.
+- **No automatic task on the channel of a failed `Connect`.** A task queued during the startup sequence (the restart procedure after IIN1.7, a time synchronization) could send one request on the channel that `Connect` was about to close after the startup failed. Queued tasks now see the client disconnected and are dropped.
+
+### Outstation
+
+- **Frozen events at every freeze**: a frozen counter or frozen analog input with an event class raises an event at every freeze, also when the value did not change (11.9.5.2, 11.9.1.2).
+- **Requests**: a request with CON set is confirmed (4.3 Rule 12); a fragment with UNS set or without FIR and FIN is discarded (4.2.2.4.4, 4.3 Rule 4); a request repeated while the confirmation of its response is awaited gets that response again (Table 6-1 row 17); a CONFIRM sent to a broadcast address is ignored. A READ received while the confirmation of an unsolicited response is awaited is answered after it (4.6.6 Rule 16).
+- **Unsolicited**: DISABLE_UNSOLICITED ends a pending series without retries; the null unsolicited response is retried until confirmed; a retry is identical to the first, and a regenerated response takes the next sequence number.
+- **IIN**: IIN1.0 cleared per Table 4-13; a master may clear IIN1.4 with WRITE g80v1 index 4; IIN1.4 belongs to the device clock, not to one master; IIN2.3 stays set until every event buffer has room; an `ApplicationHandler` may return IIN2.4.
+- **Controls**: a request status of NON_PARTICIPATING (126) is echoed (Table 11-7 note a); a CROB with the queue bit is answered NOT_SUPPORTED (A.8.1.2.2); a request with an unknown header executes nothing; a request between SELECT and OPERATE, or a failed SELECT, ends the selection; a SELECT with the same sequence number and other octets is discarded; the echo of a control request is held to the transmit limit.
+- **Files**: an open file no request names for `WithFileTimeout` (default 5 minutes) is closed and reported with a g70v6 HANDLE_EXPIRED event (4.4.17.1.1, 5.3.8 Rule 12); handles are unique to the outstation; a block beyond the declared size or larger than negotiated is BUFFER_OVERRUN; an unknown mode INVALID_MODE; deleting an open file FILE_LOCKED; a failed abort CANNOT_ABORT; CLOSE_FILE and ABORT_FILE echo the request; GET_FILE_INFO answers with the requested name; `FSFileServer` reports permissions as read only and a directory's size as its number of entries (Table 11-8).
+- **FREEZE_AT_TIME** follows Table 4-11: time 0 with an interval freezes every interval from the start of the current hour; the time all ones cancels. FREEZE_CLEAR of analog inputs is answered IIN2.1 (Table 12-14).
+- **Application functions**: SAVE_CONFIG through `ApplicationHandler` is answered with g52v2 (delay 0), as 4.4.12 requires; opendnp3's master refuses a response with objects to it and reports a bad response, although the function was executed. ACTIVATE_CONFIG is answered with g91v1. INITIALIZE_DATA is obsolete (4.4.10): without a handler it is answered IIN2.0.
+- **ASSIGN_CLASS** accepts g12v0 and g41v0 (command events); security statistics to class 0 are answered IIN2.0; `Server.Restart` reverts class assignments.
+- **Reads**: g50v1 with qualifier 0x07, count 1, returns the time (other qualifiers IIN2.2); packed variations can be read by index; an octet string asked in another length is answered in its own length; g0v255 uses qualifier 0x17; an index or count qualifier on group 0 selects the set; a READ of group 0 without attribute sets is IIN2.1; a virtual range qualifier (0x03–0x05) in a request is answered with the same qualifier.
+- **Point data**: ROLLOVER and reserved flag bits are cleared; a +Inf deadband is accepted and suppresses events; output events are not raised for points left out of class 0; the g13 commanded state of PULSE_ON is 1. `WithDeadbandIntegerOnly` reports analog input deadbands in g34v1 and v2 only (A.18.3.2.3).
+- DELAY_MEASURE above 65535 ms is answered with 65535 ms instead of no answer. WRITE with no values (and WRITE g80v1 with qualifier 0x06) is IIN2.2.
+
+### Link layer, transport function and DNP3 over IP
+
+- **Connections of a connected master** (13.2.3.3): a new TCP connection from a master that is already connected is rejected when the existing connection answers a link status request; a dead (half-open) one is replaced as before. A bare TCP connect no longer closes the master's connection when one master is configured. Requests that arrive on the new connection while the outstation probes the old one are held, and answered if the new connection is taken.
+- An outstation closes a TCP connection on which no master has sent a frame within one keep-alive interval plus the link timeout (62 s by default; 13.2.3.3.1).
+- **UDP**: every datagram is read whole and every frame in it decoded (13.2.3.2.3); a damaged datagram no longer affects the next one. The UDP socket of an outstation is no longer closed when a keep-alive goes unanswered, and a UDP datagram from a master no longer evicts the same master's TCP connection, so broadcasts over UDP reach a TCP-connected outstation. `ServeUDPFixed` answers a fixed master address (Table 13-1 case 1); `client.UDPFrom` sends from a fixed local address, for an outstation that answers a fixed port of the master.
+- **Master IP validation**: `server.WithMasterIPs` accepts masters by IP address (13.2.3.2.2 d, 13.2.3.1.4 a); `server.ServeByMasterIP` routes connections to outstations by master IP (13.2.3.5.1, method 1).
+- **Dual end point**: `client.WithDualEndpoint` makes the master a TCP dual end point: it dials the outstation and also takes the connections the outstation establishes, one at a time, the master having priority (13.2.3.1.3); an `allow` function validates the outstation's address (13.2.3.1.4 b); `DialAndServe` no longer dials the master while a connection from it is up.
+- The DIR bit of received frames is ignored (9.2.4.1.3.1). Frames to the self address 0xFFFC are taken only by an outstation with `WithSelfAddress`, also in a `Group`; the master ignores them (9.2.5.2.2).
+- A link status request answered with anything but LINK_STATUS no longer closes the connection; the answer is logged and counted as an error (Table 9-6). An unanswered one leaves the link unreset (Table 9-6 rows 20 and 34).
+- With `Link.Confirmed`: a repeated CONFIRMED_USER_DATA is acknowledged and discarded; one that would overflow the receive queue is answered NACK with DFC set; a NACK with DFC set is not repeated (9.2.7.2, Table 9-6 row 28); TEST_LINK_STATES with an unexpected FCB repeats the last ACK or NACK (9.2.6.2). A channel over TCP or UDP with `Link.Confirmed` logs a warning: 13.2.1.1 forbids confirmed link frames over IP.
+- A transport segment that repeats the previous one is discarded without losing the fragment being assembled (8.2.1.4, Table 8-1); an empty segment is rejected (`transport.ErrDuplicate`, `transport.ErrNoData`).
+- `ListenAndServe` with `WithTLS` and an empty address listens on port 19999 (`server.DefaultTLSPort`, 7.8.8).
+
+### Secure Authentication
+
+- **Aggressive mode** MAC covers every octet of the request up to the MAC value, the g120v9 object header and its size prefix included (Table A-9). **Wire change**: upgrade both ends. The master falls back to a challenged request when the outstation refuses one.
+- **Critical functions**: the function codes Table 7-7 marks MANDATORY are always challenged (`secauth.MandatoryCritical`); a `SecureAuth.Critical` list without them is completed with them. `DefaultCritical` (secauth and server) adds ENABLE_UNSOLICITED, DISABLE_UNSOLICITED, RECORD_CURRENT_TIME, CLOSE_FILE, GET_FILE_INFO and ABORT_FILE; this set is also the default of `client.WithAggressiveMode`.
+- **Outstation, challenger state machine** (Table 7-8): a challenge carries user number 0 (A.45.1.2.2). `DefaultReplyTimeout` is 2 s (7.6.1.4.1), and the reply timer runs: an expired challenge is discarded and counted, and past Max Reply Timeouts the session keys become invalid (COMM_FAIL). While a challenge waits for its reply, other requests are discarded and counted. A reply nobody asked for, or an invalid aggressive mode request while a challenge waits, is discarded without an error message. Aggressive mode is accepted only after a valid reply since the last session key change.
+- **Outstation, limits**: error messages (g120v7) stop past Max Error Messages Sent until the next valid session key change. Past Max Authentication Failures the session keys become invalid (AUTH_FAIL); when this happens again past Max Authentication Rekeys, a TCP connection is closed (Table 7-8 row 11).
+- **Outstation, keys**: session keys expire after `ExpectedKeyChangeInterval` (30 min) or `ExpectedKeyChangeCount` (2000 authentication messages) without a change (7.6.1.4.5); the pre-shared session key mode is exempt. After a reconnect the key status is COMM_FAIL, with a MAC by the last monitoring key (Table 7-8 row 9). An invalid session key change makes the keys invalid (AUTH_FAIL) and moves the KSQ. A key status request for an unknown user is answered with g120v5 AUTH_FAIL (A.45.5). Past `MaxKeyStatusRequests` key status requests within the expected key change interval the outstation logs an error, and still answers them (7.6.1.4.6).
+- **Outstation, statistics**: Association ID 0, meaning this association (A.46.1.2.2). Each statistic has its own event threshold, with the defaults of Table 7-6 instead of 10 for all; a `StatisticsThreshold` that is set still applies to all. Statistics count CONFIRMs and repeated fragments; Authentication Failures is reported at each session key change. `Server.Restart` zeroes the challenge and key change sequence numbers.
+- **Master, key changes**: after `WithKeyChangeCount` authentication messages (default 1000, 7.6.1.4.4) as well as at the interval (`WithKeyChangeInterval(0)` turns the interval off); when the outstation reports a restart, up to 3 times in a row (7.5.4.2); after an authentication error, up to 3 times until a key change succeeds, and past that, over TCP, the connection is closed (Table 7-8 row 11). Key change retries back off at most 3 times, then wait for the interval.
+- **Master, aggressive mode** is used only after a challenge was answered since the last session key change. After a refused aggressive mode request the next one is challenged; an outstation that answers error 4 is not sent aggressive mode again on that connection. A critical request that fits `WithMaxRequestFragment` only without the aggressive mode objects goes without them and is challenged (7.4.1.6: the master may anticipate the challenge, it need not); it takes no challenge sequence number, so the next aggressive mode request is accepted (`TestSpec7_4_1_6_AggressiveOverRequestLimit`).
+- **Master, no-ack requests** (DIRECT_OPERATE_NR, …) sent without aggressive mode wait up to the response timeout for the outstation's challenge and answer it; before, they reported success while the outstation discarded the request. Without a challenge they still return nil, after the wait; a g120v7 fails them with `*dnp3.AuthError`.
+- **Master, no critical request without session keys**: with an update key and no valid session keys, a critical request (Table 7-7 MANDATORY, or a `WithAggressiveMode` function) fails with `dnp3.ErrAuthentication` without being sent, and asks for a session key change. Sent, it could only fail, as the master discards the challenge (Table 7-13 row 7), and the outstation, waiting for the reply, discards the key status request (Table 7-8 row 16): a master that repeated such requests at once never got its keys back. `TestChaos` found this; `TestSpecTable7_13_CriticalNotSentWithoutKeys` covers it.
+- **Master, other**: CONFIRMs to a response that ends with a challenge are sent in aggressive mode, and a challenge of a CONFIRM is answered. The session key status is authenticated: an OK status needs a MAC by the last monitoring key, its user and its key wrap algorithm must match, and a key change confirmation whose status is not OK fails the change. 8-octet MACs are refused by default over TCP and UDP (7.6.1.1); `WithChallengeMACs` can allow them.
+
+### Codec (`app`)
+
+- **Negative BCD values**: `app.BCD` has a `Negative` field. A g101 value whose most significant BCD character is 0xA..0xF decodes as negative (11.3.6.1); it was rejected as malformed, and the fragment with it. A negative value is sent with the sign character 0xF; a value with more digits than the variation holds is refused with `ErrInvalidValue`.
+- **Responses with qualifier 0x06, class objects or variation 0 are refused** (Table 4-8, 4.2.2.7.1.1, 4.2.2.7.2.1): `Encode` of a response with one fails with `ErrInvalidQualifier` or `ErrInvalidValue`; `Decode` reports one with `ErrInvalidQualifier` or `ErrMalformed` and returns the headers before it. Requests are unchanged.
+- **Index qualifiers above 65535**: `IndexQualifier`, and so `IndexList`, `Indexed` and the outstation's responses, use 0x37 or 0x38 rather than 0x39 when an index needs four octets and the count fits one or two, and 0x29 for more than 65535 objects with 2-octet indexes (4.2.2.7.3.4). Nothing changes while every index and the count fit two octets.
+- **Floating-point attributes** are 4 or 8 octets: another size is refused by `Encode` (`ErrInvalidValue`) and reported malformed by `Decode` (11.4, 5.5.4.3).
+- **CROB and analog output status widths**: the CROB (g12v1) status is 7 bits; bit 7 is reserved, sent as 0 and no longer read. The analog output block (g41) status is the full octet, 0..255; it was cut to 7 bits (A.8.1.2.2, A.20.1.2.2).
+- **g81v1 and g82v1 decode**: the device storage buffer fill status (g81v1) into `app.BufferFillStatus` (`app.G81V1`), the device profile (g82v1, `app.G82V1`) as `app.Raw`. A response that held either failed to decode as a whole. Group 100 is still not supported: IEEE 1815-2012 defines no coding for it.
+- Clause and table citations in the `app` godoc corrected.
+
+### Added API
+
+- `client`: `WithMaxRequestFragment(n)` (at least 249, 4.3 Rule 4; a request that does not fit fails with `dnp3.ErrInvalidOption`), `Client.ClearNeedTime(ctx)`, `TimeSyncClearNeedTime`, `DefaultTLSPort`, `FileOptions.Created`, `WithDualEndpoint(l, allow)`, `UDPFrom(local, remote)`, `WithKeyChangeCount`, `DefaultKeyChangeCount`, `MaxKeyChangeCount`, `Client.SecurityStatistics`.
+- `server`: `WithMasterIPs(prefixes...)`, `Route` and `ServeByMasterIP(l, routes...)`, `Server.ServeUDPFixed(pc, peer)`, `DefaultTLSPort`, `WithFileTimeout(timeout, class)` and `DefaultFileTimeout`, `WithDeadbandIntegerOnly(enabled)`; `SecureAuth` gains `Thresholds`, `NoAggressiveMode`, `ExpectedKeyChangeInterval`, `ExpectedKeyChangeCount` and `MaxKeyStatusRequests`, with `DefaultExpectedKeyChangeInterval`, `DefaultExpectedKeyChangeCount` and `DefaultMaxKeyStatusRequests`.
+- `secauth`: `MandatoryCritical`, `Statistic.DefaultThreshold`.
+- `app`: `BCD.Negative`, `BufferFillStatus`, `G81V1`, `G82V1`.
+- `transport`: `ErrDuplicate`, `ErrNoData`.
+
+### Testing
+
+- 286 spec test functions named after the clause they check, in `spec_*_test.go` files of `app`, `link`, `transport`, `internal/channel`, `secauth`, `client`, `server` and `e2e`.
+- `TestSubsetLevelTables` (outstation) and `TestSubsetLevelResponses` (master) walk the request and response rows of Tables 14-2 to 14-4 at subset levels 1 to 3.
+- `make interop`: the suite expects Association ID 0 in the security statistics and opendnp3's refusal of the SAVE_CONFIG delay object; the in-network UDP master (`interop/testdata/udpmaster`) opts out of the startup sequence, since it retries its poll itself.
+- `TestChaos` keeps the last 3000 lines the master and the outstation logged and prints them when a run fails, with the attempts each recovery check needed.
+- Four defects found by the link spec tests are fixed: an unanswered REQUEST_LINK_STATUS left the link reset; TEST_LINK_STATES with an unexpected FCB always answered ACK; `WithSelfAddress(true)` never answered 0xFFFC; `ServeUDPFixed` accepted a TCP peer.
+
+### Documentation
+
+- INTEROPERABILITY.md: clause references in every layer table; DNP3 over IP (clause 13): end points, keep-alive, address validation, multiple masters; the Secure Authentication device profile items; subset levels; frozen counter events; deviations and choices (unsolicited at startup, INITIALIZE_DATA, repeated READ, DELAY_MEASURE, open with block size 0, class 0 and g110, reads of absent types).
+- LIMITATIONS.md, API.md, ERRORS.md and SECURITY.md updated for the changes above; TESTING.md describes the spec tests.
+
+---
+
 ## v1.10.0
 
 **Date:** 2026-11-11

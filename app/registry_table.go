@@ -165,6 +165,8 @@ const (
 	G70V7   GroupVariation = 70<<8 | 7   // File-control - File Descriptor
 	G70V8   GroupVariation = 70<<8 | 8   // File-control - File Specification String
 	G80V1   GroupVariation = 80<<8 | 1   // Internal Indications - Packed Format
+	G81V1   GroupVariation = 81<<8 | 1   // Device Storage - Buffer Fill Status
+	G82V1   GroupVariation = 82<<8 | 1   // Device Profile - Functions and Indexes
 	G83V1   GroupVariation = 83<<8 | 1   // Data Set - Private Registration Object
 	G83V2   GroupVariation = 83<<8 | 2   // Data Set - Private Registration Object Descriptor
 	G85V1   GroupVariation = 85<<8 | 1   // Data Set Prototype - With UUID
@@ -356,6 +358,8 @@ var table = map[GroupVariation]*desc{
 	G70V7:   {name: "File-control - File Descriptor", fam: fFileDescriptor},
 	G70V8:   {name: "File-control - File Specification String", fam: fFileSpec},
 	G80V1:   {name: "Internal Indications - Packed Format", fam: fBinaryPacked},
+	G81V1:   {name: "Device Storage - Buffer Fill Status", fam: fBufferFill},
+	G82V1:   {name: "Device Profile - Functions and Indexes", fam: fRaw},
 	G83V1:   {name: "Data Set - Private Registration Object", fam: fRaw},
 	G83V2:   {name: "Data Set - Private Registration Object Descriptor", fam: fRaw},
 	G85V1:   {name: "Data Set Prototype - With UUID", fam: fRaw},

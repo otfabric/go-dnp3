@@ -29,10 +29,10 @@ func TestHeader(t *testing.T) {
 func TestSegmentAndReassemble(t *testing.T) {
 	var s Segmenter
 	r := NewReassembler(0)
-	for _, n := range []int{0, 1, 248, 249, 250, 498, 499, 2048} {
+	for _, n := range []int{1, 248, 249, 250, 498, 499, 2048} {
 		frag := fragment(n)
 		segs := s.Segment(frag)
-		want := max(1, (n+MaxSegmentData-1)/MaxSegmentData)
+		want := (n + MaxSegmentData - 1) / MaxSegmentData
 		if len(segs) != want {
 			t.Fatalf("n=%d: %d segments, want %d", n, len(segs), want)
 		}
@@ -97,7 +97,8 @@ func TestReassemblyErrors(t *testing.T) {
 	if r.Pending() {
 		t.Fatal("pending after sequence error")
 	}
-	// A repeated segment is out of sequence too.
+	// A segment without FIR with the sequence number of the one before
+	// it, but not identical to it, is out of sequence (Table 8-1 row 5).
 	_, _ = r.Add([]byte{byte(NewHeader(true, false, 5)), 1})
 	if _, err := r.Add([]byte{byte(NewHeader(false, false, 5)), 1}); !errors.Is(err, ErrSequence) {
 		t.Fatal(err)

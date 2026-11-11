@@ -10,6 +10,8 @@ import (
 	"math/rand"
 	"net"
 	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -159,6 +161,59 @@ func (p *chaosProxy) close() {
 	p.wg.Wait()
 }
 
+// chaosLog keeps the last lines the master and the outstation logged, in
+// the order they came: a failed run prints them.
+type chaosLog struct {
+	mu    sync.Mutex
+	lines []string
+	next  int
+	full  bool
+}
+
+const chaosLogLines = 3000
+
+func newChaosLog(t *testing.T) *chaosLog {
+	l := &chaosLog{lines: make([]string, chaosLogLines)}
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("the last %d lines logged:\n%s", chaosLogLines, l.String())
+		}
+	})
+	return l
+}
+
+func (l *chaosLog) add(side, level, format string, args ...any) {
+	line := time.Now().Format("15:04:05.000000") + " " + side + " " + level + " " + fmt.Sprintf(format, args...)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines[l.next] = line
+	l.next = (l.next + 1) % len(l.lines)
+	l.full = l.full || l.next == 0
+}
+
+func (l *chaosLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	lines := l.lines[:l.next]
+	if l.full {
+		lines = append(slices.Clone(l.lines[l.next:]), l.lines[:l.next]...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// side is the dnp3.Logger of one side of the chaos run.
+func (l *chaosLog) side(name string) dnp3.Logger { return chaosSide{l, name} }
+
+type chaosSide struct {
+	l    *chaosLog
+	name string
+}
+
+func (s chaosSide) Debugf(format string, args ...any) { s.l.add(s.name, "DEBUG", format, args...) }
+func (s chaosSide) Infof(format string, args ...any)  { s.l.add(s.name, "INFO", format, args...) }
+func (s chaosSide) Warnf(format string, args ...any)  { s.l.add(s.name, "WARN", format, args...) }
+func (s chaosSide) Errorf(format string, args ...any) { s.l.add(s.name, "ERROR", format, args...) }
+
 // expectedUnderChaos reports whether err is a failure faults may cause:
 // a lost or not yet re-established connection, a timeout, a session key
 // change or a file transfer cut short by the connection's end.
@@ -194,8 +249,10 @@ func TestChaos(t *testing.T) {
 			}
 			files.files["/data.bin"] = content
 			handler := &relay{status: app.StatusSuccess}
-			sopts := []server.Option{server.WithMasters(1), server.WithHandler(handler), server.WithFileServer(files)}
-			copts := []client.Option{
+			logs := newChaosLog(t)
+			sopts := []server.Option{server.WithMasters(1), server.WithHandler(handler), server.WithFileServer(files),
+				server.WithLogger(logs.side("outstation"))}
+			copts := []client.Option{client.WithLogger(logs.side("master")),
 				client.WithResponseTimeout(300 * time.Millisecond), client.WithAutoIntegrity(false),
 				client.WithReconnect(client.Reconnect{MinDelay: 10 * time.Millisecond, MaxDelay: 50 * time.Millisecond}),
 				client.WithRetry(client.Retry{Attempts: 3, Backoff: 5 * time.Millisecond}),
@@ -342,16 +399,20 @@ func TestChaos(t *testing.T) {
 			eventually := func(what string, f func(context.Context) error) {
 				t.Helper()
 				var err error
-				deadline := time.Now().Add(10 * time.Second)
+				start := time.Now()
+				deadline := start.Add(10 * time.Second)
+				attempts := 0
 				for {
 					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 					err = f(ctx)
 					cancel()
+					attempts++
 					if err == nil || time.Now().After(deadline) {
 						break
 					}
 					time.Sleep(20 * time.Millisecond)
 				}
+				t.Logf("%s after recovery: %d attempts in %v", what, attempts, time.Since(start).Round(time.Millisecond))
 				if err != nil {
 					t.Errorf("%s after recovery: %v", what, err)
 				}

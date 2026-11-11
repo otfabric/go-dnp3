@@ -97,9 +97,11 @@ func newPair(t *testing.T, setup func(db *server.Database), sopts []server.Optio
 	defer cancel()
 	c, err := client.Dial(ctx, l.Addr().String(), append([]client.Option{
 		client.WithHandler(rec), client.WithResponseTimeout(2 * time.Second),
-		// The automatic integrity poll after a restart would take the
-		// events the tests poll for; TestAutomaticIntegrity covers it.
-		client.WithAutoIntegrity(false),
+		// The automatic integrity poll after a restart, and the one of the
+		// default startup sequence, would take the events the tests poll
+		// for; TestAutomaticIntegrity and the TestSpec5_1_1 tests of
+		// spec_master_test.go cover them.
+		client.WithAutoIntegrity(false), client.WithStartup(client.Startup{}),
 	}, copts...)...)
 	if err != nil {
 		_ = srv.Close()

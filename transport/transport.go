@@ -50,6 +50,17 @@ var (
 	// ErrTooLarge reports a fragment that grew beyond the limit; it is
 	// discarded.
 	ErrTooLarge = errors.New("transport: fragment too large")
+
+	// ErrDuplicate reports a segment octet for octet identical to the
+	// one before it in the fragment being assembled. It is discarded and
+	// the fragment goes on (IEEE 1815-2012 clause 8.2.1.4 rule 5.3,
+	// Table 8-1 row 4): a repeat, not an error of the peer.
+	ErrDuplicate = errors.New("transport: repeated segment")
+
+	// ErrNoData reports a segment with a header and no application data;
+	// a segment carries 1 to 249 octets (IEEE 1815-2012 clause 8.2.2). It
+	// is discarded and leaves a fragment in progress as it was.
+	ErrNoData = errors.New("transport: segment without data")
 )
 
 // Header is the transport header octet.
@@ -97,9 +108,10 @@ type Segmenter struct {
 
 // Segment splits fragment into segments, each ready to be the user data of
 // one link frame, and advances the sequence number. A fragment of zero
-// length is sent as one segment with only the header.
+// length gives no segment: a segment carries 1 to 249 octets of the
+// fragment (IEEE 1815-2012 clause 8.2.2).
 func (s *Segmenter) Segment(fragment []byte) [][]byte {
-	n := max(1, (len(fragment)+MaxSegmentData-1)/MaxSegmentData)
+	n := (len(fragment) + MaxSegmentData - 1) / MaxSegmentData
 	out := make([][]byte, 0, n)
 	for i := range n {
 		part := fragment[i*MaxSegmentData : min(len(fragment), (i+1)*MaxSegmentData)]
@@ -120,6 +132,11 @@ type Reassembler struct {
 	buf     []byte
 	active  bool
 	nextSeq uint8
+
+	// The segment accepted last in the fragment being assembled, for the
+	// octet-for-octet comparison of rule 5.3.
+	prev  [MaxSegment]byte
+	prevN int
 }
 
 // NewReassembler returns a Reassembler that accepts fragments of up to max
@@ -134,16 +151,26 @@ func NewReassembler(max int) *Reassembler {
 // Add processes one received segment. It returns the fragment when the
 // segment completed one; the fragment is a new slice owned by the caller.
 //
-// The rules are those of IEEE 1815-2012 clause 8.2.1.2: a FIR segment
-// always starts a new fragment, discarding any partial one; a segment
-// without FIR must carry the next sequence number of the fragment in
-// progress, or it and the partial fragment are discarded.
+// The rules are those of IEEE 1815-2012 clause 8.2.1.4 and the reception
+// state table, Table 8-1:
+//   - a segment without FIR while no fragment is in progress is discarded
+//     (rule 3, row 1);
+//   - a FIR segment always starts a new fragment, discarding any partial
+//     one (rules 4 and 5.2, rows 2, 3, 9 and 10);
+//   - a segment without FIR that repeats the previous one octet for octet
+//     is discarded and the fragment goes on (rule 5.3, row 4: ErrDuplicate);
+//   - any other segment without FIR must carry the next sequence number,
+//     or it and the partial fragment are discarded (rules 5.1 and 5.4,
+//     rows 5 and 8: ErrSequence).
 func (r *Reassembler) Add(segment []byte) ([]byte, error) {
 	if len(segment) == 0 {
 		return nil, ErrEmpty
 	}
 	h := Header(segment[0])
 	data := segment[1:]
+	if len(data) == 0 {
+		return nil, fmt.Errorf("%w (%s)", ErrNoData, h)
+	}
 	if h.FIR() {
 		r.buf = r.buf[:0]
 		r.active = true
@@ -151,6 +178,8 @@ func (r *Reassembler) Add(segment []byte) ([]byte, error) {
 		switch {
 		case !r.active:
 			return nil, fmt.Errorf("%w (%s)", ErrNoFirst, h)
+		case h.Seq() != r.nextSeq && r.repeats(segment):
+			return nil, fmt.Errorf("%w (%s)", ErrDuplicate, h)
 		case h.Seq() != r.nextSeq:
 			r.Reset()
 			return nil, fmt.Errorf("%w: %d, want %d", ErrSequence, h.Seq(), r.nextSeq)
@@ -162,6 +191,7 @@ func (r *Reassembler) Add(segment []byte) ([]byte, error) {
 	}
 	r.buf = append(r.buf, data...)
 	r.nextSeq = (h.Seq() + 1) & seqMask
+	r.prevN = copy(r.prev[:], segment)
 	if !h.FIN() {
 		return nil, nil
 	}
@@ -171,10 +201,17 @@ func (r *Reassembler) Add(segment []byte) ([]byte, error) {
 	return frag, nil
 }
 
+// repeats reports whether segment is octet for octet the segment accepted
+// last.
+func (r *Reassembler) repeats(segment []byte) bool {
+	return r.prevN > 0 && string(r.prev[:r.prevN]) == string(segment)
+}
+
 // Reset discards a partial fragment, for example when the link is reset.
 func (r *Reassembler) Reset() {
 	r.buf = r.buf[:0]
 	r.active = false
+	r.prevN = 0
 }
 
 // Pending reports whether a fragment is partially assembled.

@@ -41,6 +41,10 @@ const (
 	// app.AbsoluteTime with Units), for example a schedule. They have no
 	// events and no class.
 	TimeAndInterval
+	// fileStatusEvent are the file transport status events (g70v6) of the
+	// files the outstation closed on its own (IEEE 1815-2012 4.4.17.1.1):
+	// internal, with no points and no static objects.
+	fileStatusEvent
 	numPointTypes
 )
 
@@ -73,6 +77,8 @@ func (t PointType) String() string {
 		return "analog output command"
 	case TimeAndInterval:
 		return "time and interval"
+	case fileStatusEvent:
+		return "file transport status"
 	default:
 		return fmt.Sprintf("point type %d", uint8(t))
 	}
@@ -162,6 +168,9 @@ type PointConfig struct {
 type point struct {
 	index uint32
 	cfg   PointConfig
+	// def is the configuration the point was added with, whose classes a
+	// restart restores.
+	def   PointConfig
 	value app.Value
 	// last is the value of the last event, for change detection.
 	last app.Value
@@ -236,18 +245,54 @@ func (db *Database) Add(t PointType, index uint32, cfg PointConfig, initial app.
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	_, existed := db.points[t][index]
-	db.points[t][index] = &point{index: index, cfg: cfg, value: initial, last: initial}
+	initial = sanitize(t, initial)
+	db.points[t][index] = &point{index: index, cfg: cfg, def: cfg, value: initial, last: initial}
 	if !existed {
 		db.rebuildSorted(t)
 	}
 	return nil
 }
 
-// validDeadband reports whether d is a deadband: a finite number of at
-// least zero. A NaN deadband would never raise an event for a change, and
-// a negative one would raise one for every update.
+// validDeadband reports whether d is a deadband: a number of at least zero.
+// Positive infinity prevents event generation (IEEE 1815-2012 A.18.3.2.3,
+// p. 608); a NaN deadband would also never raise an event for a change,
+// but not on purpose, and a negative one would raise one for every update.
 func validDeadband(d float64) bool {
-	return d >= 0 && !math.IsInf(d, 1)
+	return d >= 0
+}
+
+// sanitize clears the flag bits an outstation does not send as set: the
+// ROLLOVER flag of counters (IEEE 1815-2012 Table 11-5, p. 325: outstations
+// shall not set it) and the bits Annex A reserves, which are always 0
+// (bit 6 of binary inputs, bits 5 and 6 of binary outputs, A.6.2.2.2,
+// p. 500; bit 7 of counters and analogs, e.g. A.10.1.2.2, p. 517). The
+// state bits are carried in the value, not the flags.
+func sanitize(t PointType, v app.Value) app.Value {
+	switch x := v.(type) {
+	case app.Binary:
+		keep := app.Flags(0x3F)
+		if t == BinaryOutput {
+			keep = 0x1F
+		}
+		x.Flags &= keep
+		return x
+	case app.Counter:
+		x.Flags &^= app.FlagRollover | 0x80
+		return x
+	case app.Analog:
+		x.Flags &= 0x7F
+		return x
+	default:
+		return v
+	}
+}
+
+// silentOutput reports whether an output point produces no events of its
+// status (g11, g42): an output event is generated only for a point whose
+// static object a class 0 response returns (A.7.1.1, p. 501; A.21.1.1,
+// p. 620).
+func silentOutput(t PointType, cfg PointConfig) bool {
+	return (t == BinaryOutput || t == AnalogOutput) && cfg.ExcludeFromClass0
 }
 
 func checkVariation(t PointType, cfg PointConfig) error {
@@ -367,8 +412,9 @@ func (b *Batch) Update(t PointType, index uint32, v app.Value, mode EventMode) e
 	if !ok {
 		return fmt.Errorf("%w: no %s at index %d", dnp3.ErrInvalidOption, t, index)
 	}
+	v = sanitize(t, v)
 	p.value = v
-	if p.cfg.Class == 0 {
+	if p.cfg.Class == 0 || silentOutput(t, p.cfg) {
 		// A point without an event class reports no change, so the next
 		// one is measured from its current value: once ASSIGN_CLASS gives
 		// it a class, an event reports a change of the value the master
@@ -446,6 +492,11 @@ func withTime(v app.Value, ts app.Timestamp) app.Value {
 // changed reports whether v differs from the value of the last event
 // enough to produce a new one.
 func changed(last, v app.Value, deadband float64) bool {
+	if math.IsInf(deadband, 1) {
+		// A deadband of positive infinity prevents event generation
+		// (IEEE 1815-2012 A.18.3.2.3, p. 608).
+		return false
+	}
 	switch x := v.(type) {
 	case app.Binary:
 		l := last.(app.Binary)
@@ -507,12 +558,23 @@ func (db *Database) rebuildSorted(t PointType) {
 }
 
 // assignClass sets the class of the points of t in the range (all when
-// all is set). It reports whether every index of the range existed. The
-// caller holds mu for writing.
+// all is set). For BinaryOutputCommand and AnalogOutputCommand it sets the
+// command event class of the binary or analog outputs (IEEE 1815-2012
+// Table 4-12, p. 63: g12v0 and g41v0 assign the classes of g13 and g43).
+// It reports whether every index of the range existed. The caller holds
+// mu for writing.
 func (db *Database) assignClass(t PointType, all bool, start, stop uint32, c Class) bool {
+	set := func(p *point) { p.cfg.Class = c }
+	switch t {
+	case BinaryOutputCommand:
+		t, set = BinaryOutput, func(p *point) { p.cfg.CommandEventClass = c }
+	case AnalogOutputCommand:
+		t, set = AnalogOutput, func(p *point) { p.cfg.CommandEventClass = c }
+	default:
+	}
 	if all {
 		for _, p := range db.points[t] {
-			p.cfg.Class = c
+			set(p)
 		}
 		return true
 	}
@@ -528,8 +590,21 @@ func (db *Database) assignClass(t PointType, all bool, start, stop uint32, c Cla
 		if i > stop {
 			break
 		}
-		db.points[t][i].cfg.Class = c
+		set(db.points[t][i])
 		n++
 	}
 	return uint64(n) == uint64(stop)-uint64(start)+1
+}
+
+// revertClasses gives every point its configured class and command event
+// class again: an outstation that does not keep class assignments across
+// a restart reverts to its defaults (IEEE 1815-2012 4.4.14, p. 63).
+func (db *Database) revertClasses() {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	for t := range db.points {
+		for _, p := range db.points[t] {
+			p.cfg.Class, p.cfg.CommandEventClass = p.def.Class, p.def.CommandEventClass
+		}
+	}
 }

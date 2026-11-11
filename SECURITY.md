@@ -19,9 +19,9 @@ We will acknowledge your report within 48 hours and aim to provide a fix or miti
 
 | Version | Supported |
 |---------|-----------|
-| 1.9.x | Yes |
-| 1.4.x – 1.8.x | No: upgrade to 1.9.x |
-| 1.0.x – 1.3.x | No: upgrade to 1.9.x. These versions crash the outstation on a malformed READ of g70v5 that any master able to reach it can send (fixed in v1.4.0) |
+| 1.10.x | Yes |
+| 1.4.x – 1.9.x | No: upgrade to 1.10.x |
+| 1.0.x – 1.3.x | No: upgrade to 1.10.x. These versions crash the outstation on a malformed READ of g70v5 that any master able to reach it can send (fixed in v1.4.0) |
 | 0.x | No |
 
 ## Security Considerations
@@ -45,11 +45,14 @@ Plain DNP3 carries no authentication and no encryption: anyone who can reach an 
 `WithSecureAuthentication` on both ends makes the outstation execute critical requests (controls, writes, restarts, freezes, file operations, ...) only after the master proved knowledge of the control direction session key with an HMAC over the challenge and the request.
 
 - **Use an update key.** With `secauth.User.UpdateKey` (16 or 32 random octets) the master generates fresh session keys on every connection and at the key change interval, and sends them wrapped with the update key (AES key wrap, RFC 3394); the outstation drops them when the connection ends. The pre-shared session key mode (`secauth.User.Key` without an update key) never changes its key and is meant for testing. A device whose manual speaks of a "pre-shared key", one per device, means the update key: configure it as `UpdateKey`, with the user number the device uses (1, the default user, unless it says otherwise; 0 is taken as 1)
-- **The outstation chooses the MAC algorithm** of a challenge's reply. The master accepts every algorithm it computes except the obsolete HMAC-SHA-1/4; `client.WithChallengeMACs` narrows the list, for example to the HMAC-SHA-256 variants where HMAC-SHA-1 is not allowed
+- **The outstation chooses the MAC algorithm** of a challenge's reply. The master accepts every algorithm it computes except the obsolete HMAC-SHA-1/4 and, over TCP and UDP, the 8-octet truncations (clause 7.6.1.1); `client.WithChallengeMACs` narrows the list, for example to the HMAC-SHA-256 variants where HMAC-SHA-1 is not allowed
 - **Update keys are configured out of band.** The update key change procedures (symmetric and asymmetric) and user management are not implemented, nor is AES-GMAC: keep update keys out of source control and rotate them by reconfiguring both ends
-- **Aggressive mode** (`client.WithAggressiveMode`) saves the challenge round trip: the MAC is bound to the last challenge and the outstation checks that the challenge sequence numbers follow each other, so a request cannot be replayed. It still trusts one challenge for several requests; enable it only where the latency matters. An outstation with secure authentication always accepts aggressive mode requests from its master: it cannot be turned off on the outstation's side
+- **Aggressive mode** (`client.WithAggressiveMode`) saves the challenge round trip: the MAC is bound to the last challenge and the outstation checks that the challenge sequence numbers follow each other, so a request cannot be replayed. It still trusts one challenge for several requests; enable it only where the latency matters. An outstation turns it off with `SecureAuth.NoAggressiveMode`. The MAC follows IEEE 1815-2012 Table A-9; aggressive mode needs both ends at this release or later
 - **A critical broadcast is carried out only in aggressive mode.** A broadcast cannot be challenged: with secure authentication the outstation discards a critical one without a valid aggressive mode MAC, counts it as discarded and answers nothing
-- **A held critical request expires.** `SecureAuth.ReplyTimeout` (10 s by default) bounds how long the outstation waits for the reply to its challenge
+- **A held critical request expires.** `SecureAuth.ReplyTimeout` (2 s by default) bounds how long the outstation waits for the reply to its challenge; meanwhile it discards other requests
+- **Session keys expire.** The master changes them at the interval (15 min), after 1000 authentication messages, after an outstation restart and after a refused authentication; the outstation stops accepting them after 30 min or 2000 messages without a change, and after repeated authentication failures or reply timeouts
+- **Error messages are rate-limited.** The outstation stops answering failed authentications with error messages past Max Error Messages Sent (3) until the next key change, and closes a TCP connection that keeps failing after the keys were invalidated three times
+- **The key status is authenticated.** The master checks the key status MAC with the last monitoring key before it changes the keys, and counts a status that fails as an authentication failure (possible attack, logged)
 - **Watch the security statistics.** The outstation counts authentication failures, refused key changes, reply timeouts and more per master (g121, readable by any master); `StatisticsThreshold` and `StatisticsClass` make them events (g122) a SCADA system can alarm on
 - **Only the control direction is authenticated.** Responses and unsolicited data from the outstation are not authenticated; use TLS to protect them
 - **Non-critical requests (READ) are not challenged.** They disclose data without authentication; use TLS where that matters

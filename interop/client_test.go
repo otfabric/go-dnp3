@@ -24,10 +24,13 @@ func dialRef(t *testing.T, s *refServer, opts ...client.Option) *client.Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	// The tests call the procedures themselves: the startup integrity poll
+	// and the automatic time synchronization of the defaults are off, as
+	// the automatic integrity poll is (TestClientDefaults runs them).
 	c, err := client.Dial(ctx, s.addr, append([]client.Option{
 		client.WithAddresses(1, link.Address(s.adapter.fixture(t).Outstation.Address)),
 		client.WithResponseTimeout(5 * time.Second),
-		client.WithAutoIntegrity(false),
+		client.WithAutoIntegrity(false), client.WithStartup(client.Startup{}), client.WithTimeSync(client.TimeSyncNone),
 	}, opts...)...)
 	if err != nil {
 		t.Fatalf("dial %s: %v", s.adapter.name, err)
@@ -294,6 +297,52 @@ func TestClientTimeSync(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestClientDefaults: a client with the default options against each
+// reference outstation. Connect runs the startup integrity poll (IEEE
+// 1815-2012 clause 5.1.1.2 Rule 1); the outstation's restart (IIN1.7) is
+// cleared, and its NEED_TIME (IIN1.4) is answered with the LAN procedure,
+// or the non-LAN one when the outstation refuses the LAN one (clauses
+// 4.5.5 and 10.3.3).
+func TestClientDefaults(t *testing.T) {
+	requireDocker(t)
+	for _, a := range adapters(t) {
+		t.Run(a.name, func(t *testing.T) {
+			s := startServer(t, a)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			// The response timeout is longer than opendnp3's unsolicited
+			// confirm timeout (5 s): its outstation can hold the startup
+			// READ until then (see TestClientSeveralOutstations).
+			c, err := client.Dial(ctx, s.addr,
+				client.WithAddresses(1, link.Address(a.fixture(t).Outstation.Address)),
+				client.WithResponseTimeout(12*time.Second))
+			if err != nil {
+				t.Fatalf("dial with the default startup: %v", err)
+			}
+			t.Cleanup(func() { _ = c.Close() })
+			f := a.capabilities(t).Features
+			syncs := f["timeSyncLan"] || f["timeSyncNonLan"]
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				res, err := c.Read(tctx(t), app.AllObjects(app.G80V1))
+				if err != nil && !isIINErr(err) {
+					t.Fatal(err)
+				}
+				if res == nil {
+					t.Fatalf("read without a response: %v", err)
+				}
+				if !res.IIN.Has(app.IINDeviceRestart) && (!res.IIN.Has(app.IINNeedTime) || !syncs) {
+					return
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("IIN %s after the automatic tasks", res.IIN)
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		})
 	}
 }
 

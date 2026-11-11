@@ -54,12 +54,13 @@ func NewGroup(servers ...*Server) (*Group, error) {
 // Servers returns the servers of the group, in the order given.
 func (g *Group) Servers() []*Server { return append([]*Server(nil), g.servers...) }
 
-// ListenAndServe listens on the TCP address addr (":20000" when empty),
-// with the TLS configuration of the first server's WithTLS when it has
-// one, and serves until Close.
+// ListenAndServe listens on the TCP address addr, with the TLS
+// configuration of the first server's WithTLS when it has one, and serves
+// until Close. An empty addr is ":20000", or ":19999" ([DefaultTLSPort])
+// with TLS.
 func (g *Group) ListenAndServe(addr string) error {
 	if addr == "" {
-		addr = fmt.Sprintf(":%d", DefaultPort)
+		addr = fmt.Sprintf(":%d", defaultPort(g.servers[0].opts.tls != nil))
 	}
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -89,10 +90,6 @@ func (g *Group) Serve(l net.Listener) error {
 		delete(g.listeners, l)
 		g.mu.Unlock()
 	}()
-	limit := g.servers[0].opts.maxConns
-	for _, s := range g.servers[1:] {
-		limit = min(limit, s.opts.maxConns)
-	}
 	var delay time.Duration
 	for {
 		c, err := l.Accept()
@@ -109,26 +106,23 @@ func (g *Group) Serve(l net.Listener) error {
 			continue
 		}
 		delay = 0
-		g.mu.Lock()
-		full := g.conns >= limit
-		if !full {
-			g.conns++
+		if !g.masterIPAllowed(c.RemoteAddr()) {
+			g.servers[0].log.Warn("connection refused: address not among WithMasterIPs", "remote", c.RemoteAddr().String())
+			_ = c.Close()
+			continue
 		}
-		g.mu.Unlock()
-		if full {
-			g.servers[0].log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", limit)
+		if !g.acquire() {
+			g.servers[0].log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", g.limit())
 			_ = c.Close()
 			continue
 		}
 		g.wg.Go(func() {
+			defer g.release()
 			if err := handshake(c); err != nil {
 				g.servers[0].log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
 			} else {
 				_ = g.ServeConn(c, c.RemoteAddr())
 			}
-			g.mu.Lock()
-			g.conns--
-			g.mu.Unlock()
 		})
 	}
 }
@@ -146,7 +140,46 @@ func (g *Group) ServeConn(rw io.ReadWriteCloser, remote net.Addr) error {
 // ServeUDP serves the outstations of the group over UDP on pc, as
 // [Server.ServeUDP] does for one.
 func (g *Group) ServeUDP(pc net.PacketConn) error {
-	return g.ServeConn(&udpStream{pc: pc}, pc.LocalAddr())
+	return g.ServeConn(&udpStream{pc: pc, allow: g.masterIPAllowed}, pc.LocalAddr())
+}
+
+// masterIPAllowed reports whether every server of the group takes a master
+// at a (WithMasterIPs).
+func (g *Group) masterIPAllowed(a net.Addr) bool {
+	for _, s := range g.servers {
+		if !s.opts.masterIPAllowed(a) {
+			return false
+		}
+	}
+	return true
+}
+
+// limit is the smallest WithMaxConnections of the group's servers.
+func (g *Group) limit() int {
+	limit := g.servers[0].opts.maxConns
+	for _, s := range g.servers[1:] {
+		limit = min(limit, s.opts.maxConns)
+	}
+	return limit
+}
+
+// acquire counts a connection in, unless the group holds its limit.
+func (g *Group) acquire() bool {
+	limit := g.limit()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.conns >= limit {
+		return false
+	}
+	g.conns++
+	return true
+}
+
+// release counts a connection out.
+func (g *Group) release() {
+	g.mu.Lock()
+	g.conns--
+	g.mu.Unlock()
 }
 
 func (g *Group) isClosed() bool {

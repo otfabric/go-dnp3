@@ -49,7 +49,11 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *wait)
 	defer cancel()
+	// No startup sequence and no automatic time synchronization: the poll
+	// below is retried until the outstation answers, which a startup poll
+	// would not be.
 	c, err := client.Dial(ctx, *addr, client.WithStream(open), client.WithAutoIntegrity(false),
+		client.WithStartup(client.Startup{}), client.WithTimeSync(client.TimeSyncNone),
 		client.WithAddresses(1, link.Address(min(*outstation, 0xFFFF))), client.WithResponseTimeout(2*time.Second))
 	if err != nil {
 		out.Error = err.Error()

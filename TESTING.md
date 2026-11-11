@@ -31,6 +31,22 @@ All tests run on Linux in CI. No tier uses DNP3 hardware or a real serial
 line, and the recorded traffic is not from identified hardware: serial is tested over byte streams, and in the interop suite over a
 pseudo-terminal bridged to TCP.
 
+## Spec tests
+
+Tests named `TestSpec<clause>_<what>` (for example
+`TestSpecTable8_1`, `TestSpec13_2_3_3_SecondConnectionRejected`)
+check one requirement of IEEE 1815-2012 each; their doc comment cites the
+clause, table or example and the printed page. They live in `spec_*_test.go`
+files next to the code (`link`, `transport`, `internal/channel`, `app`,
+`secauth`, `client`, `server`) and, where master and outstation both take
+part, in `e2e/spec_*_test.go`. The standard is not in the repository: it is
+copyrighted, so the tests carry clause references, not its text. A test
+that pins behaviour the standard leaves open says so.
+`TestSubsetLevelTables` (outstation) and `TestSubsetLevelResponses`
+(master) walk the request and response rows of the subset level Tables
+14-2 to 14-4 (levels 1 to 3); they check the rows, not a subset level
+claim.
+
 ## Recorded traffic
 
 [testdata/captures](testdata/captures/README.md) holds 182 network

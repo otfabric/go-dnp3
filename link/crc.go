@@ -2,7 +2,7 @@
 
 package link
 
-// The DNP3 CRC (IEEE 1815-2012 clause 9.2.5): polynomial
+// The DNP3 CRC (IEEE 1815-2012 clause 9.2.4.3 and Annex E): polynomial
 // x^16+x^13+x^12+x^11+x^10+x^8+x^6+x^5+x^2+1 (0x3D65), processed least
 // significant bit first, initial value 0, result complemented, transmitted
 // low octet first.

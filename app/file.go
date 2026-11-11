@@ -37,7 +37,7 @@ func (m FileMode) String() string {
 // FileStatus is the status code of a file command or transport status.
 type FileStatus uint8
 
-// File status codes (IEEE 1815-2012 Table 11-32).
+// File status codes (IEEE 1815-2012 11.7.2, Table 11-8).
 const (
 	FileSuccess          FileStatus = 0
 	FilePermissionDenied FileStatus = 1

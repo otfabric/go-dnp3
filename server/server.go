@@ -23,6 +23,11 @@ import (
 // DefaultPort is the registered DNP3 port.
 const DefaultPort = 20000
 
+// DefaultTLSPort is the port of DNP3 over TLS: IEEE 1815-2012 clause
+// 7.8.8 makes 19999 the default, and clause 13.2.2.2 requires devices that
+// use TLS to support it.
+const DefaultTLSPort = 19999
+
 // Server is a DNP3 outstation: a point database served to masters over
 // any number of channels.
 type Server struct {
@@ -31,13 +36,17 @@ type Server struct {
 	clock *clock
 	log   *logx.Logger
 	sm    dnp3.ServerMetrics
+	// timeSync is the synchronization state of clock.
+	timeSync syncState
+	// handles assigns file handles, unique to the outstation.
+	handles fileHandles
 
 	mu         sync.Mutex
 	assocs     map[link.Address]*association
 	channels   map[*channel.Channel]struct{}
 	listeners  map[net.Listener]struct{}
 	indication app.IIN
-	freezes    map[*time.Timer]struct{} // scheduled FREEZE_AT_TIME
+	freezes    map[string]*scheduledFreeze // FREEZE_AT_TIME schedules, by the points they name
 	closed     bool
 	closeCh    chan struct{}
 	wg         sync.WaitGroup
@@ -56,7 +65,7 @@ func New(opts ...Option) (*Server, error) {
 		opts:      o,
 		clock:     newClock(),
 		log:       logx.New(o.logger, "server", "outstation", o.address),
-		freezes:   make(map[*time.Timer]struct{}),
+		freezes:   make(map[string]*scheduledFreeze),
 		assocs:    make(map[link.Address]*association),
 		channels:  make(map[*channel.Channel]struct{}),
 		listeners: make(map[net.Listener]struct{}),
@@ -104,8 +113,11 @@ func (s *Server) indications() app.IIN {
 // reports IIN1.7 (DEVICE_RESTART) again, its event buffer is cleared,
 // unsolicited responses start over with a null unsolicited response, and,
 // with WithTimeSync, its time counts as unsynchronized until the next time
-// synchronization (IIN1.4).
+// synchronization (IIN1.4). Points get the classes they were added with
+// again, undoing ASSIGN_CLASS (IEEE 1815-2012 4.4.14, p. 63); deadbands
+// written by a master are kept.
 func (s *Server) Restart() {
+	s.db.revertClasses()
 	for _, a := range s.associations() {
 		a.post(func() { a.restart() })
 	}
@@ -162,11 +174,12 @@ func (s *Server) publish(evs []event) {
 	}
 }
 
-// ListenAndServe listens on the TCP address addr (":20000" when empty),
-// with TLS when WithTLS was given, and serves until Close.
+// ListenAndServe listens on the TCP address addr, with TLS when WithTLS
+// was given, and serves until Close. An empty addr is ":20000", or
+// ":19999" ([DefaultTLSPort]) with TLS.
 func (s *Server) ListenAndServe(addr string) error {
 	if addr == "" {
-		addr = fmt.Sprintf(":%d", DefaultPort)
+		addr = fmt.Sprintf(":%d", defaultPort(s.opts.tls != nil))
 	}
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -213,6 +226,11 @@ func (s *Server) Serve(l net.Listener) error {
 			continue
 		}
 		delay = 0
+		if !s.opts.masterIPAllowed(c.RemoteAddr()) {
+			s.log.Warn("connection refused: address not among WithMasterIPs", "remote", c.RemoteAddr().String())
+			_ = c.Close()
+			continue
+		}
 		if s.connections() >= s.opts.maxConns {
 			s.log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", s.opts.maxConns)
 			_ = c.Close()
@@ -252,6 +270,28 @@ func handshake(c net.Conn) error {
 		return err
 	}
 	return nil
+}
+
+// defaultPort returns DefaultTLSPort with TLS, DefaultPort without.
+func defaultPort(tls bool) int {
+	if tls {
+		return DefaultTLSPort
+	}
+	return DefaultPort
+}
+
+// streamConnected reports whether a master is connected over a stream
+// (TCP, TLS or serial) that is open: DialAndServe does not connect while
+// one is.
+func (s *Server) streamConnected() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for ch := range s.channels {
+		if !ch.Datagram() && !closing(ch) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) connections() int {
@@ -336,6 +376,18 @@ func serveConn(rw io.ReadWriteCloser, remote net.Addr, servers []*Server) error 
 		}
 	}
 	ch.Start()
+	if wait, ok := silentLimit(remote, servers); ok && len(ch.Sessions()) == 0 {
+		// The keep-alive of IEEE 1815-2012 clause 13.2.3.3.1 runs per
+		// master, and no master has spoken yet: a TCP connection that
+		// stays silent for a keep-alive interval and a link timeout is
+		// deemed broken, as an unanswered keep-alive would be.
+		t := time.AfterFunc(wait, func() {
+			if len(ch.Sessions()) == 0 {
+				ch.Close(fmt.Errorf("%w: no master spoke on the connection within the keep-alive interval", dnp3.ErrTimeout))
+			}
+		})
+		defer t.Stop()
+	}
 	<-ch.Done()
 
 	err := ch.Err()
@@ -346,6 +398,31 @@ func serveConn(rw io.ReadWriteCloser, remote net.Addr, servers []*Server) error 
 		s.log.Info("connection closed", "remote", addrString(remote), "error", err)
 	}
 	return err
+}
+
+// silentLimit returns how long a TCP connection may stay without a
+// master: the longest keep-alive interval plus link timeout of servers.
+// It is false for other streams, such as serial lines and datagram
+// sockets, and when a server has disabled its keep-alive.
+func silentLimit(remote net.Addr, servers []*Server) (time.Duration, bool) {
+	if _, ok := remote.(*net.TCPAddr); !ok {
+		return 0, false
+	}
+	var wait time.Duration
+	for _, s := range servers {
+		ka, to := s.opts.link.KeepAlive, s.opts.link.Timeout
+		if ka < 0 {
+			return 0, false
+		}
+		if ka == 0 {
+			ka = 60 * time.Second
+		}
+		if to <= 0 {
+			to = 2 * time.Second
+		}
+		wait = max(wait, ka+to)
+	}
+	return wait, true
 }
 
 // bind adds the session of master on ch and attaches it to the master's
@@ -363,6 +440,7 @@ func (s *Server) bind(ch *channel.Channel, master link.Address) *channel.Session
 	sess = ch.AddSession(channel.SessionConfig{
 		Local:           s.opts.address,
 		Remote:          master,
+		SelfAddress:     s.opts.selfAddress,
 		Confirmed:       s.opts.link.Confirmed,
 		ResponseTimeout: s.opts.link.Timeout,
 		Retries:         s.opts.link.Retries,
@@ -401,8 +479,8 @@ func (s *Server) Close() error {
 	}
 	s.closed = true
 	close(s.closeCh)
-	for t := range s.freezes {
-		t.Stop()
+	for _, f := range s.freezes {
+		f.timer.Stop()
 	}
 	clear(s.freezes)
 	for l := range s.listeners {

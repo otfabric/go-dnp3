@@ -6,7 +6,7 @@
 import "github.com/otfabric/go-dnp3/secauth"
 ```
 
-Package secauth implements the cryptographic core of DNP3 Secure Authentication version 5 (IEEE 1815-2012 clause 7): the message authentication codes and the construction of the data they protect.
+Package secauth implements the cryptographic core of DNP3 Secure Authentication version 5 (IEEE 1815-2012 clause 7 and A.45): the message authentication codes and the construction of the data they protect.
 
 The procedures that use it are wired into the client and the server through their WithSecureAuthentication option: the challenge of critical requests (DefaultCritical by default), aggressive mode (AggressiveOverhead is what it adds to a request), the session key change and the security statistics ([Statistic](#type-statistic)), with HMAC-SHA-256 (which every SAv5 device must implement) or HMAC-SHA-1, and AES-128 or AES-256 key wrap (RFC 3394). Update keys are configured on both ends out of band: the update key change and user management procedures, and AES-GMAC, are not implemented.
 
@@ -26,18 +26,31 @@ var DefaultCritical = []app.FunctionCode{
 	app.FuncImmediateFreeze, app.FuncImmediateFreezeNoAck, app.FuncFreezeClear, app.FuncFreezeClearNoAck,
 	app.FuncFreezeAtTime, app.FuncFreezeAtTimeNoAck, app.FuncColdRestart, app.FuncWarmRestart,
 	app.FuncInitializeData, app.FuncInitializeApplication, app.FuncStartApplication, app.FuncStopApplication,
-	app.FuncSaveConfiguration, app.FuncAssignClass, app.FuncOpenFile, app.FuncDeleteFile,
-	app.FuncActivateConfig, app.FuncAuthenticateFile,
+	app.FuncSaveConfiguration, app.FuncEnableUnsolicited, app.FuncDisableUnsolicited, app.FuncAssignClass,
+	app.FuncRecordCurrentTime, app.FuncOpenFile, app.FuncCloseFile, app.FuncDeleteFile, app.FuncGetFileInfo,
+	app.FuncAuthenticateFile, app.FuncAbortFile, app.FuncActivateConfig,
 }
 ```
 
-DefaultCritical are the function codes an outstation challenges by default, and a master sends in aggressive mode: the ones that change the outstation's state.
+DefaultCritical are the function codes an outstation challenges by default, and a master sends in aggressive mode: the MANDATORY ones of IEEE 1815-2012 Table 7-7 (MandatoryCritical) and the optional ones that change the outstation's state (the freezes, INITIALIZE\_DATA and ASSIGN\_CLASS, clause 7.5.2.3.2 b).
 
 ```go
 var ErrKeyWrap = errors.New("secauth: key unwrap failed")
 ```
 
 ErrKeyWrap reports wrapped key data that does not unwrap: a wrong key, damaged data, or data whose integrity check fails.
+
+```go
+var MandatoryCritical = []app.FunctionCode{
+	app.FuncWrite, app.FuncSelect, app.FuncOperate, app.FuncDirectOperate, app.FuncDirectOperateNoAck,
+	app.FuncColdRestart, app.FuncWarmRestart, app.FuncInitializeApplication, app.FuncStartApplication,
+	app.FuncStopApplication, app.FuncSaveConfiguration, app.FuncEnableUnsolicited, app.FuncDisableUnsolicited,
+	app.FuncRecordCurrentTime, app.FuncOpenFile, app.FuncCloseFile, app.FuncDeleteFile, app.FuncGetFileInfo,
+	app.FuncAuthenticateFile, app.FuncAbortFile, app.FuncActivateConfig,
+}
+```
+
+MandatoryCritical are the request function codes IEEE 1815-2012 Table 7-7 marks MANDATORY: an outstation must challenge every request with one of them (clause 7.5.2.3.2 a). Package server always adds them to the codes it challenges.
 
 ## Functions
 
@@ -47,9 +60,11 @@ ErrKeyWrap reports wrapped key data that does not unwrap: a wrong key, damaged d
 func AuthData(challenge, criticalFragment []byte) []byte
 ```
 
-AuthData is the data a challenge reply authenticates (IEEE 1815-2012 clause 7.5.2.1): the full challenge object as it was sent, followed by the critical application fragment that was challenged.
+AuthData is the data a MAC of secure authentication covers: the challenge fragment, then the authenticated fragment.
 
-Both stations build it the same way, so the master's reply MAC and the outstation's verification MAC match when the key matches.
+For a reply (g120v2, IEEE 1815-2012 A.45.2, Table A-3) challenge is the whole application fragment carrying the challenge as it was sent, and criticalFragment the critical fragment that was challenged, as it was received. For aggressive mode (g120v9, A.45.9, Table A-9) challenge is the fragment of the most recent challenge, and criticalFragment the whole aggressive mode fragment up to its MAC value: the application header, the g120v3 object, the objects authenticated, and the object header and size prefix of the g120v9 object itself: every octet but the MAC value.
+
+Both stations build it the same way, so the sender's MAC and the receiver's verification MAC match when the key matches.
 
 ### func Equal
 
@@ -65,7 +80,7 @@ Equal reports whether the two MACs are equal, in constant time.
 func KeyChangeData(control, monitoring, keyStatus []byte) ([]byte, error)
 ```
 
-KeyChangeData is the plaintext of a session key change (g120v6, IEEE 1815-2012 clause 7.5.2.3): the length of a session key, the control direction and the monitoring direction session keys, and the key status message the outstation sent last, padded with zeros to a multiple of 8 octets for the key wrap.
+KeyChangeData is the plaintext of a session key change (g120v6, IEEE 1815-2012 clauses 7.5.4.2 and 7.5.5.3, A.45.6 Table A-5): the length of a session key, the control direction and the monitoring direction session keys, and the key status message the outstation sent last, padded with zeros to a multiple of 8 octets for the key wrap.
 
 ### func KeyUnwrap
 
@@ -107,7 +122,7 @@ ParseKeyChangeData returns the session keys of unwrapped key change data, after 
 type Statistic uint16
 ```
 
-Statistic is the index of a security statistic (group 121, events in group 122), as IEEE 1815-2012 clause 7.6 numbers them.
+Statistic is the index of a security statistic (group 121, events in group 122), as IEEE 1815-2012 Table 7-6 (clause 7.5.2.2) numbers them.
 
 ```go
 const (
@@ -135,6 +150,14 @@ const (
 ```
 
 The security statistics.
+
+#### func (Statistic) DefaultThreshold
+
+```go
+func (s Statistic) DefaultThreshold() uint16
+```
+
+DefaultThreshold returns the default event threshold of the statistic (IEEE 1815-2012 Table 7-6, 7.6.1.4.2): how many increments between two of its events (g122), and, for the five statistics of Table 7-15, the step of the moving maximum the state machines act on (for example Max Error Messages Sent). It returns 0 for an unknown statistic.
 
 #### func (Statistic) String
 

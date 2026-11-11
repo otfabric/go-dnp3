@@ -1466,6 +1466,20 @@
       "size": null
     },
     {
+      "group": 81,
+      "variation": 1,
+      "name": "Device Storage - Buffer Fill Status",
+      "family": "bufferFill",
+      "size": 3
+    },
+    {
+      "group": 82,
+      "variation": 1,
+      "name": "Device Profile - Functions and Indexes",
+      "family": "raw",
+      "size": null
+    },
+    {
       "group": 83,
       "variation": 1,
       "name": "Data Set - Private Registration Object",

@@ -10,7 +10,7 @@ Package app is the DNP3 application layer codec (IEEE 1815-2012 clause 4 and Ann
 
 A [Fragment](#type-fragment) is a list of [Header](#type-header) values; each header names a group and variation ([GroupVariation](#type-groupvariation)) and carries [Object](#type-object) values, an index plus a [Value](#type-value). The value types are a closed set of structs (for example [Binary](#type-binary), [Analog](#type-analog), [Counter](#type-counter), [CROB](#type-crob), [FileTransport](#type-filetransport), [AuthChallenge](#type-authchallenge)); variations of the same kind of point share one struct and the header's variation decides the encoding.
 
-The library covers every object group of IEEE 1815-2012 Annex A that a current device sends: binary and double-bit inputs, binary outputs and commands, counters and frozen counters, analog inputs, frozen analog inputs, deadbands, analog outputs and commands, time objects, class objects, file control (group 70), internal indications, device attributes (group 0), BCD and small integers, octet strings and virtual terminal objects, and the secure authentication objects (groups 120 to 122). Data set and private registration objects (groups 83 to 91) are carried as [Raw](#type-raw) payload, except the data set characteristics (g86v2, [DataSetCharacteristics](#type-datasetcharacteristics)).
+The library covers every object group of IEEE 1815-2012 Annex A that a current device sends: binary and double-bit inputs, binary outputs and commands, counters and frozen counters, analog inputs, frozen analog inputs, deadbands, analog outputs and commands, time objects, class objects, file control (group 70), internal indications, device attributes (group 0), BCD and small integers, octet strings and virtual terminal objects, and the secure authentication objects (groups 120 to 122). The device storage buffer fill status (g81v1, not recommended for new implementations) is decoded into [BufferFillStatus](#type-bufferfillstatus), and the device profile (g82v1) is carried as [Raw](#type-raw) payload, as are the data set and private registration objects (groups 83 to 91) except the data set characteristics (g86v2, [DataSetCharacteristics](#type-datasetcharacteristics)). Group 100, the obsolete floating-point objects, is not: IEEE 1815-2012 A.38 defines no coding for its variations.
 
 The package is a pure codec: it does no I/O and keeps no state between fragments. It imports nothing outside the standard library.
 
@@ -84,6 +84,8 @@ const (
 ```
 
 Standard device attribute variations of group 0 (set 0).
+
+IEEE 1815-2012 Annex A (A.1.1 to A.1.44) defines 209 to 243, 245 to 250, 252, 254 and 255. The variations 196 to 208 and 244 are not defined in IEEE 1815-2012; there, index 0 variations 1 to 253 are pre-assigned or reserved for assignment by the DNP Users Group (5.5.2).
 
 ```go
 const IINClassEvents = IINClass1Events | IINClass2Events | IINClass3Events
@@ -266,7 +268,9 @@ AnalogDeadband is an analog input reporting deadband (group 34).
 
 ```go
 type AnalogOutput struct {
-	Value  float64
+	Value float64
+	// Status is the control status octet, 0..255, 0 in a request
+	// (IEEE 1815-2012 A.20.1.2.2).
 	Status CommandStatus
 }
 ```
@@ -279,17 +283,21 @@ AnalogOutput is an analog output block (group 41): a set-point command and its e
 type AttrType uint8
 ```
 
-AttrType is the data type code of a device attribute (IEEE 1815-2012 Table 11-11).
+AttrType is the data type code of a device attribute (IEEE 1815-2012 5.5.4.3, Table 5-16). The codes are those of the object data type codes of Table 11-4.
 
 ```go
 const (
 	AttrVisibleString AttrType = 1
 	AttrUnsignedInt   AttrType = 2
 	AttrSignedInt     AttrType = 3
-	AttrFloat         AttrType = 4
-	AttrOctetString   AttrType = 5
-	AttrBitString     AttrType = 6
-	AttrTime          AttrType = 7
+	// AttrFloat values are 4 or 8 octets; "no other sizes are acceptable"
+	// (IEEE 1815-2012 5.5.4.3 and 11.4).
+	AttrFloat       AttrType = 4
+	AttrOctetString AttrType = 5
+	AttrBitString   AttrType = 6
+	// AttrTime is code 7, DNP3TIME, of Table 11-4 (TIME in Table 5-6):
+	// IEEE 1815-2012 Table 5-16 lists no code 7 for device attributes.
+	AttrTime AttrType = 7
 	// AttrList is the list of attribute variations returned for g0v255;
 	// AttrExtList is the same with a length above 255 (the length octet
 	// holds length-256).
@@ -376,7 +384,7 @@ UintAttribute returns an unsigned integer attribute in the smallest width that h
 func (a Attribute) Float() (float64, error)
 ```
 
-Float returns the value of a floating-point attribute.
+Float returns the value of a floating-point attribute, of 4 or 8 octets.
 
 #### func (Attribute) Int
 
@@ -500,7 +508,7 @@ const (
 )
 ```
 
-Authentication error codes (IEEE 1815-2012 Table A-14).
+Authentication error codes: the error code of g120v7 (IEEE 1815-2012 A.45.7.2.2).
 
 #### func (AuthErrorCode) String
 
@@ -676,10 +684,14 @@ AuthUserStatusChange is g120v10.
 ```go
 type BCD struct {
 	Value uint64
+	// Negative marks a negative number; Value is its magnitude.
+	Negative bool
 }
 ```
 
-BCD is a binary-coded decimal integer (group 101): 4 digits (v1), 8 digits (v2) or 16 digits (v3). Value is the decimal number.
+BCD is a binary-coded decimal integer (group 101): 4 digits (v1), 8 digits (v2) or 16 digits (v3). Value is the magnitude of the decimal number and Negative its sign.
+
+A negative value carries its sign in the most significant BCD character, so it has one digit fewer: BCDn holds -(10^(n-1)-1) to 10^n-1 (IEEE 1815-2012 11.3.6.1, Table 11-2, and 11.3.6.2). On receipt any of the characters 0xA..0xF in that position marks a negative value; this package sends 0xF, as the standard does not name one. A negative zero is sent, and decoded, as zero.
 
 ### type Binary
 
@@ -687,7 +699,9 @@ BCD is a binary-coded decimal integer (group 101): 4 digits (v1), 8 digits (v2) 
 type Binary struct {
 	Value bool
 	// Flags are not sent in the packed variations (g1v1, g10v1, g12v3,
-	// g80v1) and are zero when decoded from them.
+	// g80v1) and are zero when decoded from them. A master reads a
+	// variation without flags as ONLINE with every exception flag clear
+	// (IEEE 1815-2012 11.6.1.1 NOTE 2).
 	Flags Flags
 	// Time is the time of the event in the variations with time.
 	Time Timestamp
@@ -709,6 +723,22 @@ type BinaryCommandEvent struct {
 
 BinaryCommandEvent is a binary output command event (group 13): a command the outstation received for a binary output.
 
+### type BufferFillStatus
+
+```go
+type BufferFillStatus struct {
+	// Fill is the percentage of the buffer that is filled, 0..100 (a
+	// UINT7 on the wire).
+	Fill uint8
+	// Overflow reports that the buffer overflowed.
+	Overflow bool
+	// Buffer is the group and variation that identify the buffer.
+	Buffer GroupVariation
+}
+```
+
+BufferFillStatus is the device storage buffer fill status (g81v1, IEEE 1815-2012 A.29.1): how full one buffer of the outstation is. The standard does not recommend the object for new implementations (A.29.1.2.3); a master decodes it from outstations that send it.
+
 ### type CROB
 
 ```go
@@ -721,7 +751,10 @@ type CROB struct {
 	Count uint8
 	// OnTime and OffTime are in milliseconds.
 	OnTime, OffTime uint32
-	Status          CommandStatus
+	// Status is a UINT7 on the wire, 0 in a request. Master and outstation
+	// set the reserved bit 7 to 0 (IEEE 1815-2012 A.8.1.2.2); this package
+	// sends it as 0 and does not read it.
+	Status CommandStatus
 }
 ```
 
@@ -773,7 +806,7 @@ ReasonCritical is the only defined reason: a critical request.
 type CommandStatus uint8
 ```
 
-CommandStatus is the status code of a control (IEEE 1815-2012 Table 11-4), returned by the outstation in the echo of a command.
+CommandStatus is the status code of a control (IEEE 1815-2012 Table 11-7), returned by the outstation in the echo of a command.
 
 ```go
 const (
@@ -801,7 +834,7 @@ const (
 )
 ```
 
-Command status codes.
+Command status codes. IEEE 1815-2012 Table 11-7 defines 0..12, 126 and 127, and reserves 13..125: the codes 13..18 are not defined by it.
 
 #### func (CommandStatus) String
 
@@ -1114,7 +1147,7 @@ const (
 )
 ```
 
-File status codes (IEEE 1815-2012 Table 11-32).
+File status codes (IEEE 1815-2012 11.7.2, Table 11-8).
 
 #### func (FileStatus) String
 
@@ -1177,7 +1210,7 @@ File types.
 type Flags uint8
 ```
 
-Flags is the quality flags octet of a point (IEEE 1815-2012 clause 11.9.6.2).
+Flags is the quality flags octet of a point (IEEE 1815-2012 11.6.1, Table 11-5).
 
 The state bits that share the octet with the flags of binary and double-bit points (bit 7, bits 6..7) are not part of Flags: they are the Value of [Binary](#type-binary) and [DoubleBitBinary](#type-doublebitbinary), merged on encoding.
 
@@ -1205,7 +1238,8 @@ const (
 	// FlagChatterFilter: binary and double-bit inputs; the input is
 	// changing too fast and is filtered.
 	FlagChatterFilter Flags = 0x20
-	// FlagRollover: counters; obsolete, sent as zero by current devices.
+	// FlagRollover: counters; obsolete. Outstations shall not set it and
+	// masters shall ignore it (IEEE 1815-2012 Table 11-5).
 	FlagRollover Flags = 0x20
 	// FlagOverRange: analog inputs and outputs; the value exceeds the
 	// range of the variation or of the device.
@@ -1213,7 +1247,9 @@ const (
 	// FlagDiscontinuity: counters; the value cannot be compared with the
 	// previous one.
 	FlagDiscontinuity Flags = 0x40
-	// FlagReferenceErr: analog inputs; the reference signal is in error.
+	// FlagReferenceErr: analog inputs, analog output status and analog
+	// output events; the value might not have the expected accuracy, for
+	// example because the reference signal is in error.
 	FlagReferenceErr Flags = 0x40
 )
 ```
@@ -1260,6 +1296,8 @@ func (f *Fragment) AppendEncode(b []byte) ([]byte, error)
 
 AppendEncode appends the wire encoding of f to b.
 
+A response (function 129..131) cannot carry a header with qualifier 0x06 (ErrInvalidQualifier), nor one of group 60 or of a request-only variation such as variation 0 (ErrInvalidValue): IEEE 1815-2012 Table 4-8, 4.2.2.7.1.1 and 4.2.2.7.2.1. [Decode](#func-decode) refuses them in a response too.
+
 #### func (Fragment) Encode
 
 ```go
@@ -1290,7 +1328,7 @@ String returns a one-line description, for example "RESPONSE FIR FIN seq=3 iin=D
 type FunctionCode uint8
 ```
 
-FunctionCode is the application layer function code (IEEE 1815-2012 clause 4.2.2.5, Table 4-1 and Table 4-2).
+FunctionCode is the application layer function code (IEEE 1815-2012 clause 4.2.2.5, Table 4-2).
 
 ```go
 const (
@@ -1473,9 +1511,9 @@ type Header struct {
 
 	// Objects is nil for a header that names points without values: the
 	// headers of READ, freeze, assign class and unsolicited control
-	// requests. When such a header names points by an index list
-	// (qualifiers 0x17, 0x28, 0x39), Objects holds the indexes with a nil
-	// Value.
+	// requests. When such a header names points by an index list (an
+	// index-prefixed qualifier such as 0x17 or 0x28), Objects holds the
+	// indexes with a nil Value.
 	Objects []Object
 }
 ```
@@ -1528,7 +1566,7 @@ FreeFormat returns a header carrying free-format objects, each preceded by a two
 func IndexList(gv GroupVariation, indexes ...uint32) Header
 ```
 
-IndexList returns a header naming the given indexes of gv without values (qualifier 0x17, 0x28 or 0x39), as in a READ of specific points.
+IndexList returns a header naming the given indexes of gv without values (an index-prefixed qualifier, see [IndexQualifier](#func-indexqualifier)), as in a READ of specific points.
 
 #### func IndexRange
 
@@ -1544,7 +1582,7 @@ IndexRange returns a header naming the points start..stop of gv without values, 
 func Indexed(gv GroupVariation, objs ...Object) Header
 ```
 
-Indexed returns a header carrying objects each preceded by its index (qualifier 0x17, 0x28 or 0x39), as used for commands and events.
+Indexed returns a header carrying objects each preceded by its index (an index-prefixed qualifier, see [IndexQualifier](#func-indexqualifier)), as used for commands and events.
 
 #### func Ranged
 
@@ -1678,7 +1716,7 @@ const (
 )
 ```
 
-Interval units (IEEE 1815-2012 Table 11-23).
+Interval units of g50v4 (IEEE 1815-2012 A.23.4.2.2).
 
 ### type KeyStatus
 
@@ -1744,7 +1782,7 @@ const (
 )
 ```
 
-MAC algorithms (IEEE 1815-2012 Table A-12).
+MAC algorithms: the MAC algorithm field of g120v1 (IEEE 1815-2012 A.45.1.2.2).
 
 #### func (MACAlgorithm) Len
 
@@ -1899,7 +1937,9 @@ CountQualifier returns the smallest count qualifier that holds n.
 func IndexQualifier(n int, maxIndex uint32) Qualifier
 ```
 
-IndexQualifier returns the smallest index-prefixed count qualifier that holds n objects with indexes up to maxIndex.
+IndexQualifier returns the index-prefixed count qualifier for n objects with indexes up to maxIndex.
+
+While the count and the indexes fit two octets it is one of the preferred codes (IEEE 1815-2012 Table 4-7): 0x17 when both fit one octet, else 0x28. Beyond that the index takes four octets only when maxIndex needs them, and the count the fewest octets that hold n, because four-octet indexes should not be used below 65 536 points and four-octet counts should be avoided (4.2.2.7.3.4): 0x29 for more than 65 535 objects with two-octet indexes, and 0x37, 0x38 or 0x39 with four-octet indexes.
 
 #### func RangeQualifier
 
@@ -1981,7 +2021,7 @@ type Raw struct {
 }
 ```
 
-Raw is a free-format object that this package carries without decoding: the obsolete g70v1, private registration objects (group 83), the data set objects of groups 85..88 but the characteristics (g86v2), the application identifier (g90v1) and the status of requested operation (g91v1). The data of a g91v1 object are read with [ParseActivateConfigStatus](#func-parseactivateconfigstatus).
+Raw is a free-format object that this package carries without decoding: the obsolete g70v1, the device profile (g82v1), private registration objects (group 83), the data set objects of groups 85..88 but the characteristics (g86v2), the application identifier (g90v1) and the status of requested operation (g91v1). The data of a g91v1 object are read with [ParseActivateConfigStatus](#func-parseactivateconfigstatus).
 
 ### type SecurityStatistic
 
@@ -2016,7 +2056,7 @@ TimeDelay is a time delay object (group 52): coarse (v1, seconds) or fine (v2, m
 type Timestamp uint64
 ```
 
-Timestamp is DNP3 absolute time: milliseconds since 1970-01-01 00:00 UTC, 48 bits on the wire (IEEE 1815-2012 clause 11.9.6.1).
+Timestamp is DNP3 absolute time: milliseconds since 1970-01-01 00:00 UTC, 48 bits on the wire (DNP3TIME, IEEE 1815-2012 clause 3 and 10.3.2; a UINT48 by Table 11-4).
 
 It is carried as the integer the standard defines rather than as a time.Time so that values round-trip exactly; [Timestamp.Time](#func-timestamp-time) and [TimestampOf](#func-timestampof) convert.
 

@@ -19,9 +19,13 @@
 // objects, file control (group 70), internal indications, device
 // attributes (group 0), BCD and small integers, octet strings and virtual
 // terminal objects, and the secure authentication objects (groups 120 to
-// 122). Data set and private registration objects (groups 83 to 91) are
-// carried as [Raw] payload, except the data set characteristics (g86v2,
-// [DataSetCharacteristics]).
+// 122). The device storage buffer fill status (g81v1, not recommended for
+// new implementations) is decoded into [BufferFillStatus], and the device
+// profile (g82v1) is carried as [Raw] payload, as are the data set and
+// private registration objects (groups 83 to 91) except the data set
+// characteristics (g86v2, [DataSetCharacteristics]). Group 100, the
+// obsolete floating-point objects, is not: IEEE 1815-2012 A.38 defines no
+// coding for its variations.
 //
 // The package is a pure codec: it does no I/O and keeps no state between
 // fragments. It imports nothing outside the standard library.

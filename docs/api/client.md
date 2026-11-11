@@ -19,10 +19,28 @@ Errors match the sentinels of the root package with errors.Is; see ERRORS.md. AP
 ## Constants
 
 ```go
+const DefaultKeyChangeCount = 1000
+```
+
+DefaultKeyChangeCount is the default session key change count: the number of authentication messages, sent or received, after which the session keys are changed (IEEE 1815-2012 clause 7.6.1.4.4).
+
+```go
 const DefaultPort = 20000
 ```
 
-DefaultPort is the registered DNP3 port, also used for TLS.
+DefaultPort is the registered DNP3 port (IEEE 1815-2012 clause 13.2.2.2), the default of an address without a port.
+
+```go
+const DefaultTLSPort = 19999
+```
+
+DefaultTLSPort is the default port of DNP3 over TLS (IEEE 1815-2012 clauses 7.8.8 and 13.2.2.2): the port of an address without one when WithTLS is set.
+
+```go
+const MaxKeyChangeCount = 1 << 31
+```
+
+MaxKeyChangeCount is the largest session key change count: half the range of the key change sequence number (IEEE 1815-2012 clause 7.6.1.4.4).
 
 ## Types
 
@@ -31,19 +49,20 @@ DefaultPort is the registered DNP3 port, also used for TLS.
 ```go
 type Client struct {
 
-	// the last unsolicited response, to recognise repeats
+	// held is the channel whose startup sequence a Connect runs: its loss
+	// is that Connect's error, not a reason to reconnect. When its watch
+	// sees it lost, it sets heldLost and heldErr for the Connect.
+
+	// proc is the state of the master procedures of the current channel.
+
 	// integrity is when the last integrity poll completed, so that an
 	// automatic one queued before it is not run as well.
 
 	// started is closed when the startup sequence of the current channel
 	// has ended: automatic tasks wait for it.
 
-	// sessionKey is the control direction session key negotiated on the
-	// current channel, nil before the first session key change.
-
-	// lastChallenge is the last challenge (g120v1 fragment) received on
-	// the current channel and csq the challenge sequence number aggressive
-	// mode requests continue from.
+	// auth is the secure authentication state of the current channel and
+	// counters the security statistics.
 
 	// rekey asks the key change loop for a key change now.
 
@@ -52,6 +71,8 @@ type Client struct {
 
 	// needTime is the NEED_TIME indication of the outstation's latest
 	// response.
+
+	// dual is the dual end point of WithDualEndpoint, nil without.
 
 }
 ```
@@ -72,7 +93,7 @@ Dial creates a client and connects it: [New](#func-new) followed by [Client.Conn
 func New(addr string, opts ...Option) (*Client, error)
 ```
 
-New returns a client for the outstation at addr ("host:port"; the port defaults to 20000). The client is not connected until Connect.
+New returns a client for the outstation at addr ("host:port"; the port defaults to DefaultPort, 20000, and with WithTLS to DefaultTLSPort, 19999). The client is not connected until Connect.
 
 #### func (Client) ActivateConfig
 
@@ -100,7 +121,7 @@ Addr returns the address the client connects to.
 func (c *Client) AssignClass(ctx context.Context, class int, headers ...app.Header) error
 ```
 
-AssignClass assigns the points the headers name to class (0..3), for example AssignClass(ctx, 2, app.AllObjects(app.G30V0)).
+AssignClass assigns the points the headers name to class (0..3), for example AssignClass(ctx, 2, app.AllObjects(app.G30V0)). The NOTE of IEEE 1815-2012 clause 4.4.14 says a master should poll all three event classes in one request right after, EventPoll(ctx), so that events are reported in the order they were generated; AssignClass does not.
 
 #### func (Client) AuthenticateFile
 
@@ -118,13 +139,21 @@ func (c *Client) Broadcast(ctx context.Context, dest link.Address, fc app.Functi
 
 Broadcast sends a request to every outstation on the channel, at the broadcast address dest: link.BroadcastNoConfirm (0xFFFD), link.BroadcastConfirm (0xFFFE, confirmation mandatory) or link.BroadcastOptionalConfirm (0xFFFF, confirmation optional). Nobody answers; each outstation executes the request and sets IIN1.0 BROADCAST in its next response. Requests that need an answer (READ, SELECT, OPERATE, the file and authentication functions) cannot be broadcast.
 
+#### func (Client) ClearNeedTime
+
+```go
+func (c *Client) ClearNeedTime(ctx context.Context) error
+```
+
+ClearNeedTime clears IIN1.4 (NEED\_TIME) by writing g80v1 index 4, as IEEE 1815-2012 clause 4.5.5 recommends for a master that does not need the outstation's time. The outstation then assumes no time synchronization is coming.
+
 #### func (Client) ClearRestart
 
 ```go
 func (c *Client) ClearRestart(ctx context.Context) error
 ```
 
-ClearRestart clears IIN1.7 (DEVICE\_RESTART) by writing g80v1 index 7.
+ClearRestart clears IIN1.7 (DEVICE\_RESTART) by writing g80v1 index 7 (IEEE 1815-2012 clauses 4.5.8 and 5.1.1.1.1 Rule 1).
 
 #### func (Client) Close
 
@@ -140,7 +169,7 @@ Close closes the channel, stops reconnecting and the automatic tasks, and fails 
 func (c *Client) ColdRestart(ctx context.Context) (time.Duration, error)
 ```
 
-ColdRestart asks the outstation for a cold restart and returns the time after which it can be polled again.
+ColdRestart asks the outstation for a cold restart and returns the time after which it can be polled again. The NOTE of IEEE 1815-2012 clause 4.4.9 says a master should send no request before that time has passed; the client does not hold requests back, so the application should wait.
 
 #### func (Client) Connect
 
@@ -148,7 +177,7 @@ ColdRestart asks the outstation for a cold restart and returns the time after wh
 func (c *Client) Connect(ctx context.Context) error
 ```
 
-Connect establishes the channel and runs the startup sequence of WithStartup (with secure authentication and an update key, the session key change first). When the sequence fails, the channel is closed and the error returned. It fails with dnp3.ErrBusy when the client is connected or connecting. With WithReconnect it needs to succeed only once: a lost channel is re-established by the client, and kept when only the startup sequence of the new one failed.
+Connect establishes the channel and runs the startup sequence of WithStartup (with secure authentication and an update key, the session key change first), by default an integrity poll. When the sequence fails, for example because the outstation does not answer it, the channel is closed and the error returned. It fails with dnp3.ErrBusy when the client is connected or connecting. With WithReconnect it needs to succeed only once: a lost channel is re-established by the client, and kept when only the startup sequence of the new one failed.
 
 #### func (Client) DelayMeasure
 
@@ -156,7 +185,7 @@ Connect establishes the channel and runs the startup sequence of WithStartup (wi
 func (c *Client) DelayMeasure(ctx context.Context) (processing, roundTrip time.Duration, err error)
 ```
 
-DelayMeasure sends DELAY\_MEASURE and returns the outstation's processing delay and the round trip time.
+DelayMeasure sends DELAY\_MEASURE and returns the outstation's processing delay and the round trip time: from the request to the arrival of its response (To and Ti of IEEE 1815-2012 clause 4.4.15). With WithRetry a DELAY\_MEASURE that failed is sent again as a new request (clause 10.3.4.1), and the round trip is that of the request that was answered.
 
 #### func (Client) DeleteFile
 
@@ -238,7 +267,9 @@ func (c *Client) Operate(ctx context.Context, mode CommandMode, cmds ...Command)
 
 Operate executes controls and returns the status the outstation reported for each, in order. With DirectOperateNoAck the statuses are all app.StatusSuccess: nothing is reported.
 
-A status other than success fails with a \*dnp3.CommandError for the first such control; the statuses are returned as well. Controls are never repeated by WithRetry.
+A status other than success fails with a \*dnp3.CommandError for the first such control; the statuses are returned as well. A truncated response, which holds the controls up to the first that failed (IEEE 1815-2012 clause 4.4.4.3 Rule 6), returns the statuses of those only. Controls are never repeated by WithRetry.
+
+With SelectBeforeOperate the OPERATE is sent only when the response to the SELECT repeats, octet for octet, everything that followed the function code in the request, with every status 0 and none of IIN2.0, 2.1, 2.2 and 2.4 set (clause 4.4.4.3 Rule 8); a response that differs otherwise than in its statuses fails with dnp3.ErrProtocol.
 
 #### func (Client) Outstation
 
@@ -288,6 +319,14 @@ func (c *Client) Request(ctx context.Context, fc app.FunctionCode, headers ...ap
 
 Request sends any request and returns the response. It is repeated on failure (with WithRetry) only for READ.
 
+#### func (Client) SecurityStatistics
+
+```go
+func (c *Client) SecurityStatistics() []uint32
+```
+
+SecurityStatistics returns the master's security statistics (IEEE 1815-2012 Table 7-6, clause 7.5.2.2), indexed by secauth.Statistic: for example the session key changes, the challenges answered (critical messages sent) and the authentication errors received. They count from New and are all zero without WithSecureAuthentication. The outstation's statistics are read from it as group 121.
+
 #### func (Client) State
 
 ```go
@@ -302,7 +341,11 @@ State returns the current channel state.
 func (c *Client) SyncTime(ctx context.Context, p TimeSync) error
 ```
 
-SyncTime synchronizes the outstation's time with the given procedure: TimeSyncLAN (RECORD\_CURRENT\_TIME and g50v3) or TimeSyncNonLAN (DELAY\_MEASURE and g50v1 corrected by half the round trip minus the outstation's processing delay).
+SyncTime synchronizes the outstation's time with the given procedure of IEEE 1815-2012 clause 10.3.3: TimeSyncLAN (RECORD\_CURRENT\_TIME, then a WRITE of g50v3 with the time the request was handed to the link layer) or TimeSyncNonLAN (DELAY\_MEASURE, then a WRITE of g50v1 with the current time corrected by half the round trip minus the outstation's processing delay). TimeSyncClearNeedTime runs ClearNeedTime instead.
+
+The requests go as UNCONFIRMED\_USER\_DATA, never repeated by the link layer (clause 10.3.4.1). With WithRetry a failed procedure is run again from its first request, with new sequence numbers and fresh times, as that clause requires.
+
+The times are taken in the client, not at the line: the round trip of the non-LAN procedure ends when the response has been received whole, and so includes the transmission time of the response, which clause 10.3.3.1 d) excludes. Over a slow serial line the time written is late by about half that time.
 
 #### func (Client) WarmRestart
 
@@ -310,7 +353,7 @@ SyncTime synchronizes the outstation's time with the given procedure: TimeSyncLA
 func (c *Client) WarmRestart(ctx context.Context) (time.Duration, error)
 ```
 
-WarmRestart asks the outstation for a warm restart and returns the time after which it can be polled again.
+WarmRestart asks the outstation for a warm restart and returns the time after which it can be polled again; see ColdRestart.
 
 #### func (Client) Write
 
@@ -342,7 +385,7 @@ WriteAttributeSet writes a device attribute of another set.
 func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size uint32, o FileOptions) (int64, error)
 ```
 
-WriteFile writes size octets from r to the file name on the outstation, or appends them with FileOptions.Append, and returns the number of octets written.
+WriteFile writes size octets from r to the file name on the outstation, or appends them with FileOptions.Append, and returns the number of octets written. It sends no more than size octets of r, unless size is 0xFFFFFFFF, an unknown size (IEEE 1815-2012 clause 4.4.17.2.1); a shorter r ends the file early. With WithMaxRequestFragment the blocks are no larger than fits a request.
 
 #### func (Client) WriteTime
 
@@ -363,7 +406,16 @@ type Command struct {
 	Value app.Value
 	// GV is the object to send it as. Zero picks app.G12V1 for a CROB and,
 	// for a set-point, app.G41V1 when the value is an integer that fits 32
-	// bits and app.G41V3 otherwise.
+	// bits and app.G41V3 otherwise. Subset levels 1 and 2 define only
+	// app.G41V2 for set-points (IEEE 1815-2012 Tables 14-2 and 14-3), and
+	// app.G41V1 is of level 3, app.G41V3 of level 4: set GV for an
+	// outstation of a lower level.
+	//
+	// A command is sent as given, except that IEEE 1815-2012 requires the
+	// queue bit of a CROB to be 0 (Annex A.8.1.2.2) and the status of a
+	// request to be 0 (Annex A.8.1.2.2 and A.20.1.2.2) or 126,
+	// NON_PARTICIPATING (Table 11-7): Operate refuses other values with
+	// dnp3.ErrInvalidOption.
 	GV app.GroupVariation
 }
 ```
@@ -433,6 +485,9 @@ type FileOptions struct {
 	// Append makes WriteFile add to the end of the file (mode APPEND)
 	// instead of replacing it.
 	Append bool
+	// Created is the time of creation WriteFile gives the file; zero
+	// means the time of the request (IEEE 1815-2012 clause 4.4.17.2.1).
+	Created time.Time
 }
 ```
 
@@ -468,15 +523,24 @@ HandleMeasurements calls f.
 
 ```go
 type Link struct {
-	// Confirmed sends user data as CONFIRMED_USER_DATA. The default,
-	// unconfirmed, is what IEEE 1815-2012 recommends on TCP.
+	// Confirmed sends user data as CONFIRMED_USER_DATA. Set it on serial
+	// links only: IEEE 1815-2012 clause 13.2.1.1 forbids confirmed link
+	// frames over TCP and UDP, and a channel on a network stream with it
+	// logs a warning. The default is UNCONFIRMED_USER_DATA. Time
+	// synchronization requests (DELAY_MEASURE, RECORD_CURRENT_TIME and a
+	// WRITE of g50v1 or g50v3) always go as UNCONFIRMED_USER_DATA, without
+	// link layer retries (IEEE 1815-2012 clause 10.3.4.1).
 	Confirmed bool
 	// Timeout is the wait for a link layer answer. Zero means 2 seconds.
 	Timeout time.Duration
 	// Retries is the number of repeats of an unanswered primary frame.
 	Retries int
-	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent.
-	// Zero means 60 seconds; a negative value disables it.
+	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent
+	// (the keep-alive of IEEE 1815-2012 clause 13.2.3.3.1); a peer that
+	// does not answer it ends the connection. Zero means 60 seconds; any
+	// positive duration is taken. A negative value disables it, which the
+	// clause allows for testing only: in service, set a long interval
+	// instead.
 	KeepAlive time.Duration
 }
 ```
@@ -495,7 +559,9 @@ type Measurement struct {
 	// app.DoubleBitBinary, app.BinaryCommandEvent, app.Counter,
 	// app.Analog, app.AnalogDeadband, app.AnalogCommandEvent,
 	// app.AbsoluteTime (g50v4, a time and interval), app.BCD,
-	// app.UnsignedInteger, app.OctetString or app.SecurityStatistic.
+	// app.UnsignedInteger, app.OctetString or app.SecurityStatistic. A
+	// value of a variation without flags reads as ONLINE; see
+	// Measurements.
 	Value app.Value
 	// Event is set for objects of an event group.
 	Event bool
@@ -511,6 +577,8 @@ func Measurements(f *app.Fragment) []Measurement
 ```
 
 Measurements returns the measurements of a fragment, in the order of its headers.
+
+A value sent in a variation without flags (g1v1, g3v1, g10v1, g20v5 to v8, g21v9 to v12, g30v3, g30v4, g31v5 and g31v6) has the flags ONLINE and nothing else: IEEE 1815-2012 clause 11.6.5 and NOTE 2 of Table 11-5 require the master to read such a value as online with no exception condition.
 
 ### type Option
 
@@ -534,7 +602,7 @@ WithAddresses sets the link addresses of the master (local) and of the outstatio
 func WithAggressiveMode(fcs ...app.FunctionCode) Option
 ```
 
-WithAggressiveMode sends the requests with the function codes fcs (secauth.DefaultCritical when none are given) in Secure Authentication aggressive mode (IEEE 1815-2012 clause 7.5.2.2.4): with a MAC in the request itself, so that the outstation executes it without a challenge. The MAC covers the last challenge received, so the first critical request of a connection is still challenged. Use it only with an outstation that supports aggressive mode: one that does not refuses the request with an authentication error. New refuses it without WithSecureAuthentication.
+WithAggressiveMode sends the requests with the function codes fcs (secauth.DefaultCritical when none are given) in Secure Authentication aggressive mode (IEEE 1815-2012 clause 7.5.3.3, A.45.3 and A.45.9): with a MAC in the request itself, so that the outstation executes it without a challenge. The MAC covers the last challenge received and the whole request up to the MAC value (Table A-9). Aggressive mode is used only once a challenge was answered successfully since the last session key change, so the first critical request after each key change is still challenged; after a refused aggressive mode request the next one is sent normally, and an outstation that answers error 4 (aggressive mode not supported) is not sent aggressive mode again on that connection. New refuses it without WithSecureAuthentication.
 
 #### func WithAutoClearRestart
 
@@ -566,7 +634,7 @@ WithAutoIntegrity controls whether the client runs an integrity poll when the ou
 func WithChallengeMACs(algs ...app.MACAlgorithm) Option
 ```
 
-WithChallengeMACs limits the MAC algorithms an outstation's challenge may ask for. The challenge (g120v1, IEEE 1815-2012 clause 7) names the algorithm of the reply and of aggressive mode requests; a challenge asking for another one fails the request with dnp3.ErrAuthentication. By default every algorithm package secauth computes is accepted except the obsolete HMAC-SHA-1 truncated to 4 octets. The algorithm of secauth.User is the one the session key change and the outstation's key status use; it need not be in the list.
+WithChallengeMACs limits the MAC algorithms an outstation's challenge may ask for. The challenge (g120v1, IEEE 1815-2012 A.45.1) names the algorithm of the reply and of aggressive mode requests; a challenge asking for another one fails the request with dnp3.ErrAuthentication. By default every algorithm package secauth computes is accepted except the obsolete HMAC-SHA-1 truncated to 4 octets and, over TCP/IP or UDP/IP (the built-in dialer, or a stream whose remote address is a TCP or UDP address), the truncations to 8 octets, which clauses 7.6.1.1.1 and 7.6.1.1.2 allow on serial links only; this option can allow them. The algorithm of secauth.User is the one the session key change and the outstation's key status use; it need not be in the list.
 
 #### func WithDialer
 
@@ -576,6 +644,22 @@ func WithDialer(d Dialer) Option
 
 WithDialer sets the dialer of TCP connections.
 
+#### func WithDualEndpoint
+
+```go
+func WithDualEndpoint(l net.Listener, allow func(net.Addr) bool) Option
+```
+
+WithDualEndpoint makes the client a TCP dual end point (IEEE 1815-2012 clause 13.2.3.1.3, Figure 13-7): it dials the outstation at the address given to New, as without the option, and also takes the connections the outstation establishes on l, for example to report unsolicited responses. Only one connection is in place at a time:
+
+  - A connection the outstation establishes while the client has none is used: at once when the client is idle or waits to reconnect, and by a Connect in progress when its own dial fails.
+  - One that arrives while the client is connected is closed. So is one that arrives while the client's own dial succeeds: the master has priority on the creation of TCP connections.
+
+allow, when not nil, validates the outstation's address (clause 13.2.3.1.4 b): a connection from an address it refuses is closed. The end point listens from the first Connect; Close closes l. With WithTLS, give a listener of tls.NewListener: the client is the TLS server of the connections it takes. WithStream excludes the option.
+
+	l, _ := net.Listen("tcp", ":20000")
+	c, err := client.New("192.0.2.10:20000", client.WithDualEndpoint(l, nil))
+
 #### func WithHandler
 
 ```go
@@ -584,13 +668,21 @@ func WithHandler(h Handler) Option
 
 WithHandler sets the handler that receives the measurements of every response and unsolicited response.
 
+#### func WithKeyChangeCount
+
+```go
+func WithKeyChangeCount(n uint32) Option
+```
+
+WithKeyChangeCount sets the session key change count (IEEE 1815-2012 clause 7.6.1.4.4): with an update key, the session keys are also changed once n authentication messages were sent or received since the last change (challenges and errors received, replies and aggressive mode requests sent). The default is DefaultKeyChangeCount (1000); n ranges from 1 to MaxKeyChangeCount.
+
 #### func WithKeyChangeInterval
 
 ```go
 func WithKeyChangeInterval(d time.Duration) Option
 ```
 
-WithKeyChangeInterval sets how often the session keys are changed while connected, with an update key. The default is 15 minutes.
+WithKeyChangeInterval sets how often the session keys are changed while connected, with an update key (IEEE 1815-2012 clause 7.6.1.4.3). The default is 15 minutes. 0 disables the interval: the keys are then changed only after the key change count (WithKeyChangeCount), as the clause allows for devices that communicate infrequently. A negative interval is refused.
 
 #### func WithLink
 
@@ -614,7 +706,15 @@ WithLogger sets the logger; logging is silent by default.
 func WithMaxFragment(n int) Option
 ```
 
-WithMaxFragment sets the largest fragment the client reassembles. The default is 2048.
+WithMaxFragment sets the largest fragment the client reassembles. The default is 2048. IEEE 1815-2012 clause 4.3 Rule 3 requires a master to receive fragments of at least 2048 octets: values from 249 to 2047 are accepted, for testing and for peers known to send less, but are outside that rule. WithMaxRequestFragment limits the requests the client sends.
+
+#### func WithMaxRequestFragment
+
+```go
+func WithMaxRequestFragment(n int) Option
+```
+
+WithMaxRequestFragment limits the request fragments the client sends to n octets, at least 249: IEEE 1815-2012 clause 4.3 Rule 4 requires a master to be configurable to restrict its requests to 249 octets, Rule 1 to 2048, and NOTE 2 of the clause asks for no request larger than the outstation can receive. A request that does not fit fails with dnp3.ErrInvalidOption before anything is sent; a critical request that fits only without the objects of aggressive mode is sent without them, to be challenged (clause 7.4.1.6). WriteFile sizes its blocks to fit. By default the size of requests is not limited.
 
 #### func WithMetrics
 
@@ -686,7 +786,7 @@ WithSolicitedConfirm controls whether the client confirms a solicited response t
 func WithStartup(s Startup) Option
 ```
 
-WithStartup sets what the client does each time the channel is established.
+WithStartup sets what the client does each time the channel is established; see Startup. The default is Startup{Integrity: true}; WithStartup(Startup{}) runs no startup step. With EnableUnsolicited classes it also sets DisableUnsolicited and Integrity: IEEE 1815-2012 clause 5.1.1.2 Rule 1 requires a master that uses unsolicited reporting to disable it and to run an integrity poll before it enables it.
 
 #### func WithStateHandler
 
@@ -718,7 +818,7 @@ WithTLS connects with TLS (IEEE 1815-2012 Annex B / IEC 62351-3).
 func WithTimeSync(p TimeSync) Option
 ```
 
-WithTimeSync makes the client synchronize the outstation's time with the given procedure whenever the outstation reports IIN1.4 (NEED\_TIME).
+WithTimeSync sets what the client does whenever the outstation reports IIN1.4 (NEED\_TIME); IEEE 1815-2012 clauses 4.5.5 and 10.3.3 require the master to send the time promptly. Without this option the client synchronizes the time on its own: with TimeSyncLAN when the stream is a net.Conn (TCP, TLS, UDP) and with TimeSyncNonLAN over other streams, such as a serial port; when an outstation refuses the LAN procedure as not supported (IIN2.0 or IIN2.1), the client uses the non-LAN procedure with it instead. TimeSyncNone turns this off, TimeSyncClearNeedTime clears the indication without synchronizing the time, and TimeSyncLAN or TimeSyncNonLAN always uses that procedure.
 
 #### func WithUnsolicitedConfirm
 
@@ -786,6 +886,12 @@ type Result struct {
 	// request is the encoding of the request as sent; a session key
 	// change's confirmation is a MAC over it.
 
+	// raw are the encodings of Fragments, as received.
+
+	// sending and sent are when the request was handed to the link layer
+	// and when that returned; arrived is when the first fragment of the
+	// response reached the client.
+
 }
 ```
 
@@ -821,7 +927,7 @@ type Retry struct {
 }
 ```
 
-Retry configures automatic retries of the requests that are safe to repeat: READ, the time and unsolicited functions, ASSIGN\_CLASS and the file read functions. Controls, freezes, restarts and writes are never repeated.
+Retry configures automatic retries of the requests that are safe to repeat: READ, the time and unsolicited functions, ASSIGN\_CLASS and the file read functions. Controls, freezes, restarts and writes are never repeated. Each repeat is a new request with the next sequence number (IEEE 1815-2012 clause 4.3 Rule 14), never an application layer retry of the same octets: a repeated time synchronization starts its procedure again with fresh times, as clause 10.3.4.1 requires.
 
 ### type Startup
 
@@ -830,15 +936,22 @@ type Startup struct {
 	// DisableUnsolicited sends DISABLE_UNSOLICITED for classes 1..3 first.
 	DisableUnsolicited bool
 	// Integrity runs an integrity poll. When the outstation has asked for
-	// the time (NEED_TIME) and WithTimeSync is set, the time is
-	// synchronized first, so that the poll's events carry synchronized time.
+	// the time (NEED_TIME) and automatic time synchronization is on, the
+	// time is synchronized first, so that the poll's events carry
+	// synchronized time.
 	Integrity bool
 	// EnableUnsolicited sends ENABLE_UNSOLICITED for these classes last.
+	// WithStartup then also sets DisableUnsolicited and Integrity, the
+	// steps clause 5.1.1.2 Rule 1 requires before it. The classes are
+	// enabled again whenever the outstation reports a restart (IIN1.7,
+	// clause 5.1.1.1.2 Rule 2).
 	EnableUnsolicited []int
 }
 ```
 
-Startup configures what the client does each time the channel is established, before Connect returns. A step the outstation rejects (an IINError, such as IIN2.0 from an outstation without unsolicited responses) is logged and the sequence goes on; a step without a valid response fails it.
+Startup configures what the client does each time the channel is established, before Connect returns: the master startup of IEEE 1815-2012 clause 5.1.1.2. With secure authentication and an update key the session keys are changed first. A step the outstation rejects (an IINError, such as IIN2.0 from an outstation without unsolicited responses) is logged and the sequence goes on; a step without a valid response fails it.
+
+The default is Startup{Integrity: true}: clause 5.1.1.2 Rule 1 requires an integrity poll at master startup. WithStartup(Startup{}) runs nothing.
 
 ### type StreamOpener
 
@@ -869,6 +982,16 @@ UDP returns a StreamOpener for DNP3 over UDP (port 20000 by convention): every l
 
 	c, err := client.New(addr, client.WithStream(client.UDP(addr)))
 
+#### func UDPFrom
+
+```go
+func UDPFrom(local, remote string) StreamOpener
+```
+
+UDPFrom is UDP with the local address the datagrams are sent from, for an outstation that sends its responses to a fixed port of the master (IEEE 1815-2012 Table 13-1, case 1) or takes requests from known ports only. local is "host:port"; an empty host is any address.
+
+	c, err := client.New(addr, client.WithStream(client.UDPFrom(":20000", addr)))
+
 ### type TimeSync
 
 ```go
@@ -881,13 +1004,21 @@ TimeSync selects the time synchronization procedure.
 const (
 	// TimeSyncNone disables automatic time synchronization.
 	TimeSyncNone TimeSync = iota
-	// TimeSyncLAN is the LAN procedure: RECORD_CURRENT_TIME, then a
-	// WRITE of the time of that request (g50v3).
+	// TimeSyncLAN is the LAN procedure (clause 10.3.3.2):
+	// RECORD_CURRENT_TIME, then a WRITE of the time of that request
+	// (g50v3). Its function and object are of subset level 4 (IEEE
+	// 1815-2012 Table 12-32); outstations of levels 1 to 3 need not
+	// support them.
 	TimeSyncLAN
-	// TimeSyncNonLAN is the serial procedure: DELAY_MEASURE, then a WRITE
-	// of the current time corrected by the measured delay (g50v1).
+	// TimeSyncNonLAN is the non-LAN procedure (clause 10.3.3.1):
+	// DELAY_MEASURE, then a WRITE of the current time corrected by the
+	// measured delay (g50v1). It is within subset level 1.
 	TimeSyncNonLAN
+	// TimeSyncClearNeedTime does not synchronize the time: it clears
+	// IIN1.4 (NEED_TIME) with a WRITE of g80v1 index 4, as IEEE 1815-2012
+	// clause 4.5.5 recommends where timekeeping is not required.
+	TimeSyncClearNeedTime
 )
 ```
 
-Time synchronization procedures (IEEE 1815-2012 clause 5.2).
+Time synchronization procedures (IEEE 1815-2012 clause 10.3.3).

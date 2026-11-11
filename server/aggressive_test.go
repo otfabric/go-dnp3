@@ -29,20 +29,41 @@ func challenged(t *testing.T, m *master, seq uint8, crob app.Header) []byte {
 	return raw
 }
 
+// replyTo answers the challenge chf of the request critical with key and
+// returns the response to the request.
+func replyTo(m *master, chf *app.Fragment, critical, key []byte) *app.Fragment {
+	raw, _ := chf.Encode()
+	ch := chf.Headers[0].Objects[0].Value.(app.AuthChallenge)
+	mac, _ := secauth.MAC(ch.MAC, key, secauth.AuthData(raw, critical))
+	m.send(req(chf.Control.Seq, app.FuncAuthRequest, app.FreeFormat(app.G120V2, app.AuthReply{CSQ: ch.CSQ, User: 1, MAC: mac})))
+	return m.recvFunc(app.FuncResponse)
+}
+
 // aggressiveReq builds an aggressive mode request with the MAC over last
 // and the request computed with key.
 func aggressiveReq(seq uint8, csq uint32, last, key []byte, hs ...app.Header) *app.Fragment {
-	f := req(seq, app.FuncDirectOperate, append([]app.Header{app.Counted(app.G120V3, app.AuthAggressiveMode{CSQ: csq, User: 1})}, hs...)...)
+	return withAggressiveMAC(req(seq, app.FuncDirectOperate, append([]app.Header{app.Counted(app.G120V3, app.AuthAggressiveMode{CSQ: csq, User: 1})}, hs...)...), last, key)
+}
+
+// withAggressiveMAC appends the g120v9 object to f, its HMAC-SHA-256/16
+// with key over the challenge last and every octet of f before the MAC
+// value, the g120v9 object header and size prefix included (IEEE
+// 1815-2012 Table A-9).
+func withAggressiveMAC(f *app.Fragment, last, key []byte) *app.Fragment {
+	f.Headers = append(f.Headers, app.FreeFormat(app.G120V9, app.AuthMAC{MAC: make([]byte, 16)}))
 	b, _ := f.Encode()
-	mac, _ := secauth.MAC(app.MACHMACSHA256Trunc16, key, secauth.AuthData(last, b))
-	f.Headers = append(f.Headers, app.FreeFormat(app.G120V9, app.AuthMAC{MAC: mac}))
+	mac, _ := secauth.MAC(app.MACHMACSHA256Trunc16, key, secauth.AuthData(last, b[:len(b)-16]))
+	f.Headers[len(f.Headers)-1] = app.FreeFormat(app.G120V9, app.AuthMAC{MAC: mac})
 	return f
 }
 
 func TestAggressiveMode(t *testing.T) {
 	crob := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})
 	h := &countingHandler{}
-	m := newMaster(t, WithHandler(h), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: testSessionKey}}))
+	// Enough error messages and authentication failures for every refusal
+	// below to be answered (Table 7-6 #10, #2).
+	m := newMaster(t, WithHandler(h), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, Key: testSessionKey},
+		Thresholds: map[secauth.Statistic]uint16{secauth.StatErrorMessagesSent: 20, secauth.StatAuthenticationFailures: 20}}))
 
 	// Before any challenge there is nothing to compute the MAC over.
 	m.send(aggressiveReq(1, 1, []byte{1}, testSessionKey, crob))
@@ -185,7 +206,10 @@ func TestSecurityStatistics(t *testing.T) {
 }
 
 // TestReplyTimeout: a reply that comes after SecureAuth.ReplyTimeout is
-// refused, counted, and the critical request is not executed.
+// counted as a reply timeout, and the critical request is discarded: the
+// late reply finds the outstation in Security Idle and is discarded
+// without an answer (IEEE 1815-2012 Table 7-8, Reply Timeout and Rx Reply
+// in Security Idle).
 func TestReplyTimeout(t *testing.T) {
 	crob := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})
 	h := &countingHandler{}
@@ -199,8 +223,9 @@ func TestReplyTimeout(t *testing.T) {
 	mac, _ := secauth.MAC(app.MACHMACSHA256Trunc16, testSessionKey, secauth.AuthData(raw, critical))
 	time.Sleep(50 * time.Millisecond)
 	m.send(req(1, app.FuncAuthRequest, app.FreeFormat(app.G120V2, app.AuthReply{CSQ: ch.CSQ, User: 1, MAC: mac})))
-	if f := m.recvFunc(app.FuncAuthResponse); f.Headers[0].GV != app.G120V7 || h.count() != 0 {
-		t.Fatalf("late reply: %v, %d executed", f, h.count())
+	m.none(100 * time.Millisecond)
+	if h.count() != 0 {
+		t.Fatalf("late reply: %d executed", h.count())
 	}
 	m.send(req(2, app.FuncRead, app.IndexRange(app.G121V1, uint32(secauth.StatReplyTimeouts), uint32(secauth.StatReplyTimeouts))))
 	if v := m.recvFunc(app.FuncResponse).Headers[0].Objects[0].Value.(app.SecurityStatistic); v.Value != 1 {
@@ -231,12 +256,8 @@ func TestCriticalBroadcast(t *testing.T) {
 	ch, _ := app.Decode(last)
 	csq := ch.Headers[0].Objects[0].Value.(app.AuthChallenge).CSQ
 	executed := h.count()
-	ok := aggressiveReq(3, csq+1, last, testSessionKey, crob)
-	ok.Function = app.FuncDirectOperateNoAck
-	ok.Headers = ok.Headers[:len(ok.Headers)-1]
-	b, _ := ok.Encode()
-	mac, _ := secauth.MAC(app.MACHMACSHA256Trunc16, testSessionKey, secauth.AuthData(last, b))
-	ok.Headers = append(ok.Headers, app.FreeFormat(app.G120V9, app.AuthMAC{MAC: mac}))
+	ok := withAggressiveMAC(req(3, app.FuncDirectOperateNoAck, app.Counted(app.G120V3, app.AuthAggressiveMode{CSQ: csq + 1, User: 1}), crob),
+		last, testSessionKey)
 	m.sendBroadcast(ok)
 	m.none(200 * time.Millisecond)
 	if h.count() != executed+1 {

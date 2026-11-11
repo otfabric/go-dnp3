@@ -18,7 +18,10 @@ func TestCommandEvents(t *testing.T) {
 		{Op: app.OpLatchOn, Count: 1}, {Op: app.OpLatchOff, Count: 1}, {Op: app.OpPulseOn, Count: 1},
 		{Op: app.OpPulseOff, Count: 1}, {Op: app.OpPulseOn, TripClose: app.TCCClose, Count: 1}, {Op: app.OpPulseOn, TripClose: app.TCCTrip, Count: 1},
 	}
-	want := []bool{true, false, true, false, true, false}
+	// The commanded state is 1 for latch on and close only; a pulse with
+	// TCC NUL leaves no state, so it is unknown and 0 (IEEE 1815-2012
+	// A.9.1.2.2).
+	want := []bool{true, false, false, false, true, false}
 	seq := uint8(0)
 	for _, c := range crobs {
 		seq = app.NextSeq(seq)
@@ -117,8 +120,11 @@ func TestTimeAndInterval(t *testing.T) {
 			t.Fatal("time and interval in class 0")
 		}
 	}
+	// g50v1 is read with qualifier 0x07, count 1 (A.23.1.2.3, p. 648):
+	// all objects is a qualifier the outstation does not support for it,
+	// IIN2.2 (4.5.11, p. 85).
 	m.send(req(2, app.FuncRead, app.AllObjects(app.G50V1)))
-	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) {
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
 		t.Fatalf("read of g50v1: %v", f)
 	}
 	m.send(req(3, app.FuncAssignClass, app.AllObjects(app.G60V2), app.AllObjects(app.G50V4)))
