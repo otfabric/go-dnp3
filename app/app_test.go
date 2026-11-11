@@ -531,7 +531,10 @@ func TestEncodeErrors(t *testing.T) {
 		{"attribute too long", Ranged(GV(0, 250), 0, Attribute{Type: AttrVisibleString, Data: make([]byte, 256)}), ErrInvalidValue},
 	}
 	for _, c := range cases {
-		f := &Fragment{Function: FuncResponse, Headers: []Header{c.h}}
+		// The header checks do not depend on the function; a WRITE keeps
+		// the rules for responses alone (TestSpecTable4_8_ResponseHeaders)
+		// from answering first.
+		f := &Fragment{Function: FuncWrite, Headers: []Header{c.h}}
 		if _, err := f.Encode(); !errors.Is(err, c.want) {
 			t.Errorf("%s: err = %v, want %v", c.name, err, c.want)
 		}
