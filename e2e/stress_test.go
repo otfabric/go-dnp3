@@ -15,6 +15,7 @@ import (
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
 	"github.com/otfabric/go-dnp3/client"
+	"github.com/otfabric/go-dnp3/internal/leaktest"
 	"github.com/otfabric/go-dnp3/link"
 	"github.com/otfabric/go-dnp3/server"
 )
@@ -23,6 +24,7 @@ import (
 // DNP3 allows one outstanding request, so the client serialises them; all
 // must succeed and none interleave.
 func TestConcurrentRequests(t *testing.T) {
+	leaktest.Check(t)
 	p := newPair(t, fullDatabase, []server.Option{server.WithHandler(&relay{})}, client.WithQueueLimit(256))
 	var wg sync.WaitGroup
 	var fail atomic.Int64
@@ -57,6 +59,7 @@ func TestConcurrentRequests(t *testing.T) {
 // all of them while the database is updated; each master's events are
 // independent.
 func TestManyMasters(t *testing.T) {
+	leaktest.Check(t)
 	const masters = 8
 	addrs := make([]link.Address, masters)
 	for i := range addrs {
@@ -128,6 +131,7 @@ func TestManyMasters(t *testing.T) {
 // TestReconnect drops the connection repeatedly and checks the client
 // re-establishes it and keeps working.
 func TestReconnect(t *testing.T) {
+	leaktest.Check(t)
 	srv, err := server.New(server.WithMasters(1))
 	if err != nil {
 		t.Fatal(err)
@@ -173,6 +177,7 @@ func TestReconnect(t *testing.T) {
 // TestRapidOpenClose opens and closes clients quickly to surface leaks or
 // races in connection teardown.
 func TestRapidOpenClose(t *testing.T) {
+	leaktest.Check(t)
 	masters := make([]link.Address, 24)
 	for i := range masters {
 		masters[i] = link.Address(1 + i)
@@ -216,6 +221,7 @@ func TestRapidOpenClose(t *testing.T) {
 // TestContextCancellation cancels requests mid-flight; the client must
 // return promptly and stay usable.
 func TestContextCancellation(t *testing.T) {
+	leaktest.Check(t)
 	p := newPair(t, fullDatabase, nil)
 	for range 20 {
 		ctx, cancel := context.WithCancel(context.Background())

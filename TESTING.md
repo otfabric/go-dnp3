@@ -77,10 +77,28 @@ captures README.
 corrupts, splits and delays octets and kills connections, with and without
 Secure Authentication. It checks that no data appears that was not sent, that
 no control runs more often than it was sent, and that the session recovers
-once the faults stop. Each run logs its random seed (`seed <n>`). `go test
--short` shortens it from 3 s to 1 s per subtest. `e2e/stress_test.go` covers
+once the faults stop. Each run logs its random seed (`seed <n>`);
+`DNP3_CHAOS_SEED=<n>` replays the faults of that seed (the timing of the two
+sides still varies), for example
+`DNP3_CHAOS_SEED=42 go test -run '^TestChaos$' ./e2e`. `TestFrameChaos`
+(`e2e/framechaos_test.go`) drops, duplicates and reorders whole link frames
+between a master and an outstation, with the fixed seed 1815 unless
+`DNP3_CHAOS_SEED` is set: every request succeeds with the data that was sent
+or fails with an error ERRORS.md documents, no control runs more often than
+it was sent, and the same client recovers once the faults stop. `go test
+-short` shortens both from 3 s to 1 s per run. `e2e/stress_test.go` covers
 concurrent requests, many masters, reconnects, rapid open and close, and
 cancellation.
+
+## Leaks
+
+`internal/leaktest.Check(t)`, called first in a test, fails the test when
+the number of goroutines, and on Linux and macOS the number of open file
+descriptors (`/dev/fd`), has not returned to what it was within 5 s after
+the test's cleanups, `Close` included. The `Close` lifecycle tests of
+`client` (`edge_paths_test.go`, `dual_test.go`) and the stress tests of
+`e2e/stress_test.go` use it. It counts the whole process, so it is not for
+parallel tests.
 
 ## Interop
 
@@ -135,7 +153,8 @@ Left out of `COVER_PKGS`, and why:
 ## Fuzzing
 
 Targets: `FuzzDecode` and `FuzzReader` (`link`), `FuzzReassembler`
-(`transport`), `FuzzDecode` (`app`), `FuzzOutstation` and `FuzzPack`
+(`transport`), `FuzzDecode`, `FuzzDecodeFileDescriptors` (a directory's
+content) and `FuzzParseActivateConfigStatus` (g91v1) (`app`), `FuzzOutstation` and `FuzzPack`
 (`server`), `FuzzMaster` (`client`: the master against an outstation that
 answers every request with the fuzz input, with Secure Authentication
 configured) and `FuzzKeyUnwrap` (`secauth`: session key change data). `make fuzz` runs each for `FUZZTIME` (default 30s). A new target
@@ -144,7 +163,10 @@ must be added to the `fuzz` recipe by name.
 The corpora hold seeds taken from the recorded traffic
 (`capture-<file>-<frame>`, written by `make captures-seeds`): one per shape
 of fragment, every fragment the decoder refuses, link frames and the octets
-around framing errors.
+around framing errors. `FuzzReassembler`, `FuzzPack`, `FuzzKeyUnwrap`,
+`FuzzDecodeFileDescriptors` and `FuzzParseActivateConfigStatus` have
+hand-written seeds named after the case they cover (valid input, limits,
+truncation, sequence and length errors).
 
 When a target fails, Go writes the input to `testdata/fuzz/<Target>/` in the
 package. To keep it as a regression test, fix the cause and commit that file;

@@ -84,8 +84,8 @@ The master for one outstation.
 | `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`, or `UDPFrom(local, remote)` from a fixed local port), an outstation that connects (`Accept(net.Listener)`, listening only), a pipe |
 | `WithDualEndpoint(net.Listener, allow)` | off | The TCP dual end point (13.2.3.1.3): dial the outstation and take the connections it establishes on the listener, one at a time, the master's own first; `allow` validates the outstation's address. `Close` closes the listener; excludes `WithStream` |
 | `WithTLS(*tls.Config)` | off | TLS |
-| `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`) |
-| `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`); each repeat is a new request with the next SEQ, and a time synchronization starts again with fresh times |
+| `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`); `Jitter` (0 to 1, default 0) draws each delay d from [(1-Jitter)·d, d] |
+| `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`, and `Jitter`, 0 to 1, default 0, which draws each pause d from [(1-Jitter)·d, d]); each repeat is a new request with the next SEQ, and a time synchronization starts again with fresh times |
 | `WithResponseTimeout(d)` | 5 s | Per response fragment |
 | `WithMaxFragment(n)` | 2048 | Largest fragment reassembled; below 2048 is outside 4.3 Rule 3 |
 | `WithMaxRequestFragment(n)` | unlimited | Largest request sent, at least 249 (4.3 Rule 4); a larger one fails with `ErrInvalidOption`; a critical request that fits only without the aggressive mode objects is sent challenged; `WriteFile` sizes blocks to fit |
@@ -281,9 +281,11 @@ directories.
 
 `Frame` (`Encode`, `AppendEncode`, `Control`, `Validate`, `String`),
 `Decode`, `FrameLength`, `EncodedLen`, `CRC`, `Reader` (`NewReader`,
-`ReadFrame`), `Function` (the `Primary*` and `Secondary*` codes), `Address`
-(`BroadcastConfirm`, `BroadcastNoConfirm`, `BroadcastOptionalConfirm`,
-`SelfAddress`, `MaxStationAddress`); errors `ErrFraming` (wrapped by all),
+`ReadFrame`), `Function` (the `Primary*` and `Secondary*` codes; `Primary`,
+`Code`, `Defined`, `HasData` for the user data functions, `UsesFCB` for the
+functions whose frames set FCV, `String`), `Address` (`BroadcastConfirm`,
+`BroadcastNoConfirm`, `BroadcastOptionalConfirm`, `SelfAddress`,
+`MaxStationAddress`; `Broadcast`, `Reserved` for 0xFFF0–0xFFFB); errors `ErrFraming` (wrapped by all),
 `ErrInvalidStart`, `ErrInvalidLength`, `ErrCRC`, `ErrInvalidFunction`,
 `ErrShortBuffer`.
 

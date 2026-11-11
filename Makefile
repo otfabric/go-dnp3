@@ -156,6 +156,8 @@ fuzz: ## Run the codec and outstation fuzz targets for FUZZTIME each (default 30
 	@go test -run='^$$' -fuzz='^FuzzReader$$' -fuzztime=$(FUZZTIME) ./link
 	@go test -run='^$$' -fuzz='^FuzzReassembler$$' -fuzztime=$(FUZZTIME) ./transport
 	@go test -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZTIME) ./app
+	@go test -run='^$$' -fuzz='^FuzzDecodeFileDescriptors$$' -fuzztime=$(FUZZTIME) ./app
+	@go test -run='^$$' -fuzz='^FuzzParseActivateConfigStatus$$' -fuzztime=$(FUZZTIME) ./app
 	@go test -run='^$$' -fuzz='^FuzzOutstation$$' -fuzztime=$(FUZZTIME) ./server
 	@go test -run='^$$' -fuzz='^FuzzPack$$' -fuzztime=$(FUZZTIME) ./server
 	@go test -run='^$$' -fuzz='^FuzzMaster$$' -fuzztime=$(FUZZTIME) ./client

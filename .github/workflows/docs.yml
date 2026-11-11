@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   docs:
-    uses: otfabric/.github/.github/workflows/docs-check.yml@v3.5.0
+    uses: otfabric/.github/.github/workflows/docs-check.yml@v3.6.0
     with:
       policy-version: v1.4.2
       docsync-version: v0.3.1

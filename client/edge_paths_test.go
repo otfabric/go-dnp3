@@ -15,6 +15,7 @@ import (
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/internal/leaktest"
 	"github.com/otfabric/go-dnp3/secauth"
 )
 
@@ -70,6 +71,7 @@ func TestUDPFromDialFails(t *testing.T) {
 // TestConnectClosedWhileDialing: a client closed while its stream opens
 // does not start a channel on it; Connect returns dnp3.ErrClosed.
 func TestConnectClosedWhileDialing(t *testing.T) {
+	leaktest.Check(t)
 	var c *Client
 	var far net.Conn
 	open := func(context.Context) (io.ReadWriteCloser, net.Addr, error) {
@@ -158,6 +160,7 @@ func TestWithSecureAuthenticationInvalidUser(t *testing.T) {
 // TestCloseWhileWaitingToReconnect: Close ends the wait between reconnect
 // attempts at once, whatever the delay.
 func TestCloseWhileWaitingToReconnect(t *testing.T) {
+	leaktest.Check(t)
 	srv, addr := outstation(t)
 	c, err := Dial(testCtx(t), addr, WithReconnect(Reconnect{MinDelay: time.Hour, MaxDelay: time.Hour}))
 	if err != nil {

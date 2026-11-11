@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("\xfa\x00\x00\x00\x02\x03\x00ok\x0f\x04file not found")

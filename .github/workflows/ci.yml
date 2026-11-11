@@ -15,10 +15,12 @@ permissions:
 
 jobs:
   ci:
-    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.3.1
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.6.0
     with:
       policy-version: v1.4.2
       run-govulncheck: true
+      # The golangci-lint make lint-ci runs locally.
+      golangci-lint-version: v2.15.0
       coverage-min: "90"
       fuzz-time: 10s
       codecov-name: go-dnp3
@@ -26,7 +28,7 @@ jobs:
       # the e2e suite and the client and server tests exercise each other's
       # packages. make coverpkg-check keeps it equal to COVER_PKGS.
       coverpkg: >-
-        github.com/otfabric/go-dnp3,github.com/otfabric/go-dnp3/app,github.com/otfabric/go-dnp3/client,github.com/otfabric/go-dnp3/internal/channel,github.com/otfabric/go-dnp3/internal/logx,github.com/otfabric/go-dnp3/link,github.com/otfabric/go-dnp3/secauth,github.com/otfabric/go-dnp3/server,github.com/otfabric/go-dnp3/transport
+        github.com/otfabric/go-dnp3,github.com/otfabric/go-dnp3/app,github.com/otfabric/go-dnp3/client,github.com/otfabric/go-dnp3/internal/channel,github.com/otfabric/go-dnp3/internal/leaktest,github.com/otfabric/go-dnp3/internal/logx,github.com/otfabric/go-dnp3/link,github.com/otfabric/go-dnp3/secauth,github.com/otfabric/go-dnp3/server,github.com/otfabric/go-dnp3/transport
       go-versions: '["1.26", "1.27"]'
     secrets: inherit
 

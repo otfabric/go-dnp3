@@ -14,6 +14,7 @@ import (
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
+	"github.com/otfabric/go-dnp3/internal/leaktest"
 	"github.com/otfabric/go-dnp3/server"
 )
 
@@ -157,6 +158,7 @@ func (d *dualEndpoint) state() (closed bool, queued net.Conn) {
 // in progress wins over the dial: the connection the dial returns is
 // closed, and Connect fails with dnp3.ErrClosed.
 func TestDualEndpointCloseDuringDial(t *testing.T) {
+	leaktest.Check(t)
 	var c *Client
 	closed := make(chan struct{})
 	peer := make(chan net.Conn, 1)
@@ -206,6 +208,7 @@ func TestDualEndpointOutstationDuringFailedDial(t *testing.T) {
 // closed, and wakes the Connect only once. Close closes the connection
 // still waiting; after Close a connection of the outstation is not taken.
 func TestDualEndpointQueuedConnections(t *testing.T) {
+	leaktest.Check(t)
 	a, peerA := net.Pipe()
 	b, peerB := net.Pipe()
 	l := newScriptedListener(a, b)
@@ -242,6 +245,7 @@ func TestDualEndpointQueuedConnections(t *testing.T) {
 // TestDualEndpointConnectionAfterClose: a connection the outstation
 // establishes once Close has begun is closed, not queued.
 func TestDualEndpointConnectionAfterClose(t *testing.T) {
+	leaktest.Check(t)
 	c, err := New(deadAddr(t), quiet()...)
 	if err != nil {
 		t.Fatal(err)
@@ -262,6 +266,7 @@ func TestDualEndpointConnectionAfterClose(t *testing.T) {
 // TestDualEndpointAcceptBackoffEndsAtClose: Close ends the wait after an
 // Accept error of the dual end point's listener.
 func TestDualEndpointAcceptBackoffEndsAtClose(t *testing.T) {
+	leaktest.Check(t)
 	c, err := New(deadAddr(t), quiet()...)
 	if err != nil {
 		t.Fatal(err)
@@ -294,6 +299,7 @@ func (c *readSignal) Read(b []byte) (int, error) {
 // connection the outstation established while the client was idle, and
 // the client stays disconnected.
 func TestDualEndpointCloseDuringHandshake(t *testing.T) {
+	leaktest.Check(t)
 	a, peer := net.Pipe()
 	defer func() { _ = peer.Close() }()
 	conn := &readSignal{Conn: a, reading: make(chan struct{})}

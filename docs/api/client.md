@@ -851,6 +851,11 @@ type Reconnect struct {
 	MinDelay time.Duration
 	// MaxDelay caps the delay. Zero means 1 minute.
 	MaxDelay time.Duration
+	// Jitter randomizes each delay, so that masters that lost their
+	// channels together do not reconnect together: a fraction from 0 to 1,
+	// each delay is drawn uniformly from [(1-Jitter)·d, d] of the delay d
+	// that doubles. Zero, the default, waits d exactly.
+	Jitter float64
 }
 ```
 
@@ -924,6 +929,10 @@ type Retry struct {
 	Backoff time.Duration
 	// MaxBackoff caps the pause. Zero means 10 seconds.
 	MaxBackoff time.Duration
+	// Jitter randomizes each pause: a fraction from 0 to 1, each pause is
+	// drawn uniformly from [(1-Jitter)·d, d] of the pause d that doubles.
+	// Zero, the default, pauses d exactly.
+	Jitter float64
 }
 ```
 

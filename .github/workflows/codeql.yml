@@ -1,0 +1,41 @@
+# Static application security testing (SAST): CodeQL's Go queries.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (Go)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.x"
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          build-mode: manual
+      # The library, its tests and the interop package (build tag), so
+      # CodeQL extracts all of them; -run '^$' compiles without running.
+      - name: Build
+        env:
+          GOWORK: "off"
+        run: |
+          go build ./...
+          go test -tags=interop -count=1 -run '^$' ./...
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:go

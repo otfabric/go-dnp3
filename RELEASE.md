@@ -30,6 +30,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - **NEED_TIME is answered** (4.5.5): the LAN procedure over TCP, TLS and UDP, the non-LAN one over other streams, and non-LAN from then on when an outstation refuses LAN. `TimeSyncClearNeedTime` clears the indication instead of setting the clock; `TimeSyncNone` does nothing. Time synchronization requests always go as UNCONFIRMED_USER_DATA (10.3.4.1). The LAN procedure writes the time at which RECORD_CURRENT_TIME left; the non-LAN one measures the round trip to the arrival of the response, before it is decoded. `DelayMeasure` reports the round trip of the attempt that was answered.
 - **Select before operate**: OPERATE follows only an echo equal to the request octet for octet (4.4.4.3 Rule 8); another echo fails with `dnp3.ErrProtocol`. A control response that stops at the first failed object (4.4.4.3 Rule 6) reports that object's status as a `*dnp3.CommandError`. A `Command` with the Queue bit, or with a status other than 0 or 126, fails with `dnp3.ErrInvalidOption` before anything is sent (A.8.1.2.2).
 - **Multi-fragment responses** (Table 6-2): a repeat of the last fragment is confirmed again; any other unexpected fragment abandons the response with `dnp3.ErrProtocol`.
+- **Opt-in jitter for retries and reconnects.** `Retry.Jitter` and `Reconnect.Jitter` (0 to 1) draw each pause d of the doubling backoff from [(1-Jitter)·d, d], so that masters that lost their connections together do not retry or reconnect together. Zero, the default, keeps the exact doubling; a value outside 0 to 1 fails the option with `dnp3.ErrInvalidOption`. The `retry_in` of the `reconnect failed` warning is now the delay before the next attempt; it named the previous delay.
 - **Unsolicited responses**: a repeat is one with the sequence number and the octets after the IIN of the previous one. A repeat that reports a restart is processed; one with the same sequence number and new content is processed and followed by an integrity poll (4.6.6 Rule 7). A response whose UNS bit contradicts its function code is ignored and not confirmed. The confirmation goes out before the next request (4.3 Rule 13).
 - Values of the variations without flags (g1v1, g3v1, g10v1, g20v5–8, g21v9–12, g30v3–4, g31v5–6) read as ONLINE (11.6.5); they read as zero flags before.
 - `WriteFile` sets the file's time of creation (`FileOptions.Created`, default now), sends no more than the size it was given, and sizes blocks to `WithMaxRequestFragment`.
@@ -94,7 +95,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 
 ### Added API
 
-- `client`: `WithMaxRequestFragment(n)` (at least 249, 4.3 Rule 4; a request that does not fit fails with `dnp3.ErrInvalidOption`), `Client.ClearNeedTime(ctx)`, `TimeSyncClearNeedTime`, `DefaultTLSPort`, `FileOptions.Created`, `WithDualEndpoint(l, allow)`, `UDPFrom(local, remote)`, `WithKeyChangeCount`, `DefaultKeyChangeCount`, `MaxKeyChangeCount`, `Client.SecurityStatistics`.
+- `client`: `Retry.Jitter`, `Reconnect.Jitter`, `WithMaxRequestFragment(n)` (at least 249, 4.3 Rule 4; a request that does not fit fails with `dnp3.ErrInvalidOption`), `Client.ClearNeedTime(ctx)`, `TimeSyncClearNeedTime`, `DefaultTLSPort`, `FileOptions.Created`, `WithDualEndpoint(l, allow)`, `UDPFrom(local, remote)`, `WithKeyChangeCount`, `DefaultKeyChangeCount`, `MaxKeyChangeCount`, `Client.SecurityStatistics`.
 - `server`: `WithMasterIPs(prefixes...)`, `Route` and `ServeByMasterIP(l, routes...)`, `Server.ServeUDPFixed(pc, peer)`, `DefaultTLSPort`, `WithFileTimeout(timeout, class)` and `DefaultFileTimeout`, `WithDeadbandIntegerOnly(enabled)`; `SecureAuth` gains `Thresholds`, `NoAggressiveMode`, `ExpectedKeyChangeInterval`, `ExpectedKeyChangeCount` and `MaxKeyStatusRequests`, with `DefaultExpectedKeyChangeInterval`, `DefaultExpectedKeyChangeCount` and `DefaultMaxKeyStatusRequests`.
 - `secauth`: `MandatoryCritical`, `Statistic.DefaultThreshold`.
 - `app`: `BCD.Negative`, `BufferFillStatus`, `G81V1`, `G82V1`.
@@ -107,11 +108,16 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - `make interop`: the suite expects Association ID 0 in the security statistics and opendnp3's refusal of the SAVE_CONFIG delay object; the in-network UDP master (`interop/testdata/udpmaster`) opts out of the startup sequence, since it retries its poll itself.
 - `TestChaos` keeps the last 3000 lines the master and the outstation logged and prints them when a run fails, with the attempts each recovery check needed.
 - Four defects found by the link spec tests are fixed: an unanswered REQUEST_LINK_STATUS left the link reset; TEST_LINK_STATES with an unexpected FCB always answered ACK; `WithSelfAddress(true)` never answered 0xFFFC; `ServeUDPFixed` accepted a TCP peer.
+- `TestFrameChaos` drops, duplicates and reorders whole link frames between a master and an outstation with a fixed seed, and checks that every failure is a documented error, that no control runs more often than it was sent and that the session recovers. `DNP3_CHAOS_SEED` replays the seed a chaos run logged.
+- Fuzz targets `FuzzDecodeFileDescriptors` and `FuzzParseActivateConfigStatus` (`app`), in `make fuzz`; hand-written seed corpora for them and for `FuzzReassembler`, `FuzzPack` and `FuzzKeyUnwrap`.
+- `internal/leaktest` checks that goroutines and, on Linux and macOS, open file descriptors return to their number before the test; the `Close` lifecycle tests of `client` and the stress tests of `e2e` use it.
+- CI: golangci-lint v2.15.0 in CI as locally (the reusable workflow defaulted to v2.1.6); otfabric/.github reusable workflows v3.6.0; a CodeQL workflow (Go) on pushes and pull requests to `main` and weekly.
 
 ### Documentation
 
 - INTEROPERABILITY.md: clause references in every layer table; DNP3 over IP (clause 13): end points, keep-alive, address validation, multiple masters; the Secure Authentication device profile items; subset levels; frozen counter events; deviations and choices (unsolicited at startup, INITIALIZE_DATA, repeated READ, DELAY_MEASURE, open with block size 0, class 0 and g110, reads of absent types).
 - LIMITATIONS.md, API.md, ERRORS.md and SECURITY.md updated for the changes above; TESTING.md describes the spec tests.
+- API.md lists `link.Function.HasData`, `UsesFCB` and `link.Address.Reserved`; SECURITY.md supports 1.11.x; OBSERVABILITY.md and ERRORS.md describe the retry and reconnect jitter; TESTING.md the chaos seed, the frame-level chaos test and the leak check.
 
 ---
 
