@@ -89,6 +89,7 @@ func TestValueMarkers(t *testing.T) {
 	for _, v := range []Value{
 		Binary{}, DoubleBitBinary{}, BinaryCommandEvent{}, CROB{}, Counter{}, Analog{}, AnalogDeadband{}, AnalogOutput{},
 		AnalogCommandEvent{}, AbsoluteTime{}, CTO{}, TimeDelay{}, OctetString{}, BCD{}, UnsignedInteger{}, DataSetCharacteristics{}, SecurityStatistic{},
+		BufferFillStatus{},
 		Raw{}, Attribute{}, FileAuthentication{}, FileCommand{}, FileCommandStatus{}, FileTransport{}, FileTransportStatus{},
 		FileDescriptor{}, FileSpecification{}, AuthChallenge{}, AuthReply{}, AuthAggressiveMode{}, AuthSessionKeyStatusRequest{},
 		AuthSessionKeyStatus{}, AuthSessionKeyChange{}, AuthError{}, AuthUserCertificate{}, AuthMAC{}, AuthUserStatusChange{},

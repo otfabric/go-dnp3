@@ -443,6 +443,20 @@ func (f DataSetFlags) String() string {
 	return strings.Join(parts, "|")
 }
 
+// BufferFillStatus is the device storage buffer fill status (g81v1,
+// IEEE 1815-2012 A.29.1): how full one buffer of the outstation is. The
+// standard does not recommend the object for new implementations
+// (A.29.1.2.3); a master decodes it from outstations that send it.
+type BufferFillStatus struct {
+	// Fill is the percentage of the buffer that is filled, 0..100 (a
+	// UINT7 on the wire).
+	Fill uint8
+	// Overflow reports that the buffer overflowed.
+	Overflow bool
+	// Buffer is the group and variation that identify the buffer.
+	Buffer GroupVariation
+}
+
 // SecurityStatistic is a secure authentication statistic (group 121) or
 // a statistic event (group 122).
 type SecurityStatistic struct {
@@ -457,8 +471,9 @@ type SecurityStatistic struct {
 }
 
 // Raw is a free-format object that this package carries without
-// decoding: the obsolete g70v1, private registration objects (group 83),
-// the data set objects of groups 85..88 but the characteristics (g86v2), the application identifier (g90v1) and
+// decoding: the obsolete g70v1, the device profile (g82v1), private
+// registration objects (group 83), the data set objects of groups 85..88
+// but the characteristics (g86v2), the application identifier (g90v1) and
 // the status of requested operation (g91v1). The data of a g91v1 object
 // are read with [ParseActivateConfigStatus].
 type Raw struct {
@@ -481,5 +496,6 @@ func (OctetString) isValue()            {}
 func (BCD) isValue()                    {}
 func (UnsignedInteger) isValue()        {}
 func (DataSetCharacteristics) isValue() {}
+func (BufferFillStatus) isValue()       {}
 func (SecurityStatistic) isValue()      {}
 func (Raw) isValue()                    {}

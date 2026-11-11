@@ -88,6 +88,7 @@ const (
 	fAttribute
 	fRaw
 	fActivation // g91v1: carried as Raw, sized by its own count and lengths
+	fBufferFill // g81v1: device storage buffer fill status
 	fFileAuth
 	fFileCommand
 	fFileCommandStatus
@@ -226,6 +227,8 @@ func (d *desc) size(gv GroupVariation) int {
 		return 2 << (gv.Variation() - 1) // 2, 4, 8
 	case fUint8, fDataSetChars:
 		return 1
+	case fBufferFill:
+		return 3
 	case fSecStat:
 		return 7 + d.time.size()
 	case fAuth:
@@ -389,6 +392,9 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		return UnsignedInteger{Value: r.u8()}, r.done()
 	case fDataSetChars:
 		return DataSetCharacteristics{Flags: DataSetFlags(r.u8())}, r.done()
+	case fBufferFill:
+		f := r.u8()
+		return BufferFillStatus{Fill: f & 0x7F, Overflow: f&0x80 != 0, Buffer: GV(r.u8(), r.u8())}, r.done()
 	case fSecStat:
 		v := SecurityStatistic{Flags: Flags(r.u8()), Association: r.u16(), Value: r.u32()}
 		v.Time, _ = d.readTime(&r, c)
@@ -612,6 +618,19 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 			return mismatch()
 		}
 		return append(b, byte(o.Flags)), nil
+	case fBufferFill:
+		o, ok := v.(BufferFillStatus)
+		if !ok {
+			return mismatch()
+		}
+		if o.Fill > 0x7F {
+			return b, invalid("buffer fill %d%% does not fit %s", o.Fill, gv)
+		}
+		f := o.Fill
+		if o.Overflow {
+			f |= 0x80
+		}
+		return append(b, f, o.Buffer.Group(), o.Buffer.Variation()), nil
 	case fSecStat:
 		o, ok := v.(SecurityStatistic)
 		if !ok {

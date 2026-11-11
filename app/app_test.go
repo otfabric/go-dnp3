@@ -219,6 +219,8 @@ func sample(gv GroupVariation, d *desc, i int) Value {
 		return UnsignedInteger{Value: 200}
 	case fDataSetChars:
 		return DataSetCharacteristics{Flags: DataSetReadable | DataSetStatic | DataSetEvents}
+	case fBufferFill:
+		return BufferFillStatus{Fill: uint8(40 + i), Overflow: i%2 == 1, Buffer: G2V1}
 	case fSecStat:
 		return SecurityStatistic{Flags: FlagOnline, Association: 1, Value: 99, Time: ts}
 	case fAttribute:
