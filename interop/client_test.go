@@ -331,7 +331,10 @@ func TestClientDefaults(t *testing.T) {
 				if err != nil && !isIINErr(err) {
 					t.Fatal(err)
 				}
-				if res != nil && !res.IIN.Has(app.IINDeviceRestart) && (!res.IIN.Has(app.IINNeedTime) || !syncs) {
+				if res == nil {
+					t.Fatalf("read without a response: %v", err)
+				}
+				if !res.IIN.Has(app.IINDeviceRestart) && (!res.IIN.Has(app.IINNeedTime) || !syncs) {
 					return
 				}
 				if time.Now().After(deadline) {
