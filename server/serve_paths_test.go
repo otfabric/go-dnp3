@@ -1,13 +1,19 @@
 package server
 
 import (
+	"crypto/tls"
+	"errors"
+	"log/slog"
 	"net"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	dnp3 "github.com/otfabric/go-dnp3"
 )
 
 // closingListener's Accept waits until the listener is closed and then
@@ -128,4 +134,74 @@ func TestCloseServesNoConnectionAcceptedMeanwhile(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestServeConnectionLimit: past WithMaxConnections, Server.Serve closes a
+// new connection at once and goes on serving the ones it has.
+func TestServeConnectionLimit(t *testing.T) {
+	s, err := New(WithMaxConnections(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = s.Serve(l) }()
+	first, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+	eventually(t, "the first connection served", func() bool { return s.connections() == 1 })
+	second, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = second.Close() }()
+	_ = second.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := second.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("a connection past the limit was kept: %v", err)
+	}
+	if n := s.connections(); n != 1 {
+		t.Fatalf("%d connections served, want the first", n)
+	}
+}
+
+// TestGroupServeTLSHandshakeFails: Group.Serve logs and closes a
+// connection whose TLS handshake fails, and goes on accepting.
+func TestGroupServeTLSHandshakeFails(t *testing.T) {
+	cfg := &tls.Config{Certificates: []tls.Certificate{selfSignedCert(t)}, MinVersion: tls.VersionTLS12}
+	var logs syncBuffer
+	s, err := New(WithTLS(cfg), WithLogger(dnp3.NewSlogLogger(slog.NewTextHandler(&logs, nil))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewGroup(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = g.Close() })
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = g.Serve(tls.NewListener(raw, cfg)) }()
+	for range 2 {
+		c, err := net.Dial("tcp", raw.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = c.Write([]byte("not a TLS client hello\r\n\r\n"))
+		_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, err = c.Read(make([]byte, 64))
+		_ = c.Close()
+		if err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatalf("a connection whose handshake failed was kept: %v", err)
+		}
+	}
+	eventually(t, "the failed handshakes logged", func() bool {
+		return strings.Count(logs.String(), "TLS handshake failed") == 2
+	})
 }
