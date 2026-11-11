@@ -150,6 +150,15 @@ type ApplicationHandler interface {
 // qualifier 0x07 (count 1); with one, the response has no object. A status
 // that does not encode (app.ActivateConfigStatus.Raw) or does not fit the
 // largest response fragment is answered with IIN2.2 (PARAMETER_ERROR).
+//
+// ActivateConfig checks the request; it does not activate. IEEE 1815-2012
+// 4.4.20 (p. 78) has the outstation complete the transmission of the
+// g91v1 response before it starts the activation, and activate nothing
+// when a check fails. The outstation sends the response after
+// ActivateConfig returns, so a handler starts the activation after that,
+// for example from a goroutine. The response's IIN reflect the current
+// conditions: the handler does not set IIN2.5 for a failed check, and
+// IIN1.7 is set by the restart itself, not in anticipation of it.
 type ActivateConfigHandler interface {
 	ActivateConfig(ctx context.Context, headers []app.Header) (app.ActivateConfigStatus, app.IIN)
 }
