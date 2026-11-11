@@ -560,6 +560,14 @@ func WithAutoIntegrity(enabled bool) Option
 
 WithAutoIntegrity controls whether the client runs an integrity poll when the outstation reports a restart or an event buffer overflow. It is on by default.
 
+#### func WithChallengeMACs
+
+```go
+func WithChallengeMACs(algs ...app.MACAlgorithm) Option
+```
+
+WithChallengeMACs limits the MAC algorithms an outstation's challenge may ask for. The challenge (g120v1, IEEE 1815-2012 clause 7) names the algorithm of the reply and of aggressive mode requests; a challenge asking for another one fails the request with dnp3.ErrAuthentication. By default every algorithm package secauth computes is accepted except the obsolete HMAC-SHA-1 truncated to 4 octets. The algorithm of secauth.User is the one the session key change and the outstation's key status use; it need not be in the list.
+
 #### func WithDialer
 
 ```go

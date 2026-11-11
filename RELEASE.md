@@ -1,5 +1,22 @@
 # go-dnp3 Releases
 
+## v1.10.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.9.1
+
+## Summary
+
+Fixes from a review against two vendor DNP3 documents (an Emerson flow computer manual and a RACOM link layer description). Exported API is added, none removed.
+
+## Changes
+
+### Master
+
+- **The reply to a challenge uses the MAC algorithm the challenge names.** The master refused a challenge whose MAC algorithm differed from the one in its `secauth.User`, so an outstation that challenges with, say, HMAC-SHA-1/10 refused every control of a master left on the default HMAC-SHA-256/16, and each refusal started a session key change. It now replies with the challenge's algorithm, and aggressive mode requests use the algorithm of the challenge their MAC covers. `WithChallengeMACs(algs...)` limits the algorithms accepted; by default every algorithm `secauth` computes is accepted except the obsolete HMAC-SHA-1 truncated to 4 octets.
+
+---
+
 ## v1.9.1
 
 **Date:** 2026-11-08
