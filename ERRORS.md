@@ -116,7 +116,14 @@ parse). `app.ParseActivateConfigStatus` fails with `app.ErrMalformed`, and
 `app.ActivateConfigStatus.Raw` with `app.ErrInvalidValue` for a status that
 does not fit the object; an outstation answers an `ActivateConfigHandler`
 status that does not encode, or does not fit a fragment, with
-PARAMETER_ERROR. A request whose
+PARAMETER_ERROR. `app.Fragment.Encode` fails with `app.ErrInvalidValue`
+for a BCD value that does not fit its variation, a floating-point
+attribute of a size other than 4 or 8 octets, a g81v1 fill above 127, and,
+in a response, a group 60 or variation 0 header (`app.ErrInvalidQualifier`
+for qualifier 0x06). `app.Decode` reports the same headers in a response,
+a floating-point attribute of another size and a BCD sign character
+outside the most significant position with `app.ErrMalformed`
+(`app.ErrInvalidQualifier` for qualifier 0x06). A request whose
 own headers do not encode fails with the codec error itself. An outstation
 answers a request it cannot decode with the IIN2 bit the standard prescribes (OBJECT_UNKNOWN for
 `ErrUnknownObject`, NO_FUNC_CODE_SUPPORT for `ErrUnknownFunction`,

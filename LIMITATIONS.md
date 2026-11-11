@@ -53,7 +53,10 @@ Data sets, private registration objects and the virtual terminal (groups 83,
 85..88, 90 carried raw, except the one-octet data set characteristics g86v2;
 112, 113 decoded) have no procedures: exchange them with the generic request
 methods. Group 91 is decoded for ACTIVATE_CONFIG (`Client.ActivateConfig`,
-`server.ActivateConfigHandler`).
+`server.ActivateConfigHandler`). The device storage buffer fill status
+(g81v1) and the device profile (g82v1, carried raw) are decoded only; the
+outstation does not send them. Group 100 is not supported: IEEE 1815-2012
+defines no coding for it.
 
 ## Behaviour to plan for
 

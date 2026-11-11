@@ -242,17 +242,17 @@ directories.
 
 | Symbol | Meaning |
 |--------|---------|
-| `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `HeaderLen`, `String`; `Decode(b)`; `AppendObjectValue(b, gv, v)` encodes one object without header, as a free-format object carries it |
+| `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `HeaderLen`, `String`; `Decode(b)`; `AppendObjectValue(b, gv, v)` encodes one object without header, as a free-format object carries it; a response refuses qualifier 0x06, group 60 and request-only variations (Table 4-8) |
 | `Header{GV, Qualifier, Start, Stop, Count, Objects}` | `EncodedLen`, `String` |
 | `Object{Index, Value}`, `Value` | The closed set of value types |
 | `GroupVariation`, `GV(g, v)`, `G1V0` ... `G122V2`, `OctetStringGV(g, n)` (variation 0 for n outside 1..255) | `Group`, `Variation`, `Name`, `Known`, `IsEvent`, `Size`; [OBJECTS.md](OBJECTS.md) lists them all |
 | `FunctionCode`, `Func*` | `String`, `Defined`, `IsResponse`, `NoAck` |
 | `IIN`, `IIN*` | `Has`, `IIN1`, `IIN2`, `String`; `IINBit` |
 | `Control{FIR, FIN, CON, UNS, Seq}`, `SingleControl`, `ParseControl`, `NextSeq` | The application control octet (`Byte`, `String`) |
-| `Qualifier`, `Qual*`, `RangeQualifier`, `CountQualifier`, `IndexQualifier` | Qualifier codes (`IsRange`, `IsCount`, `IsIndexed`, `IsFreeFormat`, `Prefix`, `Range`, `Valid`) |
+| `Qualifier`, `Qual*`, `RangeQualifier`, `CountQualifier`, `IndexQualifier` | Qualifier codes (`IsRange`, `IsCount`, `IsIndexed`, `IsFreeFormat`, `Prefix`, `Range`, `Valid`); `IndexQualifier` picks 0x17 or 0x28 while the count and indexes fit, else 0x29, 0x37, 0x38 or 0x39 (Table 4-7, 4.2.2.7.3.4) |
 | `AllObjects`, `ClassHeaders`, `IndexRange`, `IndexList`, `CountOf`, `Ranged`, `Indexed`, `Counted`, `FreeFormat` | Header constructors |
 | `Timestamp`, `TimestampOf`, `Now`, `MaxTimestamp` | DNP3 time (`Time`, `String`) |
-| Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD`, `UnsignedInteger`, `DataSetCharacteristics` (g86v2, `Flags DataSetFlags`), `SecurityStatistic`, `Raw` |
+| Point values | `Binary`, `DoubleBitBinary`, `BinaryCommandEvent`, `CROB`, `Counter`, `Analog`, `AnalogDeadband`, `AnalogOutput`, `AnalogCommandEvent`, `AbsoluteTime`, `CTO`, `TimeDelay`, `OctetString`, `BCD` (`Value`, `Negative`), `UnsignedInteger`, `DataSetCharacteristics` (g86v2, `Flags DataSetFlags`), `BufferFillStatus` (g81v1, `Fill`, `Overflow`, `Buffer`), `SecurityStatistic`, `Raw` |
 | Enumerations | `Flags`, `DoubleBit`, `CommandStatus`, `OpType`, `TripClose`, `IntervalUnit`, `DataSetFlags` (`DataSetReadable` ... `DataSetMasterDefined`) |
 | Attributes | `Attribute`, `AttrType`, `Attr*` variations, `StringAttribute`, `UintAttribute`, `IntAttribute`, `FloatAttribute`, `TimeAttribute`, `ListAttribute`, `AttributeListEntry`; read with `Text`, `Uint`, `Int`, `Float`, `List` |
 | Activation status (g91v1) | `ActivateConfigStatus{Delay, Results}`, `ActivateConfigResult{Code, Text}`; `ParseActivateConfigStatus(data)` reads the data of the `Raw` that `Decode` returns for g91v1, `ActivateConfigStatus.Raw()` makes one. g91v1 decodes with a count, range or free-format qualifier |

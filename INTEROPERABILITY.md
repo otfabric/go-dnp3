@@ -102,12 +102,13 @@ Any other code is answered with NO_FUNC_CODE_SUPPORT.
 
 The codec decodes and encodes every variation below, in every qualifier
 the standard allows for it (start-stop 0x00..0x02, virtual 0x03..0x05, all
-0x06, count 0x07..0x09, index-prefixed 0x17..0x19, 0x27..0x29, 0x37..0x39, free-format
+0x06 (requests only), count 0x07..0x09, index-prefixed 0x17..0x19, 0x27..0x29, 0x37..0x39, free-format
 0x4B/0x5B/0x6B). The outstation's database serves the point types; the
 others are used by the procedures. [OBJECTS.md](OBJECTS.md) lists each
 variation with its size and whether it is point data, generated from the
 catalog `app/catalog.json`, whose sizes are compared weekly with those of
-DSC go-dnp3.
+DSC go-dnp3. Group 100 is not decoded: IEEE 1815-2012 A.38 defines no
+coding for its variations, and a response that carries it does not decode.
 
 | Groups | Objects | Outstation database |
 |--------|---------|---------------------|
@@ -130,8 +131,9 @@ DSC go-dnp3.
 | 60 | class objects | polls, unsolicited control, assign class |
 | 70 | file control v1 (raw), v2..v8 | file transfer |
 | 80 | internal indications | read, clear of DEVICE_RESTART |
+| 81, 82 | device storage buffer fill status (g81v1), device profile (g82v1) | codec: g81v1 as `app.BufferFillStatus`, g82v1 as `app.Raw`; not served by the outstation |
 | 0 | device attributes, all data types, the list of variations | ✅ `WithAttributes` (set 0), `WithAttributeSet` (other sets, writable variations) |
-| 101, 102 | BCD integers, unsigned 8-bit integer | codec; reported by `client.Measurements`; not served by the outstation's database |
+| 101, 102 | BCD integers, negative values included (sign character 0xA..0xF, sent as 0xF), unsigned 8-bit integer | codec; reported by `client.Measurements`; not served by the outstation's database |
 | 110, 111 | octet strings, events | ✅ |
 | 112, 113 | virtual terminal | codec |
 | 120 | authentication v1..v15 | secure authentication |
