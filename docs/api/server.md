@@ -49,6 +49,12 @@ const DefaultReplyTimeout = 2 * time.Second
 DefaultReplyTimeout is how long a challenge waits for its reply when SecureAuth.ReplyTimeout is zero: 2 seconds (IEEE 1815-2012 clause 7.6.1.4.1).
 
 ```go
+const DefaultTLSPort = 19999
+```
+
+DefaultTLSPort is the port of DNP3 over TLS: IEEE 1815-2012 clause 7.8.8 makes 19999 the default, and clause 13.2.2.2 requires devices that use TLS to support it.
+
+```go
 const MaxScheduledFreezes = 16
 ```
 
@@ -61,6 +67,23 @@ var DefaultCritical = secauth.DefaultCritical
 ```
 
 DefaultCritical are the function codes challenged by default: the ones that change the outstation's state.
+
+## Functions
+
+### func ServeByMasterIP
+
+```go
+func ServeByMasterIP(l net.Listener, routes ...Route) error
+```
+
+ServeByMasterIP accepts connections on l and gives each to the route of the master's IP address: method 1 of IEEE 1815-2012 clause 13.2.3.5.1, which clause 13.2.3.5.4 requires of an outstation that supports multiple masters. The first route whose prefix holds the address takes the connection; one that no route takes is closed. Method 2, a port for each master, is a listener for each Server or Group.
+
+The targets serve the connections as their own Serve does, with their TLS handshake, WithMaxConnections and WithMasterIPs; give l a listener of tls.NewListener for TLS. Closing a target closes its connections; closing l stops the accepting. ServeByMasterIP returns the error that stopped l, wrapping net.ErrClosed after l.Close.
+
+	l, _ := net.Listen("tcp", ":20000")
+	go server.ServeByMasterIP(l,
+		server.Route{Masters: netip.MustParsePrefix("192.0.2.1/32"), Server: scada},
+		server.Route{Masters: netip.MustParsePrefix("198.51.100.0/24"), Group: engineering})
 
 ## Types
 
@@ -482,7 +505,7 @@ Close stops the listeners and closes every server of the group, and with them th
 func (g *Group) ListenAndServe(addr string) error
 ```
 
-ListenAndServe listens on the TCP address addr (":20000" when empty), with the TLS configuration of the first server's WithTLS when it has one, and serves until Close.
+ListenAndServe listens on the TCP address addr, with the TLS configuration of the first server's WithTLS when it has one, and serves until Close. An empty addr is ":20000", or ":19999" (DefaultTLSPort) with TLS.
 
 #### func (Group) Serve
 
@@ -561,15 +584,21 @@ Select returns app.StatusSuccess.
 
 ```go
 type Link struct {
-	// Confirmed sends user data as CONFIRMED_USER_DATA. The default,
-	// unconfirmed, is what IEEE 1815-2012 recommends on TCP.
+	// Confirmed sends user data as CONFIRMED_USER_DATA. Set it on serial
+	// links only: IEEE 1815-2012 clause 13.2.1.1 forbids confirmed link
+	// frames over TCP and UDP, and a channel on a network stream with it
+	// logs a warning. The default is UNCONFIRMED_USER_DATA.
 	Confirmed bool
 	// Timeout is the wait for a link layer answer. Zero means 2 seconds.
 	Timeout time.Duration
 	// Retries is the number of repeats of an unanswered primary frame.
 	Retries int
-	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent.
-	// Zero means 60 seconds; a negative value disables it.
+	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent
+	// (the keep-alive of IEEE 1815-2012 clause 13.2.3.3.1); a peer that
+	// does not answer it ends the connection. Zero means 60 seconds; any
+	// positive duration is taken. A negative value disables it, which the
+	// clause allows for testing only: in service, set a long interval
+	// instead.
 	KeepAlive time.Duration
 }
 ```
@@ -708,6 +737,16 @@ func WithLogger(l dnp3.Logger) Option
 ```
 
 WithLogger sets the logger; logging is silent by default.
+
+#### func WithMasterIPs
+
+```go
+func WithMasterIPs(prefixes ...netip.Prefix) Option
+```
+
+WithMasterIPs limits the masters to those whose IP address lies in one of prefixes: a TCP connection from another address is closed when it is accepted, and a UDP datagram from another address is ignored. The default accepts any address. IEEE 1815-2012 clause 13.2.3.2.2 d requires an outstation to be configurable to accept UDP requests only from specific master IP addresses, and clause 13.2.3.1.4 a recommends the same validation of TCP connection requests. A single address is a prefix of its full length, such as netip.MustParsePrefix("192.0.2.7/32").
+
+The check applies to Serve, ListenAndServe, ServeUDP, ServeUDPTo and ServeUDPFixed; ServeConn serves the stream it is given.
 
 #### func WithMasters
 
@@ -916,6 +955,18 @@ type RestartHandler interface {
 
 RestartHandler is an optional interface of the [Handler](#type-handler): without it, COLD\_RESTART and WARM\_RESTART are answered with IIN2.0 (NO\_FUNC\_CODE\_SUPPORT).
 
+### type Route
+
+```go
+type Route struct {
+	Masters netip.Prefix
+	Server  *Server
+	Group   *Group
+}
+```
+
+A Route assigns the connections of the masters whose IP address lies in Masters to one outstation, Server, or to the outstations of one Group. Exactly one of Server and Group is set.
+
 ### type SecureAuth
 
 ```go
@@ -1036,7 +1087,9 @@ Database returns the point database.
 func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error
 ```
 
-DialAndServe is the outstation's end of a TCP connection that the outstation establishes (the dual end point of IEEE 1815-2012 annex A.3, for an outstation behind a firewall or on a dial-out link): it connects to the master at addr, with TLS when WithTLS was given (the outstation is then the TLS client: the configuration's RootCAs verify the master, its Certificates are presented, ServerName defaults to the host of addr), serves the connection like an accepted one, and connects again when it ends, with the delays of r. It returns when ctx is done (ctx.Err()) or the server is closed (nil).
+DialAndServe is the outstation's end of a TCP connection that the outstation establishes (the dual end point of IEEE 1815-2012 clause 13.2.3.1.3, for an outstation behind a firewall or on a dial-out link): it connects to the master at addr, with TLS when WithTLS was given (the outstation is then the TLS client: the configuration's RootCAs verify the master, its Certificates are presented, ServerName defaults to the host of addr), serves the connection like an accepted one, and connects again when it ends, with the delays of r. It returns when ctx is done (ctx.Err()) or the server is closed (nil).
+
+Only one connection to the master stands at a time, and the master's own has priority (clause 13.2.3.1.3): while a master is connected to the server's listener, DialAndServe does not connect, and checks again every r.MinDelay.
 
 #### func (Server) ListenAndServe
 
@@ -1044,7 +1097,7 @@ DialAndServe is the outstation's end of a TCP connection that the outstation est
 func (s *Server) ListenAndServe(addr string) error
 ```
 
-ListenAndServe listens on the TCP address addr (":20000" when empty), with TLS when WithTLS was given, and serves until Close.
+ListenAndServe listens on the TCP address addr, with TLS when WithTLS was given, and serves until Close. An empty addr is ":20000", or ":19999" (DefaultTLSPort) with TLS.
 
 #### func (Server) Now
 
@@ -1087,6 +1140,14 @@ func (s *Server) ServeUDP(pc net.PacketConn) error
 ServeUDP serves DNP3 over UDP on pc until Close. Each datagram carries link frames; responses go to the address the last datagram came from, so one socket serves one master at a time (a master behind another address takes over the socket when it sends).
 
 Until a master has sent a datagram there is nowhere to send to: what the outstation sends before (the null unsolicited response, for one) is dropped, as an unreachable datagram would be, and repeated by the unsolicited retries. Use ServeUDPTo to name the master's address up front.
+
+#### func (Server) ServeUDPFixed
+
+```go
+func (s *Server) ServeUDPFixed(pc net.PacketConn, peer net.Addr) error
+```
+
+ServeUDPFixed serves DNP3 over UDP on pc with responses always sent to peer, the master's address and port: case 1 of IEEE 1815-2012 Table 13-1, "send responses to a fixed port at the master", where ServeUDP is case 2 (reply to the port the request came from). Datagrams are taken from peer's IP address only, from any of its ports; WithMasterIPs, when given, applies as well.
 
 #### func (Server) ServeUDPTo
 

@@ -45,6 +45,17 @@ var (
 	// ErrTooLarge reports a fragment that grew beyond the limit; it is
 	// discarded.
 	ErrTooLarge = errors.New("transport: fragment too large")
+
+	// ErrDuplicate reports a segment octet for octet identical to the
+	// one before it in the fragment being assembled. It is discarded and
+	// the fragment goes on (IEEE 1815-2012 clause 8.2.1.4 rule 5.3,
+	// Table 8-1 row 4): a repeat, not an error of the peer.
+	ErrDuplicate = errors.New("transport: repeated segment")
+
+	// ErrNoData reports a segment with a header and no application data;
+	// a segment carries 1 to 249 octets (IEEE 1815-2012 clause 8.2.2). It
+	// is discarded and leaves a fragment in progress as it was.
+	ErrNoData = errors.New("transport: segment without data")
 )
 ```
 
@@ -104,7 +115,10 @@ String returns, for example, "FIR FIN seq=5".
 
 ```go
 type Reassembler struct {
-	// contains filtered or unexported fields
+
+	// The segment accepted last in the fragment being assembled, for the
+	// octet-for-octet comparison of rule 5.3.
+
 }
 ```
 
@@ -126,7 +140,12 @@ func (r *Reassembler) Add(segment []byte) ([]byte, error)
 
 Add processes one received segment. It returns the fragment when the segment completed one; the fragment is a new slice owned by the caller.
 
-The rules are those of IEEE 1815-2012 clause 8.2.1.2: a FIR segment always starts a new fragment, discarding any partial one; a segment without FIR must carry the next sequence number of the fragment in progress, or it and the partial fragment are discarded.
+The rules are those of IEEE 1815-2012 clause 8.2.1.4 and the reception state table, Table 8-1:
+
+  - a segment without FIR while no fragment is in progress is discarded (rule 3, row 1);
+  - a FIR segment always starts a new fragment, discarding any partial one (rules 4 and 5.2, rows 2, 3, 9 and 10);
+  - a segment without FIR that repeats the previous one octet for octet is discarded and the fragment goes on (rule 5.3, row 4: ErrDuplicate);
+  - any other segment without FIR must carry the next sequence number, or it and the partial fragment are discarded (rules 5.1 and 5.4, rows 5 and 8: ErrSequence).
 
 #### func (Reassembler) Pending
 
@@ -160,7 +179,7 @@ Segmenter splits fragments for one direction of an association. The zero value s
 func (s *Segmenter) Segment(fragment []byte) [][]byte
 ```
 
-Segment splits fragment into segments, each ready to be the user data of one link frame, and advances the sequence number. A fragment of zero length is sent as one segment with only the header.
+Segment splits fragment into segments, each ready to be the user data of one link frame, and advances the sequence number. A fragment of zero length gives no segment: a segment carries 1 to 249 octets of the fragment (IEEE 1815-2012 clause 8.2.2).
 
 #### func (Segmenter) Seq
 

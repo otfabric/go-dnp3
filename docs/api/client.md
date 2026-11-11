@@ -61,6 +61,8 @@ type Client struct {
 	// needTime is the NEED_TIME indication of the outstation's latest
 	// response.
 
+	// dual is the dual end point of WithDualEndpoint, nil without.
+
 }
 ```
 
@@ -484,15 +486,21 @@ HandleMeasurements calls f.
 
 ```go
 type Link struct {
-	// Confirmed sends user data as CONFIRMED_USER_DATA. The default,
-	// unconfirmed, is what IEEE 1815-2012 recommends on TCP.
+	// Confirmed sends user data as CONFIRMED_USER_DATA. Set it on serial
+	// links only: IEEE 1815-2012 clause 13.2.1.1 forbids confirmed link
+	// frames over TCP and UDP, and a channel on a network stream with it
+	// logs a warning. The default is UNCONFIRMED_USER_DATA.
 	Confirmed bool
 	// Timeout is the wait for a link layer answer. Zero means 2 seconds.
 	Timeout time.Duration
 	// Retries is the number of repeats of an unanswered primary frame.
 	Retries int
-	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent.
-	// Zero means 60 seconds; a negative value disables it.
+	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent
+	// (the keep-alive of IEEE 1815-2012 clause 13.2.3.3.1); a peer that
+	// does not answer it ends the connection. Zero means 60 seconds; any
+	// positive duration is taken. A negative value disables it, which the
+	// clause allows for testing only: in service, set a long interval
+	// instead.
 	KeepAlive time.Duration
 }
 ```
@@ -591,6 +599,22 @@ func WithDialer(d Dialer) Option
 ```
 
 WithDialer sets the dialer of TCP connections.
+
+#### func WithDualEndpoint
+
+```go
+func WithDualEndpoint(l net.Listener, allow func(net.Addr) bool) Option
+```
+
+WithDualEndpoint makes the client a TCP dual end point (IEEE 1815-2012 clause 13.2.3.1.3, Figure 13-7): it dials the outstation at the address given to New, as without the option, and also takes the connections the outstation establishes on l, for example to report unsolicited responses. Only one connection is in place at a time:
+
+  - A connection the outstation establishes while the client has none is used: at once when the client is idle or waits to reconnect, and by a Connect in progress when its own dial fails.
+  - One that arrives while the client is connected is closed. So is one that arrives while the client's own dial succeeds: the master has priority on the creation of TCP connections.
+
+allow, when not nil, validates the outstation's address (clause 13.2.3.1.4 b): a connection from an address it refuses is closed. The end point listens from the first Connect; Close closes l. With WithTLS, give a listener of tls.NewListener: the client is the TLS server of the connections it takes. WithStream excludes the option.
+
+	l, _ := net.Listen("tcp", ":20000")
+	c, err := client.New("192.0.2.10:20000", client.WithDualEndpoint(l, nil))
 
 #### func WithHandler
 
@@ -892,6 +916,16 @@ func UDP(addr string) StreamOpener
 UDP returns a StreamOpener for DNP3 over UDP (port 20000 by convention): every link frame travels in a datagram to addr ("host:port"). Use it with WithStream:
 
 	c, err := client.New(addr, client.WithStream(client.UDP(addr)))
+
+#### func UDPFrom
+
+```go
+func UDPFrom(local, remote string) StreamOpener
+```
+
+UDPFrom is UDP with the local address the datagrams are sent from, for an outstation that sends its responses to a fixed port of the master (IEEE 1815-2012 Table 13-1, case 1) or takes requests from known ports only. local is "host:port"; an empty host is any address.
+
+	c, err := client.New(addr, client.WithStream(client.UDPFrom(":20000", addr)))
 
 ### type TimeSync
 
