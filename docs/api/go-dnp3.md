@@ -58,8 +58,10 @@ var (
 	// ErrProtocol reports a peer that violated the protocol: a response
 	// whose objects do not match the request (a control echo that differs,
 	// a missing or unexpected object, a wrong file block), or a link layer
-	// answer that does not fit. A fragment with an unexpected sequence
-	// number is ignored instead.
+	// answer that does not fit. Awaiting a response, a fragment with an
+	// unexpected sequence number is ignored; during a multi-fragment
+	// response, an unexpected fragment abandons the response with
+	// ErrProtocol.
 	ErrProtocol = errors.New("dnp3: protocol violation")
 
 	// ErrBusy reports a request that cannot be issued because the

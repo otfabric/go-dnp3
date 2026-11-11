@@ -85,14 +85,15 @@ The master for one outstation.
 | `WithDualEndpoint(net.Listener, allow)` | off | The TCP dual end point (13.2.3.1.3): dial the outstation and take the connections it establishes on the listener, one at a time, the master's own first; `allow` validates the outstation's address. `Close` closes the listener; excludes `WithStream` |
 | `WithTLS(*tls.Config)` | off | TLS |
 | `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`) |
-| `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`) |
+| `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`); each repeat is a new request with the next SEQ, and a time synchronization starts again with fresh times |
 | `WithResponseTimeout(d)` | 5 s | Per response fragment |
-| `WithMaxFragment(n)` | 2048 | Largest fragment reassembled |
-| `WithLink(Link)` | unconfirmed | `Confirmed` (serial only: 13.2.1.1 forbids it over IP), `Timeout` (2 s), `Retries`, `KeepAlive` (60 s, any positive duration; negative disables it, for testing only) |
-| `WithStartup(Startup)` | nothing | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect |
-| `WithTimeSync(TimeSync)` | `TimeSyncNone` | Synchronize on NEED_TIME: `TimeSyncLAN`, `TimeSyncNonLAN` |
+| `WithMaxFragment(n)` | 2048 | Largest fragment reassembled; below 2048 is outside 4.3 Rule 3 |
+| `WithMaxRequestFragment(n)` | unlimited | Largest request sent, at least 249 (4.3 Rule 4); a larger one fails with `ErrInvalidOption`; `WriteFile` sizes blocks to fit |
+| `WithLink(Link)` | unconfirmed | `Confirmed` (serial only: 13.2.1.1 forbids it over IP), `Timeout` (2 s), `Retries`, `KeepAlive` (60 s, any positive duration; negative disables it, for testing only); time synchronization messages always unconfirmed (10.3.4.1) |
+| `WithStartup(Startup)` | `Integrity` | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect; `EnableUnsolicited` also sets the other two (5.1.1.2 Rule 1); `Startup{}` runs nothing; `EnableUnsolicited` is sent again after an outstation restart |
+| `WithTimeSync(TimeSync)` | LAN over a `net.Conn`, non-LAN otherwise, with a fallback to non-LAN | What NEED_TIME triggers: `TimeSyncLAN`, `TimeSyncNonLAN`, `TimeSyncClearNeedTime` (WRITE g80v1 index 4), `TimeSyncNone` (nothing) |
 | `WithAutoClearRestart(bool)` | on | Clear DEVICE_RESTART when reported |
-| `WithAutoIntegrity(bool)` | on | Integrity poll on restart and overflow |
+| `WithAutoIntegrity(bool)` | on | Integrity poll on restart (restart procedure), overflow, and a same-SEQ new unsolicited response |
 | `WithAutoEventPoll(bool)` | off | Poll the classes the IIN reports events for |
 | `WithSolicitedConfirm(bool)` | on | Confirm solicited responses that ask for it. Off is for tests and diagnostics only: the outstation keeps the events it sent, and a multi-fragment response stalls after its first fragment |
 | `WithUnsolicitedConfirm(bool)` | on | Confirm unsolicited responses that ask for it. Off is for tests and diagnostics only: the outstation repeats them; a repeat reaches the `Handler` once |
@@ -105,6 +106,7 @@ The master for one outstation.
 | `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, once a challenge was answered since the last key change; a refused request makes the next one challenged, error 4 turns it off for the connection; `New` refuses it without `WithSecureAuthentication` |
 
 Constants: `DefaultPort` (20000), the port `Dial` uses when the address has none;
+`DefaultTLSPort` (19999), the port with `WithTLS`;
 `DefaultKeyChangeCount` (1000) and `MaxKeyChangeCount` (2^31), the default and
 the largest session key change count.
 
@@ -130,11 +132,12 @@ Every request takes a `context.Context` and returns a `*Result` (its fields
 | `Freeze(ctx, clear, noAck, headers...)` | IMMED_FREEZE, FREEZE_CLEAR and their `_NR` forms |
 | `FreezeAtTime(ctx, at, interval, headers...)` | FREEZE_AT_TIME; an interval below 0 or of 2^32 ms or more is an `ErrInvalidOption` |
 | `ClearRestart(ctx)` | WRITE g80v1 index 7 |
+| `ClearNeedTime(ctx)` | WRITE g80v1 index 4 |
 | `ReadAttributes(ctx, variation)`, `WriteAttribute(ctx, variation, a)` | READ / WRITE g0, set 0 |
 | `ReadAttributeSet(ctx, set, variation)`, `WriteAttributeSet(ctx, set, variation, a)` | The same for another set |
 | `Write(ctx, headers...)` | WRITE |
 | `Request(ctx, fc, headers...)` | Any function code |
-| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`) |
+| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`, `Created`) |
 | `Broadcast(ctx, dest, fc, headers...)` | A request to a broadcast address (`link.BroadcastNoConfirm` 0xFFFD, `BroadcastConfirm` 0xFFFE, `BroadcastOptionalConfirm` 0xFFFF); no answer, IIN1.0 in the next response |
 
 Commands: `Command{Index, Value, GV}`, built with `CROB(index, op, on, off)`

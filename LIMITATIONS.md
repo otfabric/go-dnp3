@@ -85,11 +85,14 @@ defines no coding for it.
   unsolicited responses go to a configured destination address (some
   devices default it to 0) is not heard unless that is the master's
   address; the dropped frames are logged at debug level.
-- **File reads are answered at once, one block per READ**: `ReadFile`
-  expects the answer to OPEN_FILE, READ and CLOSE_FILE in the immediate
-  response, with one g70v5 block in it. A file object reported later in an
-  event or unsolicited response, or a response with several blocks, fails
-  the transfer. The references in the interop suite answer this way.
+- **File commands are answered at once, one block per READ**: the client
+  expects the answer to every file command in the immediate response, with
+  one g70v5 block in a read: OPEN_FILE, READ, WRITE, CLOSE_FILE,
+  DELETE_FILE, GET_FILE_INFO, AUTHENTICATE_FILE and ABORT_FILE. IEEE
+  1815-2012 4.4.17.1.2, 4.4.17.1.3 and 5.3.4 let an outstation answer with
+  a null response and report the g70v4 or g70v6 object later in an event
+  or unsolicited response; the client then fails the transfer with
+  `dnp3.ErrProtocol`. The references in the interop suite answer at once.
 - **Associations are per master address**: a master that connects again
   while its old connection stands is rejected when the old connection
   answers a link status request (13.2.3.3); a broken old connection is
@@ -136,3 +139,26 @@ defines no coding for it.
   fragment.
 - **Secure authentication**: a broadcast that SA discards does not set
   IIN1.0.
+- **Time stamps of the time synchronization are taken at the application
+  layer.** The non-LAN procedure measures the round trip from when the
+  DELAY_MEASURE request is handed to the link layer to when the reassembled
+  response reaches the client; IEEE 1815-2012 10.3.3.1 takes the arrival of
+  the first octet, so over a slow serial line the delay includes half of
+  the response's transmission time (about 12 ms for a 23-octet response at
+  9600 bit/s). The LAN procedure writes the time at which the link layer
+  finished writing RECORD_CURRENT_TIME (10.3.3.2); the latency of the stack
+  below that is not corrected (10.3.3.2 NOTE 3).
+- **Receive fragments below 2048 octets are outside the standard.**
+  `client.WithMaxFragment` accepts 249 to 2047 for testing and for peers
+  known to send less; 4.3 Rule 3 requires a master to receive 2048.
+- **Restart and class assignment NOTEs are left to the application.** After
+  `ColdRestart` or `WarmRestart` the client does not hold requests back for
+  the delay the outstation returns (4.4.9 NOTE): periodic polls and the
+  application's requests go on. `AssignClass` is not followed by an event
+  poll of the three classes (4.4.14 NOTE).
+- **ENABLE_UNSOLICITED after a restart does not wait for the null
+  unsolicited response.** 5.1.1.1.2 Rule 2 step 5 enables unsolicited
+  reporting once the outstation's null unsolicited response has arrived;
+  the client sends ENABLE_UNSOLICITED as the last step of its restart
+  procedure whether or not that response was seen, so that a lost null
+  response does not leave reporting off.

@@ -13,6 +13,7 @@ of a device profile, and how it has been verified.
 - [Objects](#objects)
 - [Procedures](#procedures)
 - [Secure Authentication](#secure-authentication)
+- [Subset levels](#subset-levels)
 - [Deviations and choices](#deviations-and-choices)
 - [Verification status](#verification-status)
 - [Frozen counter events](#frozen-counter-events)
@@ -59,16 +60,16 @@ of a device profile, and how it has been verified.
 |------|---------|
 | Segments of 1 to 249 octets of fragment data (250 with the transport header), FIR/FIN, six-bit sequence (8.2.2) | ✅; a segment without data is rejected |
 | Reception rules of 8.2.1.4 and Table 8-1 | ✅ FIR restarts, a repeat of the previous segment is discarded and the fragment goes on, any other sequence error discards the fragment, a non-FIR outside a fragment is discarded |
-| Fragment size | 2048 by default, at least 249 (`WithMaxFragment`) |
+| Fragment size | 2048 received by default, at least 249 (`WithMaxFragment`; below 2048 is outside 4.3 Rule 3); requests unlimited, or at most n ≥ 249 with the client's `WithMaxRequestFragment` |
 
 ## Application layer
 
 | Item | Master | Outstation |
 |------|--------|------------|
 | Requests of one fragment | ✅ | ✅ |
-| Responses of several fragments with confirmation | ✅ receives, confirms each fragment that asks for it (CON) once it has parsed the whole fragment: one whose parse stopped early is dropped unconfirmed, so that the outstation keeps its events; `WithSolicitedConfirm(false)` confirms none, for tests and diagnostics only (such a response stalls after its first fragment) | ✅ sends, waits for each confirmation |
+| Responses of several fragments with confirmation | ✅ receives, confirms each fragment that asks for it (CON) once it has parsed the whole fragment: one whose parse stopped early is dropped unconfirmed, so that the outstation keeps its events; `WithSolicitedConfirm(false)` confirms none, for tests and diagnostics only (such a response stalls after its first fragment); a repeat of the last fragment is confirmed again; any other unexpected fragment abandons the response (Table 6-2) | ✅ sends, waits for each confirmation |
 | Application confirmation of events | ✅ | ✅ events removed on confirmation, reported again otherwise |
-| Unsolicited responses, UNS confirmation | ✅ confirms those that ask for it and parsed whole, ignores repeats; `WithUnsolicitedConfirm(false)` confirms none, for tests and diagnostics only | ✅ |
+| Unsolicited responses, UNS confirmation | ✅ confirms those that ask for it and parsed whole, at once and before the next request; a repeat (same SEQ and octets after the IIN) is confirmed again, not processed, unless it reports a restart; same SEQ with new content is processed and followed by an integrity poll (4.6.6 Rule 7); a fragment whose UNS bit contradicts its function code is ignored; `WithUnsolicitedConfirm(false)` confirms none, for tests and diagnostics only | ✅ |
 | Sequence numbers: solicited and unsolicited spaces | ✅ | ✅ |
 | Repeated request (same sequence and octets) | — | ✅ answered with the previous response, not executed again; a READ is executed again, except while the confirmation of its response is awaited, when the response is sent again (Table 6-1 row 17) |
 | Multi-fragment requests, requests with UNS set | — not sent | — discarded without a response (4.3 Rule 4, 4.2.2.4.4) |
@@ -149,7 +150,8 @@ g4v2, g11v2, g13v2, g22v5, g23v5, g32v3, g33v3, g42v3, g43v3, g111, g122v2.
 A read of a variation without flags (the packed g1v1, g3v1, g10v1, and
 g20v5/v6, g21v9/v10, g30v3/v4) reports a point whose flags are not ONLINE
 alone in the variation with flags, so that its quality is not lost, as the
-reference outstations do.
+reference outstations do. The master reads values of the variations without
+flags as ONLINE (11.6.5).
 
 ## Procedures
 
@@ -158,12 +160,13 @@ reference outstations do.
 | Integrity poll, event poll, read of ranges, index lists, counts | ✅ | ✅ an event header with a count qualifier (0x07..0x09: g60v2..v4 or an event group) returns at most that many events, the oldest first, and a count of 0 none; the rest stay buffered and indicated (IIN1.1..1.3). A read of an event group returns the events of that group in every class, in the variation asked for (g2v3 and g4v3 after a CTO), and leaves the others buffered. An event header with a range or index qualifier is taken as all events of its group |
 | Event reporting in time order across types | ✅ | ✅ per-master buffers, limits per type, oldest discarded with overflow |
 | Event deadbands | ✅ writes and reads g34 | ✅ per point (`PointConfig.Deadband`) for analog and counter points; analog input deadbands written and read by the master (g34) |
-| Unsolicited: null response at connection, enable/disable per class, hold time and count, retries, retry delay | ✅ | ✅ classes survive connections; the null response is retried until confirmed; DISABLE_UNSOLICITED ends a pending series; a READ received while a confirmation is awaited is answered after it (4.6.6 Rule 16) |
-| Select-before-operate: same objects, next sequence number, select timeout | ✅ | ✅ NO_SELECT, or TIMEOUT once the select timeout has passed; any other request, or a failed SELECT, ends the selection; a SELECT with the sequence number of the selection and other objects is discarded; NOT_SUPPORTED with IIN2.2; NON_PARTICIPATING (126) in a request echoed (Table 11-7 note a); FORMAT_ERROR for another request status (TB2014-002); NOT_SUPPORTED for a CROB with the queue bit (A.8.1.2.2) |
+| Unsolicited: null response at connection, enable/disable per class, hold time and count, retries, retry delay | ✅ ENABLE_UNSOLICITED again after an outstation restart (5.1.1.1.2 Rule 2) | ✅ classes survive connections; the null response is retried until confirmed; DISABLE_UNSOLICITED ends a pending series; a READ received while a confirmation is awaited is answered after it (4.6.6 Rule 16) |
+| Select-before-operate: same objects, next sequence number, select timeout | ✅ OPERATE only after an echo equal to the request octet for octet (4.4.4.3 Rule 8), next sequence number, not retried | ✅ NO_SELECT, or TIMEOUT once the select timeout has passed; any other request, or a failed SELECT, ends the selection; a SELECT with the sequence number of the selection and other objects is discarded; NOT_SUPPORTED with IIN2.2; NON_PARTICIPATING (126) in a request echoed (Table 11-7 note a); FORMAT_ERROR for another request status (TB2014-002); NOT_SUPPORTED for a CROB with the queue bit (A.8.1.2.2) |
 | Direct operate, no-ack, pattern control | ✅ | ✅ |
-| Time synchronization, LAN and non-LAN procedures | ✅ automatic on NEED_TIME | ✅ NEED_TIME at start and after an interval, of the device clock: a time written by one master clears it for all; a master may clear it with WRITE g80v1 index 4 |
+| Time synchronization, LAN and non-LAN procedures | ✅ automatic on NEED_TIME by default: LAN over TCP/TLS/UDP, non-LAN over other streams, non-LAN when the outstation refuses LAN; or clears IIN1.4 (`TimeSyncClearNeedTime`); always UNCONFIRMED_USER_DATA (10.3.4.1) | ✅ NEED_TIME at start and after an interval, of the device clock: a time written by one master clears it for all; a master may clear it with WRITE g80v1 index 4 |
 | Restart, delay announced | ✅ | ✅ |
-| Clear of DEVICE_RESTART | ✅ automatic | ✅ |
+| Clear of DEVICE_RESTART | ✅ automatic, once, first in the restart procedure (after the session key change); at connect right after DISABLE_UNSOLICITED | ✅ |
+| Master startup and restart procedures (5.1.1.2 Rule 1, 5.1.1.1.2 Rule 2) | ✅ startup: session keys, DISABLE_UNSOLICITED, clear IIN1.7, time, integrity poll, ENABLE_UNSOLICITED; restart: session keys, clear IIN1.7, time, integrity poll, ENABLE_UNSOLICITED | — |
 | Freeze, freeze-and-clear | ✅ | ✅ a frozen counter or frozen analog input with an event class raises an event at every freeze, also for an unchanged value (11.9.5.2, 11.9.1.2; see [Frozen counter events](#frozen-counter-events)) |
 | Assign class | ✅ | ✅ a point without an event class follows its value, so that once ASSIGN_CLASS gives it a class, the next event reports a change from the value the master reads |
 | File transfer: read, write, append (`FileOptions.Append`), directory, info, delete, authenticate, abort | ✅ | ✅ an open file no request names for `WithFileTimeout` (default 5 minutes) is closed and reported with a g70v6 HANDLE_EXPIRED event; handles are unique to the outstation; status codes per Table 11-8 |
@@ -213,6 +216,32 @@ a pre-shared session key is used directly (outside the standard, see
   serial links only by default for the master.
 - **Key wrap**: AES-128 and AES-256 (RFC 3394); no AES-GMAC, no update key
   change.
+
+## Subset levels
+
+A go-dnp3 master declares no subset level. Its default requests are within
+Level 1: the integrity poll (class 1, 2, 3, 0), the clear of IIN1.7 (g80v1
+qualifier 0x00), and the non-LAN time synchronization (DELAY_MEASURE and
+WRITE g50v1). Two defaults are above Level 2:
+
+- a `SetPoint` without `Command.GV` is sent as g41v1 (Level 3 and up) or
+  g41v3 (Level 4); Levels 1 and 2 define only g41v2 (Tables 14-2 and
+  14-3), so set `Command.GV` to `app.G41V2` for them;
+- over TCP, TLS and UDP the automatic time synchronization uses the LAN
+  procedure (RECORD_CURRENT_TIME and WRITE g50v3), which is Level 4
+  (Table 12-32). An outstation that refuses it with IIN2.0 or IIN2.1 is
+  synchronized with the non-LAN procedure from then on.
+  `WithTimeSync(client.TimeSyncNonLAN)` uses the non-LAN procedure from
+  the start.
+
+The master parses every object and qualifier of the Level 1 to 3 response
+columns (Tables 14-2 to 14-4), in responses and unsolicited responses:
+`TestSubsetLevelResponses`.
+
+The outstation declares no subset level either (see
+[LIMITATIONS.md](LIMITATIONS.md#conformance-and-certification)); every
+request row of Tables 14-2 to 14-4 is answered without an error IIN:
+`TestSubsetLevelTables`.
 
 ## Deviations and choices
 
