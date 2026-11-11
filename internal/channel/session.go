@@ -195,6 +195,24 @@ func (s *Session) Send(ctx context.Context, frag []byte) error {
 	return s.send(ctx, frag, s.cfg.Remote)
 }
 
+// SendUnconfirmed is Send as UNCONFIRMED_USER_DATA whatever Confirmed
+// says, so with no link layer retries: for the time synchronization
+// messages of IEEE 1815-2012 clause 10.3.4.1.
+func (s *Session) SendUnconfirmed(ctx context.Context, frag []byte) error {
+	s.pmu.Lock()
+	defer s.pmu.Unlock()
+	if err := s.alive(ctx); err != nil {
+		return err
+	}
+	for _, seg := range s.seg.Segment(frag) {
+		f := link.Frame{Dir: s.cfg.Master, Function: link.PrimaryUnconfirmedUserData, Dest: s.cfg.Remote, Src: s.cfg.Local, Data: seg}
+		if err := s.ch.writeFrame(&f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SendBroadcast sends frag to a broadcast address, always as unconfirmed
 // user data.
 func (s *Session) SendBroadcast(ctx context.Context, frag []byte, dest link.Address) error {
