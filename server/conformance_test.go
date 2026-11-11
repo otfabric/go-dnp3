@@ -705,9 +705,11 @@ func TestSessionKeyChangeForms(t *testing.T) {
 	if v, _, _ := change(st, true, uk); v.(app.AuthError).Code != app.AuthErrAuthenticationFailed {
 		t.Fatalf("change without a status request: %+v", v)
 	}
-	// An unknown user.
+	// An unknown user: a key status AUTH_FAIL for that user, without a MAC
+	// (A.45.5).
 	m.send(req(seq, app.FuncAuthRequest, app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: 9})))
-	if v := m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value.(app.AuthError); v.Code != app.AuthErrUnknownUser {
+	if v := m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value.(app.AuthSessionKeyStatus); v.Status != app.KeyStatusAuthFail ||
+		v.User != 9 || v.MAC != app.MACNone || len(v.MACValue) != 0 {
 		t.Fatalf("unknown user: %+v", v)
 	}
 }
@@ -750,11 +752,11 @@ func TestChallengeReply(t *testing.T) {
 	if f.Function != app.FuncAuthResponse || f.Headers[0].Objects[0].Value.(app.AuthError).Code != app.AuthErrAuthenticationFailed || h.count() != 1 {
 		t.Fatalf("wrong key: %v", f)
 	}
-	// A reply nobody asked for, and a key change in pre-shared mode.
+	// A reply nobody asked for is discarded without an answer (Table 7-8,
+	// Rx Reply in Security Idle), and a key change in pre-shared mode is
+	// refused.
 	m.send(req(6, app.FuncAuthRequest, app.FreeFormat(app.G120V2, app.AuthReply{CSQ: 99, User: 1, MAC: []byte{1}})))
-	if v := m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value; v.(app.AuthError).Code != app.AuthErrAuthenticationFailed {
-		t.Fatalf("unrequested reply: %v", v)
-	}
+	m.none(100 * time.Millisecond)
 	m.send(req(7, app.FuncAuthRequest, app.FreeFormat(app.G120V6, app.AuthSessionKeyChange{KSQ: 1, User: 1, WrappedKeys: make([]byte, 24)})))
 	if v := m.recvFunc(app.FuncAuthResponse).Headers[0].Objects[0].Value; v.(app.AuthError).Code != app.AuthErrAuthenticationFailed {
 		t.Fatalf("key change in pre-shared mode: %v", v)

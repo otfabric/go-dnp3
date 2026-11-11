@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -14,9 +15,9 @@ import (
 
 // keyStatusWithMAC selects the form of the key status message in the key
 // change data: the g120v5 object as received, with or without its MAC
-// value. Without it is what every known outstation accepts: DSC go-dnp3
-// go-dnp3 compares the message without the MAC and refuses the other
-// form, which matters from the second key change of a session on (the
+// value. Without it is what every known outstation accepts: the DSC
+// go-dnp3 outstation compares the message without the MAC and refuses
+// the other form, which matters from the second key change of a session on (the
 // first key status carries no MAC); opendnp3 and this library's
 // outstation accept both.
 const keyStatusWithMAC = false
@@ -29,21 +30,22 @@ func (c *Client) controlKey() []byte {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.sessionKey
+	return c.auth.sessionKey
 }
 
 // changeSessionKeys runs the session key change procedure (IEEE 1815-2012
-// clause 7.5.2.3) when an update key is configured: request the key status,
-// wrap fresh control and monitoring direction session keys with the update
-// key together with that key status message, send them, and check the
+// clauses 7.5.4.2 and 7.5.5.3, A.45.4-A.45.6) when an update key is
+// configured: request the key status, check it (checkKeyStatus), wrap
+// fresh control and monitoring direction session keys with the update key
+// together with that key status message, send them, and check the
 // outstation's confirmation, a MAC over the key change with the new
-// monitoring key.
+// monitoring key. Failures count in the security statistics (Table 7-13).
 func (c *Client) changeSessionKeys(ctx context.Context) error {
 	u := c.opts.auth
 	if u == nil || len(u.UpdateKey) == 0 {
 		return nil
 	}
-	return c.do(ctx, app.FuncAuthRequest, true, func(ctx context.Context) error {
+	err := c.do(ctx, app.FuncAuthRequest, true, func(ctx context.Context) error {
 		res, err := c.exchange(ctx, app.FuncAuthRequest, []app.Header{
 			app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: u.Number})})
 		if err != nil {
@@ -53,31 +55,45 @@ func (c *Client) changeSessionKeys(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if err := c.checkKeyStatus(st); err != nil {
+			return err
+		}
 		wrapped, control, monitoring, err := wrapSessionKeys(*u, st, keyStatusWithMAC)
 		if err != nil {
 			return err
 		}
 		res, err = c.exchange(ctx, app.FuncAuthRequest, []app.Header{
 			app.FreeFormat(app.G120V6, app.AuthSessionKeyChange{KSQ: st.KSQ, User: u.Number, WrappedKeys: wrapped})})
+		if err == nil {
+			var done app.AuthSessionKeyStatus
+			if done, err = keyStatus(res); err == nil {
+				want, merr := secauth.MAC(done.MAC, monitoring, res.request)
+				if merr != nil || done.Status != app.KeyStatusOK || !secauth.Equal(want, done.MACValue) {
+					if done.Status == app.KeyStatusOK {
+						c.count(secauth.StatAuthenticationFailures)
+					}
+					err = fmt.Errorf("%w: the outstation did not confirm the session key change (status %s)", dnp3.ErrAuthentication, done.Status)
+				}
+			}
+		}
 		if err != nil {
+			clear(control)
+			clear(monitoring)
 			return err
 		}
-		done, err := keyStatus(res)
-		if err != nil {
-			return err
-		}
-		want, err := secauth.MAC(done.MAC, monitoring, res.request)
-		if err != nil || done.Status != app.KeyStatusOK || !secauth.Equal(want, done.MACValue) {
-			return fmt.Errorf("%w: the outstation did not confirm the session key change (status %s)", dnp3.ErrAuthentication, done.Status)
-		}
-		c.mu.Lock()
-		clear(c.sessionKey)
-		c.sessionKey = control
-		c.mu.Unlock()
-		clear(monitoring)
+		c.keysChanged(control, monitoring, res.request)
 		c.log.Info("session keys changed", "user", u.Number)
 		return nil
 	})
+	if err != nil {
+		c.mu.Lock()
+		c.countLocked(secauth.StatFailedSessionKeyChanges)
+		if errors.Is(err, dnp3.ErrTimeout) {
+			c.countLocked(secauth.StatReplyTimeouts)
+		}
+		c.mu.Unlock()
+	}
+	return err
 }
 
 // wrapSessionKeys generates fresh control and monitoring direction session

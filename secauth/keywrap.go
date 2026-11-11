@@ -75,10 +75,10 @@ func KeyUnwrap(kek, wrapped []byte) ([]byte, error) {
 }
 
 // KeyChangeData is the plaintext of a session key change (g120v6, IEEE
-// 1815-2012 clause 7.5.2.3): the length of a session key, the control
-// direction and the monitoring direction session keys, and the key status
-// message the outstation sent last, padded with zeros to a multiple of 8
-// octets for the key wrap.
+// 1815-2012 clauses 7.5.4.2 and 7.5.5.3, A.45.6 Table A-5): the length of
+// a session key, the control direction and the monitoring direction
+// session keys, and the key status message the outstation sent last,
+// padded with zeros to a multiple of 8 octets for the key wrap.
 func KeyChangeData(control, monitoring, keyStatus []byte) ([]byte, error) {
 	l := len(control)
 	if l != len(monitoring) || l < 16 || l > 64 {

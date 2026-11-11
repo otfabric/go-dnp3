@@ -56,11 +56,21 @@ type association struct {
 	deferred *inbound
 	sentOK   bool // the last fragment sent went out
 
-	pendingAuth   *challenge
-	lastChallenge []byte // the last g120v1 fragment sent
-	keys          sessionKeys
-	csq           uint32
-	stats         [secauth.NumStatistics]uint32
+	// Secure authentication (auth.go): the challenge waiting for its reply,
+	// the last challenge sent, whether a valid reply came since the last key
+	// change (aggressive mode needs one), the session keys, the CSQ, the
+	// statistics with their values when last reported, the maxima of Table
+	// 7-15, and the session key status requests of the current interval.
+	pendingAuth    *challenge
+	lastChallenge  []byte
+	validReply     bool
+	keys           sessionKeys
+	csq            uint32
+	stats          [secauth.NumStatistics]uint32
+	reported       [secauth.NumStatistics]uint32
+	max            authMax
+	statusRequests int
+	statusWindow   time.Time
 
 	// broadcastTo is the address of the last broadcast: whether the
 	// response reporting it asks for confirmation.
@@ -127,6 +137,7 @@ func newAssociation(s *Server, master link.Address) *association {
 	}
 	a.timer.Stop()
 	a.unsolMask = a.startupMask()
+	a.resetAuth()
 	return a
 }
 
@@ -199,9 +210,9 @@ func (a *association) detach() {
 	a.selection = nil
 	a.lastReq = nil
 	a.closeFiles()
-	// Session keys do not survive the connection (clause 7.5.2.3).
-	a.keys.reset()
-	a.pendingAuth, a.lastChallenge = nil, nil
+	// Session keys do not survive the connection: a communications failure
+	// (IEEE 1815-2012 7.4.1.7.1, Table 7-8 row 9).
+	a.commFail()
 }
 
 // receive queues a fragment from sess. It goes through the same queue
@@ -219,6 +230,7 @@ func (a *association) receive(sess *channel.Session, frag []byte, dest link.Addr
 // restart is Server.Restart for one association.
 func (a *association) restart() {
 	a.detach()
+	a.resetAuth()
 	a.restartIIN = true
 	// The clock is unsynchronized again: NEED_TIME, and g51v2 CTOs.
 	a.lastSync, a.prevSync = time.Time{}, time.Time{}
@@ -281,6 +293,9 @@ func (a *association) arm() {
 	if u := a.srv.opts.unsolicited; !a.holdStart.IsZero() && u.HoldTime > 0 {
 		consider(a.holdStart.Add(u.HoldTime))
 	}
+	if a.pendingAuth != nil {
+		consider(a.pendingAuth.deadline) // the reply timer
+	}
 	a.timer.Stop()
 	select {
 	case <-a.timer.C:
@@ -303,6 +318,7 @@ func (a *association) onTimer() {
 	if !a.unsolPause.IsZero() && !now.Before(a.unsolPause) {
 		a.unsolPause = time.Time{}
 	}
+	a.onReplyTimer(now)
 }
 
 // unsolicitedTimeout handles an unsolicited response whose confirm timeout
@@ -397,6 +413,10 @@ func (a *association) unsynchronizedAt(t time.Time) bool {
 }
 
 func (a *association) handle(in inbound) {
+	if !in.resumed {
+		// Every application fragment received (Table 7-6 #6).
+		a.count(secauth.StatTotalMessagesReceived)
+	}
 	req, err := app.Decode(in.frag)
 	if req == nil {
 		a.log.Debug("undecodable fragment dropped", "error", err)
@@ -445,13 +465,16 @@ func (a *association) handle(in inbound) {
 		if r := a.lastReq; r != nil && r.seq == req.Control.Seq && bytes.Equal(r.data, in.frag) && req.Function != app.FuncRead {
 			a.log.Debug("repeated request answered with the previous response", "seq", r.seq)
 			if r.resp != nil {
+				a.count(secauth.StatTotalMessagesSent)
 				a.sendRaw(r.resp)
 			}
 			return
 		}
 	}
+	if a.waitDiscards(req, err) {
+		return
+	}
 	a.abandonSolicited()
-	a.count(secauth.StatTotalMessagesReceived)
 	if err == nil && (req.Function == app.FuncAuthRequest || req.Function == app.FuncAuthRequestNoAck) {
 		a.authRequest(req, in)
 		return

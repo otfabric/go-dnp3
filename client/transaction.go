@@ -133,7 +133,8 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	}()
 
 	req := &app.Fragment{Control: app.SingleControl(seq), Function: fc, Headers: hs}
-	if err := c.aggressive(req); err != nil {
+	aggressive, err := c.aggressive(req)
+	if err != nil {
 		return nil, err
 	}
 	data, err := req.Encode()
@@ -146,34 +147,41 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	if err := sess.Send(ctx, data); err != nil {
 		return nil, sendError(err)
 	}
-	if m := c.opts.metrics; m != nil {
-		m.OnFragmentSent(c.remoteAddr(), req, len(data))
-	}
+	c.sent(req, len(data))
 	res := &Result{request: data}
 	if fc.NoAck() {
-		return res, nil
+		if aggressive {
+			return res, nil
+		}
+		return res, c.noAckChallenge(ctx, sess, t, fc, seq, data)
 	}
 
 	timer := time.NewTimer(c.opts.responseTimeout)
 	defer timer.Stop()
 	expect := seq
+	challenged := false
 	for {
 		select {
 		case rf := <-t.frags:
 			f := rf.f
 			if f.Function == app.FuncAuthResponse {
-				next, err := c.onAuthResponse(ctx, sess, f, rf.raw, data)
+				// Secure authentication: a challenge of the request or of
+				// a CONFIRM, or an error (IEEE 1815-2012 clauses 7.5.1.3,
+				// 7.5.2.3.2 j).
+				critical, ofRequest := c.challenged(f.Control.Seq, seq, data, len(res.Fragments) > 0)
+				if critical == nil {
+					c.onStrayAuth(sess, f, rf.raw)
+					continue
+				}
+				next, err := c.onAuthResponse(ctx, sess, f, rf.raw, critical)
 				if err != nil {
-					if fc != app.FuncAuthRequest && errors.Is(err, dnp3.ErrAuthentication) {
-						// The outstation refused the session keys, or there
-						// are none: change them now rather than at the next
-						// interval (IEEE 1815-2012 clause 7.5.2.3).
-						c.rekeySoon()
-					}
+					c.onAuthFailure(fc, aggressive, err)
 					return res, err
 				}
 				if next >= 0 {
-					expect = uint8(next & 0x0F) // an application sequence number, 0..15
+					if ofRequest {
+						expect, challenged = uint8(next&0x0F), true // an application sequence number, 0..15
+					}
 					timer.Reset(c.opts.responseTimeout)
 					continue
 				}
@@ -183,11 +191,24 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 				c.log.Debug("response fragment out of sequence ignored", "seq", f.Control.Seq, "want", expect)
 				continue
 			}
+			if first && challenged {
+				c.challengeAccepted()
+			}
+			if f.Control.FIN {
+				// What follows the last fragment, such as a challenge of
+				// its CONFIRM (IEEE 1815-2012 clause 7.5.2.3.2 j), is no
+				// longer this request's.
+				c.mu.Lock()
+				if c.pending == t {
+					c.pending = nil
+				}
+				c.mu.Unlock()
+			}
 			if f.Control.CON {
 				if c.opts.noSolConfirm {
 					c.log.Debug("response not confirmed (WithSolicitedConfirm)", "seq", f.Control.Seq)
 				} else {
-					c.confirm(sess, f.Control.Seq, false)
+					c.confirmResponse(sess, f, rf.raw, false)
 				}
 			}
 			res.Fragments = append(res.Fragments, f)
