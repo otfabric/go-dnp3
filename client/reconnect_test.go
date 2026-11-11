@@ -5,8 +5,10 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -219,5 +221,82 @@ func TestConnectKeepsTheOpenChannel(t *testing.T) {
 	case <-closedByClient:
 	case <-time.After(5 * time.Second):
 		t.Error("the new connection was left open")
+	}
+}
+
+// connectedHook is a Logger that runs fn once, when the client logs that
+// it connected: after the channel and its watch have started, before the
+// startup sequence.
+type connectedHook struct {
+	dnp3.Logger
+	fn   func()
+	once sync.Once
+}
+
+func (h *connectedHook) Infof(format string, a ...any) {
+	if strings.Contains(fmt.Sprintf(format, a...), ": connected") {
+		h.once.Do(h.fn)
+	}
+}
+
+// A channel lost while a Connect runs its startup sequence leaves the
+// outcome to that Connect. When the sequence still succeeds, the Connect
+// succeeds and the client does what the channel's watch would have done:
+// it reconnects with WithReconnect, else it is disconnected.
+func TestConnectLostDuringSuccessfulStartup(t *testing.T) {
+	for _, reconnect := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reconnect=%v", reconnect), func(t *testing.T) {
+			var opens atomic.Int64
+			lose := make(chan struct{})
+			open := func(context.Context) (io.ReadWriteCloser, net.Addr, error) {
+				a, b := net.Pipe()
+				go func() { _, _ = io.Copy(io.Discard, b) }()
+				if opens.Add(1) == 1 {
+					go func() { <-lose; _ = b.Close() }()
+				} else {
+					t.Cleanup(func() { _ = b.Close() })
+				}
+				return a, a.RemoteAddr(), nil
+			}
+			var c *Client
+			hook := &connectedHook{Logger: dnp3.NopLogger(), fn: func() {
+				// The first stream ends; its watch hands the loss over.
+				close(lose)
+				deadline := time.Now().Add(3 * time.Second)
+				for time.Now().Before(deadline) {
+					c.mu.Lock()
+					lost := c.heldLost
+					c.mu.Unlock()
+					if lost {
+						return
+					}
+					time.Sleep(time.Millisecond)
+				}
+			}}
+			opts := []Option{WithStream(open), WithLogger(hook), WithStartup(Startup{}), WithTimeSync(TimeSyncNone), WithAutoIntegrity(false)}
+			if reconnect {
+				opts = append(opts, WithReconnect(Reconnect{MinDelay: time.Millisecond, MaxDelay: 5 * time.Millisecond}))
+			}
+			var err error
+			c, err = New("pipe", opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = c.Close() }()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := c.Connect(ctx); err != nil {
+				t.Fatalf("Connect with an empty startup sequence: %v", err)
+			}
+			if reconnect {
+				waitFor(t, "the reconnect", func() bool { return opens.Load() == 2 && c.State() == dnp3.StateConnected })
+				return
+			}
+			waitFor(t, "the loss", func() bool { return c.State() == dnp3.StateDisconnected })
+			time.Sleep(50 * time.Millisecond)
+			if n := opens.Load(); n != 1 {
+				t.Errorf("%d connections without WithReconnect, want 1", n)
+			}
+		})
 	}
 }
