@@ -509,7 +509,7 @@ func TestFSFileServer(t *testing.T) {
 	if st != app.FileSuccess || info.Type != app.FileTypeDirectory {
 		t.Fatalf("info: %+v %s", info, st)
 	}
-	if info, st := s.Info(ctx, "/logs/a.txt"); st != app.FileSuccess || info.Permissions != 0o644 || info.Size != 5 {
+	if info, st := s.Info(ctx, "/logs/a.txt"); st != app.FileSuccess || info.Permissions != readPermissions || info.Size != 5 {
 		t.Fatalf("file info %+v", info)
 	}
 	if _, st := s.Info(ctx, "/x"); st != app.FileNotFound {
@@ -981,8 +981,10 @@ const deferWindow = time.Second
 // TestReadDeferredByUnsolicited: a READ that comes while an unsolicited
 // response waits for its confirmation is answered once the confirm timeout
 // expires, before the response is repeated; the repeat carries the
-// indications as they are then (IIN1.7 cleared meanwhile). A READ during
-// the repeat is answered as soon as it is confirmed.
+// indications as they are then (IIN1.7 cleared meanwhile), so it is a
+// regenerated retry with the next sequence number (IEEE 1815-2012 4.6.6
+// Rules 5 and 12, p. 92: an identical retry repeats the octets). A READ
+// during the repeat is answered as soon as it is confirmed.
 func TestReadDeferredByUnsolicited(t *testing.T) {
 	m := newMaster(t, WithUnsolicited(Unsolicited{Enabled: true, Retries: 3}), WithConfirmTimeout(deferWindow))
 	null := m.recvFunc(app.FuncUnsolicitedResponse)
@@ -1004,7 +1006,7 @@ func TestReadDeferredByUnsolicited(t *testing.T) {
 		t.Fatal("READ answered before the unsolicited confirm timeout")
 	}
 	retry := m.recv()
-	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != null.Control.Seq {
+	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != app.NextSeq(null.Control.Seq) {
 		t.Fatalf("after the READ: %s", retry)
 	}
 	if retry.IIN.Has(app.IINDeviceRestart) {
@@ -1067,10 +1069,13 @@ func TestDeferredReadSuperseded(t *testing.T) {
 	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 2 {
 		t.Fatalf("after the WRITE: %s", f)
 	}
-	if f := m.recv(); f.Function != app.FuncUnsolicitedResponse || f.Control.Seq != null.Control.Seq {
-		t.Fatalf("at the confirm timeout: %s", f)
+	// The WRITE cleared IIN1.7: the repeat is regenerated, with the next
+	// sequence number (4.6.6 Rules 5 and 12).
+	retry := m.recv()
+	if retry.Function != app.FuncUnsolicitedResponse || retry.Control.Seq != app.NextSeq(null.Control.Seq) {
+		t.Fatalf("at the confirm timeout: %s", retry)
 	}
-	m.send(confirm(null.Control.Seq, true))
+	m.send(confirm(retry.Control.Seq, true))
 	m.none(200 * time.Millisecond)
 }
 

@@ -41,6 +41,10 @@ const (
 	// app.AbsoluteTime with Units), for example a schedule. They have no
 	// events and no class.
 	TimeAndInterval
+	// fileStatusEvent are the file transport status events (g70v6) of the
+	// files the outstation closed on its own (IEEE 1815-2012 4.4.17.1.1):
+	// internal, with no points and no static objects.
+	fileStatusEvent
 	numPointTypes
 )
 
@@ -73,6 +77,8 @@ func (t PointType) String() string {
 		return "analog output command"
 	case TimeAndInterval:
 		return "time and interval"
+	case fileStatusEvent:
+		return "file transport status"
 	default:
 		return fmt.Sprintf("point type %d", uint8(t))
 	}
@@ -162,6 +168,9 @@ type PointConfig struct {
 type point struct {
 	index uint32
 	cfg   PointConfig
+	// def is the configuration the point was added with, whose classes a
+	// restart restores.
+	def   PointConfig
 	value app.Value
 	// last is the value of the last event, for change detection.
 	last app.Value
@@ -236,7 +245,7 @@ func (db *Database) Add(t PointType, index uint32, cfg PointConfig, initial app.
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	_, existed := db.points[t][index]
-	db.points[t][index] = &point{index: index, cfg: cfg, value: initial, last: initial}
+	db.points[t][index] = &point{index: index, cfg: cfg, def: cfg, value: initial, last: initial}
 	if !existed {
 		db.rebuildSorted(t)
 	}
@@ -507,12 +516,23 @@ func (db *Database) rebuildSorted(t PointType) {
 }
 
 // assignClass sets the class of the points of t in the range (all when
-// all is set). It reports whether every index of the range existed. The
-// caller holds mu for writing.
+// all is set). For BinaryOutputCommand and AnalogOutputCommand it sets the
+// command event class of the binary or analog outputs (IEEE 1815-2012
+// Table 4-12, p. 63: g12v0 and g41v0 assign the classes of g13 and g43).
+// It reports whether every index of the range existed. The caller holds
+// mu for writing.
 func (db *Database) assignClass(t PointType, all bool, start, stop uint32, c Class) bool {
+	set := func(p *point) { p.cfg.Class = c }
+	switch t {
+	case BinaryOutputCommand:
+		t, set = BinaryOutput, func(p *point) { p.cfg.CommandEventClass = c }
+	case AnalogOutputCommand:
+		t, set = AnalogOutput, func(p *point) { p.cfg.CommandEventClass = c }
+	default:
+	}
 	if all {
 		for _, p := range db.points[t] {
-			p.cfg.Class = c
+			set(p)
 		}
 		return true
 	}
@@ -528,8 +548,21 @@ func (db *Database) assignClass(t PointType, all bool, start, stop uint32, c Cla
 		if i > stop {
 			break
 		}
-		db.points[t][i].cfg.Class = c
+		set(db.points[t][i])
 		n++
 	}
 	return uint64(n) == uint64(stop)-uint64(start)+1
+}
+
+// revertClasses gives every point its configured class and command event
+// class again: an outstation that does not keep class assignments across
+// a restart reverts to its defaults (IEEE 1815-2012 4.4.14, p. 63).
+func (db *Database) revertClasses() {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	for t := range db.points {
+		for _, p := range db.points[t] {
+			p.cfg.Class, p.cfg.CommandEventClass = p.def.Class, p.def.CommandEventClass
+		}
+	}
 }

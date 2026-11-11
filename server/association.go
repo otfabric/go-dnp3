@@ -38,8 +38,6 @@ type association struct {
 	sess       *channel.Session
 	restartIIN bool
 	broadcast  bool
-	lastSync   time.Time
-	prevSync   time.Time // the sync before lastSync
 	lastReq    *lastRequest
 	selection  *selection
 	recorded   time.Time
@@ -67,7 +65,6 @@ type association struct {
 	broadcastTo link.Address
 
 	files             map[uint32]*openFile
-	nextHandle        uint32
 	pendingFileStatus []app.FileTransportStatus
 }
 
@@ -80,12 +77,16 @@ type inbound struct {
 	resumed bool
 }
 
-// lastRequest is kept to answer a repeated request with the same
-// response instead of executing it twice.
+// lastRequest is the last valid request accepted (IEEE 1815-2012 6.1): a
+// repeat of it, the same sequence number and octets, is answered with the
+// same response instead of being executed twice (Table 6-1 row 8).
 type lastRequest struct {
 	seq  uint8
 	data []byte
 	resp []byte // nil when the request had no response
+	// replay: resp is the whole response, which a repeat gets again. A
+	// READ is executed again instead (see handle).
+	replay bool
 }
 
 // pendingResponse is a solicited response waiting for its confirmation.
@@ -98,6 +99,12 @@ type pendingResponse struct {
 	// broadcast: the first fragment reported IIN1.0, which its
 	// confirmation clears.
 	broadcast bool
+	// req and reqSeq are the request the response answers, and last the
+	// octets of the fragment sent last: a repeat of the request while the
+	// confirmation is awaited gets that fragment again (Table 6-1 row 17).
+	req    []byte
+	reqSeq uint8
+	last   []byte
 }
 
 // pendingUnsol is an unsolicited response waiting for its confirmation.
@@ -110,6 +117,14 @@ type pendingUnsol struct {
 	events   []*bufEvent
 	attempts int
 	deadline time.Time
+	// broadcast: the response reported IIN1.0 of a broadcast that needs a
+	// confirmation, which its confirmation clears (Table 4-13; 4.6.6
+	// Rule 17).
+	broadcast bool
+	// disabled: DISABLE_UNSOLICITED came while the response waited for
+	// its confirmation; at the confirm timeout the series ends instead of
+	// being retried (4.6.6 Rule 15).
+	disabled bool
 }
 
 func newAssociation(s *Server, master link.Address) *association {
@@ -130,6 +145,9 @@ func newAssociation(s *Server, master link.Address) *association {
 	return a
 }
 
+// startupMask returns the classes enabled for unsolicited reporting at a
+// start or restart: none by default, as IEEE 1815-2012 4.4.13 and 5.1.1.1.1
+// Rule 3 require; Unsolicited.Classes otherwise (a non-standard option).
 func (a *association) startupMask() uint8 {
 	var m uint8
 	for _, c := range a.srv.opts.unsolicited.Classes {
@@ -221,13 +239,13 @@ func (a *association) restart() {
 	a.detach()
 	a.restartIIN = true
 	// The clock is unsynchronized again: NEED_TIME, and g51v2 CTOs.
-	a.lastSync, a.prevSync = time.Time{}, time.Time{}
+	a.srv.timeSync.reset()
 	a.nullDone = false
 	a.unsolMask = a.startupMask()
 	a.events.mu.Lock()
 	a.events.events = nil
 	a.events.count = [numPointTypes]int{}
-	a.events.overflow = false
+	a.events.overflow = [numPointTypes]bool{}
 	a.events.mu.Unlock()
 }
 
@@ -281,6 +299,7 @@ func (a *association) arm() {
 	if u := a.srv.opts.unsolicited; !a.holdStart.IsZero() && u.HoldTime > 0 {
 		consider(a.holdStart.Add(u.HoldTime))
 	}
+	consider(a.fileDeadline())
 	a.timer.Stop()
 	select {
 	case <-a.timer.C:
@@ -303,6 +322,7 @@ func (a *association) onTimer() {
 	if !a.unsolPause.IsZero() && !now.Before(a.unsolPause) {
 		a.unsolPause = time.Time{}
 	}
+	a.expireFiles(now)
 }
 
 // unsolicitedTimeout handles an unsolicited response whose confirm timeout
@@ -326,25 +346,72 @@ func (a *association) unsolicitedTimeout(u *pendingUnsol, now time.Time) {
 			return
 		}
 	}
-	if r := a.srv.opts.unsolicited.Retries; r < 0 || u.attempts < r {
+	if u.disabled && !u.null {
+		// DISABLE_UNSOLICITED came while the response waited: the series
+		// ends without a retry and its events are reported later (IEEE
+		// 1815-2012 4.6.6 Rule 15). Footnote 18 exempts the null response,
+		// which is retried until confirmed (5.1.1.1.1 Rule 2).
+		a.log.Debug("unsolicited response series ended by DISABLE_UNSOLICITED", "seq", u.seq, "events", len(u.events))
+		a.endUnsolicited(u, 0)
+		return
+	}
+	// The null response is retried until it is confirmed, whatever the
+	// configured number of retries (5.1.1.1.1 Rule 2).
+	if r := a.srv.opts.unsolicited.Retries; u.null || r < 0 || u.attempts < r {
 		u.attempts++
 		u.deadline = now.Add(a.srv.opts.confirmTimeout)
-		a.log.Debug("unsolicited response repeated", "seq", u.seq, "attempt", u.attempts)
-		// A repeat is the same response, with the indications as they
-		// are now: e.g. IIN1.7 cleared by the master meanwhile.
-		u.frag.IIN = a.iin()
+		if iin := a.iin(); iin != u.frag.IIN {
+			// The indications changed meanwhile, e.g. IIN1.7 cleared by the
+			// master: a regenerated retry, with the next sequence number,
+			// since an identical retry must match the previous response
+			// octet for octet (4.6.6 Rules 5 and 12).
+			a.unsolSeq = app.NextSeq(a.unsolSeq)
+			u.seq = a.unsolSeq
+			f := *u.frag
+			f.Control.Seq, f.IIN = u.seq, iin
+			u.frag = &f
+			u.broadcast = a.reportsBroadcast(iin)
+			a.log.Debug("unsolicited response regenerated", "seq", u.seq, "attempt", u.attempts)
+		} else {
+			a.log.Debug("unsolicited response repeated", "seq", u.seq, "attempt", u.attempts)
+		}
 		a.sendUnsolicited(u)
 		return
 	}
-	err := fmt.Errorf("%w: unsolicited response not confirmed", dnp3.ErrTimeout)
 	a.log.Info("unsolicited response given up", "seq", u.seq, "events", len(u.events))
+	a.endUnsolicited(u, a.srv.opts.unsolicited.RetryDelay)
+}
+
+// endUnsolicited ends the unsolicited response series of u without its
+// confirmation: its events are reported later, and a new series may start
+// after pause (4.6.6 Rules 13 and 14).
+func (a *association) endUnsolicited(u *pendingUnsol, pause time.Duration) {
 	a.events.release(u.events)
 	if a.srv.sm != nil {
+		err := fmt.Errorf("%w: unsolicited response not confirmed", dnp3.ErrTimeout)
 		a.srv.sm.OnUnsolicited(a.remote(), len(u.events), err)
 	}
 	a.unsol = nil
 	a.unsolSeq = app.NextSeq(a.unsolSeq)
-	a.unsolPause = now.Add(a.srv.opts.unsolicited.RetryDelay)
+	if pause > 0 {
+		a.unsolPause = time.Now().Add(pause)
+	}
+}
+
+// reportsBroadcast is called for each response whose IIN is iin, before it
+// is sent. It reports whether the response must ask for a confirmation
+// because it reports a broadcast to 0xFFFE or 0xFFFF, whose IIN1.0 that
+// confirmation clears; IIN1.0 of one to 0xFFFD is cleared once a response
+// reported it (IEEE 1815-2012 Table 4-13, 4.6.6 Rule 17).
+func (a *association) reportsBroadcast(iin app.IIN) bool {
+	if !a.broadcast || iin&app.IINBroadcast == 0 {
+		return false
+	}
+	if a.broadcastTo == link.BroadcastNoConfirm {
+		a.broadcast = false
+		return false
+	}
+	return true
 }
 
 func (a *association) remote() net.Addr {
@@ -371,29 +438,16 @@ func (a *association) iin() app.IIN {
 
 // needsTime reports whether the outstation asks for time synchronization
 // (IIN1.4): its clock has not been synchronized since the start, or not
-// within the interval of WithTimeSync.
+// within the interval of WithTimeSync. The clock is the outstation's, so a
+// synchronization by one master serves every association.
 func (a *association) needsTime() bool {
-	n := a.srv.opts.needTime
-	return n > 0 && (a.lastSync.IsZero() || time.Since(a.lastSync) > n)
+	return a.srv.timeSync.needsTime(a.srv.opts.needTime)
 }
 
 // unsynchronizedAt reports whether the outstation's time counted as
-// unsynchronized at t, as the CTO of relative-time events says (g51v2):
-// with WithTimeSync, until the first synchronization since the start or a
-// restart, and once twice the interval has passed without one. The latest
-// two syncs are kept, so that an event buffered shortly before a periodic
-// sync still counts as synchronized.
+// unsynchronized at t, as the CTO of relative-time events says (g51v2).
 func (a *association) unsynchronizedAt(t time.Time) bool {
-	n := a.srv.opts.needTime
-	if n <= 0 {
-		return false
-	}
-	for _, s := range [...]time.Time{a.lastSync, a.prevSync} {
-		if !s.IsZero() && !t.Before(s) && t.Sub(s) <= 2*n {
-			return false
-		}
-	}
-	return true
+	return a.srv.timeSync.unsynchronizedAt(t, a.srv.opts.needTime)
 }
 
 func (a *association) handle(in inbound) {
@@ -415,15 +469,30 @@ func (a *association) handle(in inbound) {
 		a.log.Debug("response function sent to an outstation ignored", "function", req.Function.String())
 		return
 	}
+	broadcast := in.dest.Broadcast()
 	if req.Function == app.FuncConfirm {
+		if broadcast {
+			// A confirmation answers one response of this outstation; one
+			// sent to a broadcast address is not a request to process
+			// (IEEE 1815-2012 4.7, Table 4-16; Table 6-1 keys).
+			a.log.Debug("broadcast confirmation ignored", "seq", req.Control.Seq)
+			return
+		}
 		a.onConfirm(req)
 		return
 	}
-	if !req.Control.FIR || !req.Control.FIN {
-		a.log.Warn("multi-fragment request ignored", "control", req.Control.String())
+	if !req.Control.FIR || !req.Control.FIN || req.Control.UNS {
+		// A valid request has FIR and FIN set and UNS clear; any other is
+		// discarded (6.1).
+		a.log.Warn("invalid request fragment ignored", "control", req.Control.String())
 		return
 	}
-	broadcast := in.dest.Broadcast()
+	if req.Control.CON && !broadcast && !in.resumed && err == nil {
+		// A request asking for confirmation, which masters no longer send
+		// (4.3 Rule 11), is confirmed at once (4.3 Rule 12), with its
+		// sequence number (4.3 Rule 18).
+		a.send(&app.Fragment{Control: app.Control{FIR: true, FIN: true, Seq: req.Control.Seq}, Function: app.FuncConfirm})
+	}
 	if req.Function == app.FuncRead && !broadcast && !in.resumed && a.defers(in.at) {
 		// A READ sent while an unsolicited response waits for its
 		// confirmation is not answered until it is confirmed or its
@@ -441,14 +510,28 @@ func (a *association) handle(in inbound) {
 		a.log.Debug("deferred READ superseded", "seq", req.Control.Seq)
 		a.deferred = nil
 	}
-	if !broadcast {
-		if r := a.lastReq; r != nil && r.seq == req.Control.Seq && bytes.Equal(r.data, in.frag) && req.Function != app.FuncRead {
-			a.log.Debug("repeated request answered with the previous response", "seq", r.seq)
-			if r.resp != nil {
-				a.sendRaw(r.resp)
-			}
-			return
-		}
+	// The sequence number of a broadcast is ignored (4.3 Rule 19): it is
+	// never a repeat, and it does not become the last request.
+	if !broadcast && a.repeated(req, in) {
+		return
+	}
+	if req.Function == app.FuncSelect && !broadcast && a.selection != nil && req.Control.Seq == a.selection.seq {
+		// A SELECT with the sequence number of the selection in effect but
+		// other octets than its own is discarded (4.4.4.3 Rule 4, Table
+		// 4-9); the selection stays.
+		a.log.Debug("SELECT with the sequence number of the selection discarded", "seq", req.Control.Seq)
+		return
+	}
+	switch req.Function {
+	case app.FuncSelect, app.FuncOperate:
+		// control() handles the selection.
+	case app.FuncAuthRequest, app.FuncAuthRequestNoAck:
+		// The challenge of a critical SELECT or OPERATE comes between them;
+		// a selection survives it.
+	default:
+		// A request that is neither SELECT nor OPERATE ends the selection
+		// (Table 4-9, last row).
+		a.selection = nil
 	}
 	a.abandonSolicited()
 	a.count(secauth.StatTotalMessagesReceived)
@@ -488,15 +571,42 @@ func (a *association) handle(in inbound) {
 		return
 	}
 	if resp.none || req.Function.NoAck() {
-		a.lastReq = &lastRequest{seq: req.Control.Seq, data: in.frag}
+		a.lastReq = &lastRequest{seq: req.Control.Seq, data: in.frag, replay: true}
 		return
 	}
 	first := a.sendSolicited(req.Control.Seq, resp)
-	if len(resp.plans) <= 1 && !resp.hasEvents() {
-		a.lastReq = &lastRequest{seq: req.Control.Seq, data: in.frag, resp: first}
-	} else {
-		a.lastReq = nil
+	if a.sol != nil {
+		a.sol.req, a.sol.reqSeq = in.frag, req.Control.Seq
 	}
+	a.lastReq = &lastRequest{seq: req.Control.Seq, data: in.frag, resp: first,
+		replay: len(resp.plans) <= 1 && !resp.hasEvents()}
+}
+
+// repeated answers a repeat of the last request, the same sequence number
+// and octets, and reports whether req was one (IEEE 1815-2012 Table 6-1):
+//   - while the response to it waits for its confirmation, the fragment
+//     sent last is sent again and the confirm timer restarts (row 17);
+//   - otherwise the response is sent again, not executing the request
+//     again (row 8), except for a READ, which is executed again: its
+//     response reports the data as they are now, and its events, if any,
+//     were released or confirmed since.
+func (a *association) repeated(req *app.Fragment, in inbound) bool {
+	seq := req.Control.Seq
+	if p := a.sol; p != nil && p.req != nil && p.reqSeq == seq && bytes.Equal(p.req, in.frag) {
+		a.log.Debug("repeated request answered with the response awaiting confirmation", "seq", seq)
+		p.deadline = time.Now().Add(a.srv.opts.confirmTimeout)
+		a.sendRaw(p.last)
+		return true
+	}
+	r := a.lastReq
+	if r == nil || r.seq != seq || !bytes.Equal(r.data, in.frag) || req.Function == app.FuncRead || !r.replay {
+		return false
+	}
+	a.log.Debug("repeated request answered with the previous response", "seq", r.seq)
+	if r.resp != nil {
+		a.sendRaw(r.resp)
+	}
+	return true
 }
 
 func errorIIN(err error) app.IIN {
@@ -560,14 +670,10 @@ func (a *association) sendFragment(p *pendingResponse) ([]byte, bool) {
 	// The response that reports a broadcast (IIN1.0) asks for
 	// confirmation when the broadcast was to 0xFFFE (confirmation required)
 	// or 0xFFFF (optional), and IIN1.0 is cleared when it comes; after one
-	// to 0xFFFD (no confirmation) once it is sent (IEEE 1815-2012 Table 9-2,
-	// the DNP3 IED certification procedure 3.1r1 Section 2 Note 7).
-	if p.next == 0 && a.broadcast {
-		if a.broadcastTo == link.BroadcastNoConfirm {
-			a.broadcast = false
-		} else {
-			p.broadcast = true
-		}
+	// to 0xFFFD (no confirmation) once it is sent (IEEE 1815-2012 Table
+	// 4-13, the DNP3 IED certification procedure 3.1r1 Section 2 Note 7).
+	if p.next == 0 && a.reportsBroadcast(iin) {
+		p.broadcast = true
 	}
 	con := !fin || len(plan.events) > 0 || (p.next == 0 && p.broadcast)
 	f := &app.Fragment{
@@ -576,7 +682,8 @@ func (a *association) sendFragment(p *pendingResponse) ([]byte, bool) {
 		IIN:      iin,
 		Headers:  plan.headers,
 	}
-	return a.send(f), con
+	p.last = a.send(f)
+	return p.last, con
 }
 
 func (a *association) abandonSolicited() {
@@ -600,6 +707,9 @@ func (a *association) onConfirm(req *app.Fragment) {
 		a.events.confirm(u.events)
 		if u.null {
 			a.nullDone = true
+		}
+		if u.broadcast {
+			a.broadcast = false
 		}
 		if a.srv.sm != nil {
 			a.srv.sm.OnUnsolicited(a.remote(), len(u.events), nil)
@@ -644,7 +754,8 @@ func (a *association) maybeUnsolicited() {
 			Function: app.FuncUnsolicitedResponse,
 			IIN:      a.iin(),
 		}
-		a.unsol = &pendingUnsol{null: true, seq: a.unsolSeq, frag: f, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+		a.unsol = &pendingUnsol{null: true, seq: a.unsolSeq, frag: f, deadline: time.Now().Add(a.srv.opts.confirmTimeout),
+			broadcast: a.reportsBroadcast(f.IIN)}
 		a.sendUnsolicited(a.unsol)
 		return
 	}
@@ -682,7 +793,8 @@ func (a *association) maybeUnsolicited() {
 		IIN:      a.iin(),
 		Headers:  plan.headers,
 	}
-	a.unsol = &pendingUnsol{seq: a.unsolSeq, frag: f, events: plan.events, deadline: time.Now().Add(a.srv.opts.confirmTimeout)}
+	a.unsol = &pendingUnsol{seq: a.unsolSeq, frag: f, events: plan.events, deadline: time.Now().Add(a.srv.opts.confirmTimeout),
+		broadcast: a.reportsBroadcast(f.IIN)}
 	a.sendUnsolicited(a.unsol)
 }
 

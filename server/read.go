@@ -127,6 +127,9 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				continue
 			}
 			statics = append(statics, db.deadbandItems(sel, v, &p)...)
+		case g == 70 && v == 6 && a.srv.opts.files != nil:
+			// The file transport status events (A.27.6.1, p. 679).
+			sels = append(sels, &eventSelector{typ: fileStatusEvent, limit: limit})
 		case g == 80 && v == 1:
 			sel, ok := selectorOf(h)
 			if !ok {
@@ -342,6 +345,12 @@ func (a *association) eventItems(sels []*eventSelector) []item {
 	var cto app.Timestamp
 	ctoGV := app.G51V1
 	for i, e := range picked {
+		if e.typ == fileStatusEvent {
+			// A free-format object, one per header.
+			out = append(out, item{h: app.FreeFormat(app.G70V6, e.value), events: []*bufEvent{e}})
+			cur = nil
+			continue
+		}
 		gv := eventGV(e, vars[i])
 		unsync := a.unsynchronizedAt(e.at)
 		// A binary or double-bit event recorded while the time was

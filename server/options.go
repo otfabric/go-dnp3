@@ -23,8 +23,11 @@ type Unsolicited struct {
 	// events of the classes the master enables (or of Classes from the
 	// start).
 	Enabled bool
-	// Classes are the classes (1..3) enabled before any ENABLE_UNSOLICITED,
-	// IEEE 1815-2012's "unsolicited allowed at startup".
+	// Classes are the classes (1..3) the outstation reports unsolicited
+	// before any ENABLE_UNSOLICITED, once the master has confirmed the
+	// null unsolicited response. IEEE 1815-2012 leaves the classes
+	// enabled at startup to configuration (5.1.1.1.1 Rule 3, p. 101):
+	// leave it empty for a master that enables the classes it wants.
 	Classes []Class
 	// HoldTime is how long new events are collected before they are sent
 	// unsolicited. Zero sends at once.
@@ -76,6 +79,8 @@ type options struct {
 	needTime       time.Duration
 	attributes     map[uint16]*attributeSet
 	files          FileServer
+	fileTimeout    time.Duration
+	fileClass      Class
 	auth           *SecureAuth
 }
 
@@ -89,6 +94,8 @@ func defaultOptions() options {
 		confirmTimeout: 5 * time.Second,
 		selectTimeout:  10 * time.Second,
 		maxControls:    16,
+		fileTimeout:    DefaultFileTimeout,
+		fileClass:      1,
 	}
 }
 
@@ -250,7 +257,11 @@ func WithLink(l Link) Option {
 // WithEventLimits sets the number of events of each point type an
 // association buffers; types not named keep [DefaultEventLimit]. When a
 // buffer is full the oldest event of the type is discarded and the
-// outstation reports IIN2.3 (EVENT_BUFFER_OVERFLOW).
+// outstation reports IIN2.3 (EVENT_BUFFER_OVERFLOW) until the master has
+// confirmed enough events for every buffer that lost one to have room for
+// another (IEEE 1815-2012 4.5.12). A limit of 0 buffers no event of the
+// type: an event of it with a class is lost, and IIN2.3 then stays set
+// until a restart; give such points class 0 instead.
 func WithEventLimits(limits map[PointType]int) Option {
 	return func(o *options) error {
 		o.eventLimits = make(map[PointType]int, len(limits))
@@ -329,4 +340,23 @@ func (o *options) addAttributeSet(set uint16, attrs map[uint8]app.Attribute, wri
 // WithFileServer serves file transfer (group 70) from fs.
 func WithFileServer(fs FileServer) Option {
 	return func(o *options) error { o.files = fs; return nil }
+}
+
+// WithFileTimeout sets how long an open file may go without a request
+// naming its handle; the default is [DefaultFileTimeout]. The outstation
+// then closes it, aborted, and reports a file transport status event
+// (g70v6) with status HANDLE_EXPIRED in the event class (1..3, the default
+// 1), as IEEE 1815-2012 4.4.17.1.1 (p. 67) and 5.3.8 Rule 12 (p. 120)
+// require; the timeout must be configurable up to one hour.
+func WithFileTimeout(timeout time.Duration, class Class) Option {
+	return func(o *options) error {
+		if timeout <= 0 {
+			return invalidOption("file timeout %v", timeout)
+		}
+		if class < 1 || class > 3 {
+			return invalidOption("file event class %d", class)
+		}
+		o.fileTimeout, o.fileClass = timeout, class
+		return nil
+	}
 }

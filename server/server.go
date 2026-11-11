@@ -31,13 +31,17 @@ type Server struct {
 	clock *clock
 	log   *logx.Logger
 	sm    dnp3.ServerMetrics
+	// timeSync is the synchronization state of clock.
+	timeSync syncState
+	// handles assigns file handles, unique to the outstation.
+	handles fileHandles
 
 	mu         sync.Mutex
 	assocs     map[link.Address]*association
 	channels   map[*channel.Channel]struct{}
 	listeners  map[net.Listener]struct{}
 	indication app.IIN
-	freezes    map[*time.Timer]struct{} // scheduled FREEZE_AT_TIME
+	freezes    map[string]*scheduledFreeze // FREEZE_AT_TIME schedules, by the points they name
 	closed     bool
 	closeCh    chan struct{}
 	wg         sync.WaitGroup
@@ -56,7 +60,7 @@ func New(opts ...Option) (*Server, error) {
 		opts:      o,
 		clock:     newClock(),
 		log:       logx.New(o.logger, "server", "outstation", o.address),
-		freezes:   make(map[*time.Timer]struct{}),
+		freezes:   make(map[string]*scheduledFreeze),
 		assocs:    make(map[link.Address]*association),
 		channels:  make(map[*channel.Channel]struct{}),
 		listeners: make(map[net.Listener]struct{}),
@@ -104,8 +108,11 @@ func (s *Server) indications() app.IIN {
 // reports IIN1.7 (DEVICE_RESTART) again, its event buffer is cleared,
 // unsolicited responses start over with a null unsolicited response, and,
 // with WithTimeSync, its time counts as unsynchronized until the next time
-// synchronization (IIN1.4).
+// synchronization (IIN1.4). Points get the classes they were added with
+// again, undoing ASSIGN_CLASS (IEEE 1815-2012 4.4.14, p. 63); deadbands
+// written by a master are kept.
 func (s *Server) Restart() {
+	s.db.revertClasses()
 	for _, a := range s.associations() {
 		a.post(func() { a.restart() })
 	}
@@ -401,8 +408,8 @@ func (s *Server) Close() error {
 	}
 	s.closed = true
 	close(s.closeCh)
-	for t := range s.freezes {
-		t.Stop()
+	for _, f := range s.freezes {
+		f.timer.Stop()
 	}
 	clear(s.freezes)
 	for l := range s.listeners {
