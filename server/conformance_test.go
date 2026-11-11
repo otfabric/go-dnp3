@@ -1099,17 +1099,22 @@ func TestUnsolicitedUnlimitedRetries(t *testing.T) {
 
 // TestControlWithRequestStatus: a control whose request carries a nonzero
 // status is not carried out and is echoed with FORMAT_ERROR (TB2014-002),
-// for a SELECT, a DIRECT_OPERATE and an analog output.
+// for a SELECT, a DIRECT_OPERATE and an analog output; but one with
+// NON_PARTICIPATING (126), a no-op, is echoed with 126, not refused, and
+// sets no IIN2.2 (IEEE 1815-2012 Table 11-7 footnote a, p. 330).
 func TestControlWithRequestStatus(t *testing.T) {
 	r := &countingHandler{}
 	m := newMaster(t, WithHandler(r))
 	for i, h := range []struct {
-		fc app.FunctionCode
-		h  app.Header
+		fc   app.FunctionCode
+		h    app.Header
+		want app.CommandStatus
 	}{
-		{app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 126}})},
-		{app.FuncDirectOperate, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 1}})},
-		{app.FuncDirectOperate, app.Indexed(app.G41V2, app.Object{Index: 0, Value: app.AnalogOutput{Value: 1, Status: 126}})},
+		{app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 1}}), app.StatusFormatError},
+		{app.FuncDirectOperate, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 1}}), app.StatusFormatError},
+		{app.FuncDirectOperate, app.Indexed(app.G41V2, app.Object{Index: 0, Value: app.AnalogOutput{Value: 1, Status: 2}}), app.StatusFormatError},
+		{app.FuncSelect, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 126}}), app.StatusNonParticipating},
+		{app.FuncDirectOperate, app.Indexed(app.G41V2, app.Object{Index: 0, Value: app.AnalogOutput{Value: 1, Status: 126}}), app.StatusNonParticipating},
 	} {
 		m.send(req(uint8(i+1), h.fc, h.h))
 		f := m.recvFunc(app.FuncResponse)
@@ -1123,9 +1128,18 @@ func TestControlWithRequestStatus(t *testing.T) {
 		case app.AnalogOutput:
 			s = v.Status
 		}
-		if s != app.StatusFormatError {
-			t.Fatalf("%s: status %s, want FORMAT_ERROR", h.fc, s)
+		if s != h.want || f.IIN.Has(app.IINParameterError) {
+			t.Fatalf("%s: status %s IIN %s, want %s", h.fc, s, f.IIN, h.want)
 		}
+	}
+	// A SELECT and OPERATE of 126: the OPERATE matches its SELECT and is
+	// echoed with 126, carried out neither.
+	sbo := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: 126}})
+	m.send(req(9, app.FuncSelect, sbo))
+	m.recvFunc(app.FuncResponse)
+	m.send(req(10, app.FuncOperate, sbo))
+	if f := m.recvFunc(app.FuncResponse); f.Headers[0].Objects[0].Value.(app.CROB).Status != app.StatusNonParticipating {
+		t.Fatalf("OPERATE of 126 after its SELECT: %v", f)
 	}
 	if r.count() != 0 {
 		t.Fatal("a control with a request status was carried out")

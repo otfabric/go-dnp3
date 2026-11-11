@@ -18,7 +18,10 @@ func TestCommandEvents(t *testing.T) {
 		{Op: app.OpLatchOn, Count: 1}, {Op: app.OpLatchOff, Count: 1}, {Op: app.OpPulseOn, Count: 1},
 		{Op: app.OpPulseOff, Count: 1}, {Op: app.OpPulseOn, TripClose: app.TCCClose, Count: 1}, {Op: app.OpPulseOn, TripClose: app.TCCTrip, Count: 1},
 	}
-	want := []bool{true, false, true, false, true, false}
+	// The commanded state is 1 for latch on and close only; a pulse with
+	// TCC NUL leaves no state, so it is unknown and 0 (IEEE 1815-2012
+	// A.9.1.2.2).
+	want := []bool{true, false, false, false, true, false}
 	seq := uint8(0)
 	for _, c := range crobs {
 		seq = app.NextSeq(seq)
