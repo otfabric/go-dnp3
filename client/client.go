@@ -342,8 +342,9 @@ func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, e
 }
 
 // dial opens a TCP connection to the outstation, with TLS when configured.
+// The reconnects and the dual end point dial here as well.
 func (c *Client) dial(ctx context.Context) (net.Conn, error) {
-	conn, err := c.opts.dialer.DialContext(ctx, "tcp", c.addr)
+	conn, err := dialConn(ctx, c.opts.dialer, "tcp", c.addr)
 	if err != nil {
 		return nil, err
 	}

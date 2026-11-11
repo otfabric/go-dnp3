@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -79,6 +80,7 @@ type options struct {
 	logger         dnp3.Logger
 	metrics        dnp3.Metrics
 	tls            *tls.Config
+	dialer         Dialer
 	maxConns       int
 	maxTxFragment  int
 	maxRxFragment  int
@@ -180,6 +182,32 @@ func WithMetrics(m dnp3.Metrics) Option {
 // DialAndServe. Serve and ServeConn take the connection as it is.
 func WithTLS(cfg *tls.Config) Option {
 	return func(o *options) error { o.tls = cfg; return nil }
+}
+
+// Dialer opens the TCP connections of DialAndServe; *net.Dialer satisfies
+// it, as does a proxy's or a jump host's DialContext. It has the shape of
+// client.Dialer.
+//
+// Like net.Dialer, a Dialer returns a non-nil connection exactly when the
+// error is nil: one that returns neither fails the attempt, and a
+// connection returned together with an error is closed. It must honour
+// ctx, which carries the dial timeout (10 seconds) and ends when the
+// context of DialAndServe does or the server is closed.
+type Dialer interface {
+	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+// WithDialer sets the dialer of DialAndServe: it is called with network
+// "tcp" and the address given to DialAndServe, and with WithTLS the TLS
+// handshake runs over the connection it returns (tls.Client). Use it to
+// bind a source address, dial through a proxy, or refuse addresses (see
+// SECURITY.md: an allowlist belongs in the dialer, for example in
+// net.Dialer.Control, which sees the resolved IP). The listeners of
+// ListenAndServe, Serve, ServeConn and the UDP functions do not dial and
+// are not affected. nil keeps the default, a net.Dialer with a 10 second
+// timeout.
+func WithDialer(d Dialer) Option {
+	return func(o *options) error { o.dialer = d; return nil }
 }
 
 // WithMaxConnections limits concurrent connections; further ones are

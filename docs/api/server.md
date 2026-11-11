@@ -374,6 +374,18 @@ func (db *Database) UpdateOctetString(index uint32, data []byte) error
 
 UpdateOctetString updates an octet string.
 
+### type Dialer
+
+```go
+type Dialer interface {
+	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+}
+```
+
+Dialer opens the TCP connections of DialAndServe; \*net.Dialer satisfies it, as does a proxy's or a jump host's DialContext. It has the shape of client.Dialer.
+
+Like net.Dialer, a Dialer returns a non-nil connection exactly when the error is nil: one that returns neither fails the attempt, and a connection returned together with an error is closed. It must honour ctx, which carries the dial timeout (10 seconds) and ends when the context of DialAndServe does or the server is closed.
+
 ### type EventMode
 
 ```go
@@ -725,6 +737,14 @@ func WithDeadbandIntegerOnly(enabled bool) Option
 
 WithDeadbandIntegerOnly reports analog input deadbands (group 34) in variations 1 and 2 only, for masters without floating point, as IEEE 1815-2012 A.18.3.2.3 (p. 609) requires a device that reports variation 3 to be configurable: a deadband is rounded to the nearest integer and limited to 4294967295, and a READ of g34v3 is answered with IIN2.1. Masters can still write any variation.
 
+#### func WithDialer
+
+```go
+func WithDialer(d Dialer) Option
+```
+
+WithDialer sets the dialer of DialAndServe: it is called with network "tcp" and the address given to DialAndServe, and with WithTLS the TLS handshake runs over the connection it returns (tls.Client). Use it to bind a source address, dial through a proxy, or refuse addresses (see SECURITY.md: an allowlist belongs in the dialer, for example in net.Dialer.Control, which sees the resolved IP). The listeners of ListenAndServe, Serve, ServeConn and the UDP functions do not dial and are not affected. nil keeps the default, a net.Dialer with a 10 second timeout.
+
 #### func WithEventLimits
 
 ```go
@@ -975,6 +995,12 @@ type Redial struct {
 	MinDelay time.Duration
 	// MaxDelay caps the delay. Zero means 1 minute.
 	MaxDelay time.Duration
+	// Jitter randomizes each delay, so that outstations that lost their
+	// connections together do not reconnect together: a fraction from 0
+	// to 1, each delay is drawn uniformly from [(1-Jitter)·d, d] of the
+	// delay d that doubles. Zero, the default, waits d exactly. It has the
+	// semantics of client.Reconnect.Jitter.
+	Jitter float64
 }
 ```
 
@@ -1133,6 +1159,8 @@ func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error
 DialAndServe is the outstation's end of a TCP connection that the outstation establishes (the dual end point of IEEE 1815-2012 clause 13.2.3.1.3, for an outstation behind a firewall or on a dial-out link): it connects to the master at addr, with TLS when WithTLS was given (the outstation is then the TLS client: the configuration's RootCAs verify the master, its Certificates are presented, ServerName defaults to the host of addr), serves the connection like an accepted one, and connects again when it ends, with the delays of r. It returns when ctx is done (ctx.Err()) or the server is closed (nil).
 
 Only one connection to the master stands at a time, and the master's own has priority (clause 13.2.3.1.3): while a master is connected to the server's listener, DialAndServe does not connect, and checks again every r.MinDelay.
+
+The connection is opened by the dialer of WithDialer, by default a net.Dialer. A failed attempt is logged with an error that wraps dnp3.ErrConnectFailed and the dialer's error. DialAndServe fails with dnp3.ErrInvalidOption when r.Jitter is not within \[0, 1].
 
 #### func (Server) ListenAndServe
 

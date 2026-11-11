@@ -17,7 +17,7 @@ jobs:
   ci:
     uses: otfabric/.github/.github/workflows/go-ci.yml@v3.6.0
     with:
-      policy-version: v1.4.2
+      policy-version: v1.5.0
       run-govulncheck: true
       # The golangci-lint make lint-ci runs locally.
       golangci-lint-version: v2.15.0

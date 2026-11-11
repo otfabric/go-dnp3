@@ -22,7 +22,9 @@ var (
 
 	// ErrConnectFailed reports that a client could not establish its
 	// channel: the dial, the TLS handshake or the opening of the serial
-	// port failed. The underlying error is wrapped alongside it.
+	// port failed. The underlying error, the dialer's among them, is
+	// wrapped alongside it. The attempts of server.DialAndServe log it
+	// the same way.
 	ErrConnectFailed = errors.New("dnp3: connect failed")
 
 	// ErrConnectionLost reports that the peer closed the channel or the

@@ -469,7 +469,9 @@ type Dialer interface {
 }
 ```
 
-Dialer opens TCP connections; \*net.Dialer satisfies it.
+Dialer opens TCP connections; \*net.Dialer satisfies it, as does a proxy's or a jump host's DialContext.
+
+Like net.Dialer, a Dialer returns a non-nil connection exactly when the error is nil: one that returns neither fails the dial, and a connection returned together with an error is closed. Its error reaches the caller wrapped in dnp3.ErrConnectFailed, so errors.Is finds the dialer's own sentinels. It must honour ctx: the context of Connect (or Dial), with the caller's deadline and cancel, and on a reconnect one that ends with the attempt (at least 10 seconds) or Close. The dial timeout is the dialer's own; the default's is 10 seconds.
 
 ### type FileOptions
 
@@ -642,7 +644,7 @@ WithChallengeMACs limits the MAC algorithms an outstation's challenge may ask fo
 func WithDialer(d Dialer) Option
 ```
 
-WithDialer sets the dialer of TCP connections.
+WithDialer sets the dialer of TCP connections: it is called with network "tcp" and the address given to New, for Connect, the reconnects of WithReconnect and the client's own connections of the dual end point (WithDualEndpoint); with WithTLS the TLS handshake runs over the connection it returns (tls.Client). Use it to bind a source address, dial through a proxy, or refuse addresses (see SECURITY.md: an allowlist belongs in the dialer, for example in net.Dialer.Control, which sees the resolved IP). A StreamOpener of WithStream opens its own stream and does not use it: UDP and UDPFrom dial with a net.Dialer, UDPWithDialer takes a dialer. The default is a net.Dialer with a 10 second timeout; nil is refused with dnp3.ErrInvalidOption.
 
 #### func WithDualEndpoint
 
@@ -991,6 +993,8 @@ UDP returns a StreamOpener for DNP3 over UDP (port 20000 by convention): every l
 
 	c, err := client.New(addr, client.WithStream(client.UDP(addr)))
 
+It dials with a net.Dialer, not the dialer of WithDialer, which a stream opener does not see; use UDPWithDialer to supply one.
+
 #### func UDPFrom
 
 ```go
@@ -1000,6 +1004,19 @@ func UDPFrom(local, remote string) StreamOpener
 UDPFrom is UDP with the local address the datagrams are sent from, for an outstation that sends its responses to a fixed port of the master (IEEE 1815-2012 Table 13-1, case 1) or takes requests from known ports only. local is "host:port"; an empty host is any address.
 
 	c, err := client.New(addr, client.WithStream(client.UDPFrom(":20000", addr)))
+
+Like UDP, it does not use the dialer of WithDialer; UDPWithDialer with a dialer that binds local is its counterpart with a dialer.
+
+#### func UDPWithDialer
+
+```go
+func UDPWithDialer(d Dialer, addr string) StreamOpener
+```
+
+UDPWithDialer is UDP with the connected UDP socket opened by d: d is called with network "udp" and addr, and with the context of the Connect or reconnect attempt, which it must honour. d is held to the contract of WithDialer: a connection exactly when the error is nil. With d nil it is UDP. A net.Dialer with LocalAddr set is UDPFrom.
+
+	d := &net.Dialer{Control: allowlist}
+	c, err := client.New(addr, client.WithStream(client.UDPWithDialer(d, addr)))
 
 ### type TimeSync
 

@@ -1,5 +1,49 @@
 # go-dnp3 Releases
 
+## v1.12.0
+
+**Date:** 2026-11-12
+**Previous release:** v1.11.0
+
+## Summary
+
+Caller-supplied dialers on every path that dials (otfabric engineering policy 1.5, rule API-R03), so that an application can apply an address allowlist against the resolved IP, dial through a proxy or a jump host, bind a source address, or test over an in-memory connection. The outstation's dial-out (`DialAndServe`) takes a dialer and a reconnect jitter; the client's UDP gets a dialer-taking variant; both ends hold dialers to the contract of `net.Dialer`. Exported API is added, none removed or changed. No protocol behaviour changes.
+
+## Upgrading
+
+- **The `error` of the `DialAndServe` reconnect log record** (`connection to the master lost, reconnecting`) now wraps `dnp3.ErrConnectFailed` after a failed dial or TLS handshake; the TLS handshake failure is prefixed `TLS handshake:`, as on the client. Its `delay` is the delay before the next attempt, with `Redial.Jitter` applied (equal to before without jitter).
+- A dialer of `client.WithDialer` that returns neither a connection nor an error now fails `Connect` with `dnp3.ErrConnectFailed`; it made `Connect` panic before; a connection returned together with an error is closed.
+
+## Changes
+
+### Master
+
+- `client.UDPWithDialer(d, addr)`: the `StreamOpener` of `UDP` with the connected UDP socket opened by a caller's dialer (network `"udp"`); `UDP` and `UDPFrom` are built on it and behave as before. `WithStream` openers do not use `WithDialer`; the doc comments of `WithDialer`, `UDP` and `UDPFrom` and LIMITATIONS.md say so.
+- Dialer contract on `Connect`, the reconnects and the dual end point's own dial, which all dial through `WithDialer`: a dialer that returns neither a connection nor an error fails the dial; a connection returned together with an error is closed; the dialer's error is wrapped in `dnp3.ErrConnectFailed`, so `errors.Is` reaches its own sentinels. The doc comment of `client.Dialer` states the contract and the context a dialer must honour.
+
+### Outstation
+
+- `server.WithDialer(Dialer)` and the `server.Dialer` interface (the shape of `client.Dialer`; `*net.Dialer` satisfies it): the dialer of `DialAndServe`. It is called with network `"tcp"`, the master's address and a context that carries the 10 s dial timeout and ends with `DialAndServe`'s context or `Close`; with `WithTLS` the handshake runs over its connection (`tls.Client`). nil keeps the default, a `net.Dialer` with a 10 s timeout, unchanged. The same contract as the client's.
+- `Redial.Jitter` (0 to 1) draws each reconnect delay d of the doubling backoff from [(1-Jitter)·d, d], with the semantics of `client.Reconnect.Jitter`, so that outstations that lost their connections together do not reconnect together. Zero, the default, keeps the exact doubling; a value outside 0 to 1 makes `DialAndServe` return `dnp3.ErrInvalidOption` before it dials.
+
+### Added API
+
+- `client`: `UDPWithDialer(Dialer, addr)`.
+- `server`: `Dialer`, `WithDialer(Dialer)`, `Redial.Jitter`.
+
+### Testing
+
+- Dialer tests on both ends: the network, address and deadline the dialer receives, the caller's cancel, error wrapping with `errors.Is`, the nil-connection case, a connection returned with an error being closed, TLS over the dialer's connection, and transport faults injected through the dialer (a `net.Pipe` end closed mid-session, then the reconnect or redial through the same dialer) for the client and for `DialAndServe`.
+- `Redial.Jitter`: validation, the bounds of each drawn delay, and the measured gaps between redials.
+
+### Documentation
+
+- SECURITY.md: an address allowlist belongs in the dialer (`net.Dialer.Control` sees the resolved IP right before connecting); checking the host name before dialling leaves a DNS-rebinding gap. SECURITY.md supports 1.12.x.
+- API.md, ERRORS.md, OBSERVABILITY.md, LIMITATIONS.md, INTEROPERABILITY.md and `docs/api` updated for the dialers and the jitter.
+- Policy: otfabric engineering policy 1.5 (`.otfabric/policy.yaml`, `policy-version` v1.5.0 in the workflows, AGENTS.md).
+
+---
+
 ## v1.11.0
 
 **Date:** 2026-11-11
