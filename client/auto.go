@@ -124,6 +124,11 @@ func (c *Client) pollLoop(i int, p Poll, stop <-chan struct{}) {
 // for.
 func (c *Client) onIIN(iin app.IIN) {
 	o := c.opts
+	if c.restartRekey(iin) {
+		// The session keys first: the outstation lost them (IEEE
+		// 1815-2012 clause 7.5.4.2).
+		c.enqueue(task{name: "key-change", run: c.changeSessionKeys})
+	}
 	if iin.Has(app.IINDeviceRestart) && o.autoClearRestart {
 		c.enqueue(task{name: "clear-restart", run: c.ClearRestart})
 	}
@@ -212,27 +217,60 @@ func (c *Client) startupStep(step string, err error) error {
 // change interval.
 const keyRetryDelay = time.Second
 
-// keyChangeLoop changes the session keys at the key change interval, and
-// sooner while connected without session keys: after a key change that
-// failed, with a backoff.
+// keyRetries is how many times the session keys are changed again with
+// the backoff while a connected client has none: the default threshold of
+// Reply Timeouts (IEEE 1815-2012 Table 7-6 #3). After that the client
+// waits the key change interval (Table 7-13, Max Reply Timeouts
+// Exceeded).
+const keyRetries = 3
+
+// keyRetryIdle is the wait between key change attempts without session
+// keys once the retries are spent, when the key change interval is
+// disabled (WithKeyChangeInterval(0)).
+const keyRetryIdle = 15 * time.Minute
+
+// keyChangeLoop changes the session keys at the key change interval
+// (IEEE 1815-2012 clause 7.6.1.4.3), when rekeySoon asks (the key change
+// count, an outstation restart, an authentication failure), and sooner
+// while connected without session keys: after a key change that failed,
+// keyRetries times with a backoff, then at the interval.
 func (c *Client) keyChangeLoop(stop <-chan struct{}) {
-	retry := keyRetryDelay
-	t := time.NewTimer(c.opts.keyChange)
+	interval := c.opts.keyChange
+	period := interval
+	if period == 0 {
+		period = keyRetryIdle
+	}
+	retry, retries := keyRetryDelay, 0
+	t := time.NewTimer(period)
 	defer t.Stop()
 	for {
+		timeout := false
 		select {
 		case <-stop:
 			return
 		case <-c.rekey:
 		case <-t.C:
+			timeout = true
 		}
-		c.enqueue(task{name: "key-change", run: c.changeSessionKeys})
-		wait := c.opts.keyChange
-		if c.State() == dnp3.StateConnected && c.controlKey() == nil {
-			wait = min(retry, wait)
-			retry = min(2*retry, c.opts.keyChange)
-		} else {
-			retry = keyRetryDelay
+		keys := c.controlKey() != nil
+		switch {
+		case timeout && interval == 0 && keys:
+			// No key change interval: only the count changes the keys.
+		case timeout:
+			c.keyChangeTimeout()
+			fallthrough
+		default:
+			c.enqueue(task{name: "key-change", run: c.changeSessionKeys})
+		}
+		wait := period
+		switch {
+		case keys:
+			retry, retries = keyRetryDelay, 0
+		case c.State() == dnp3.StateConnected && retries < keyRetries:
+			wait = min(retry, period)
+			retry = min(2*retry, period)
+			retries++
+		default:
 		}
 		// Since Go 1.23 Reset discards a value the timer may have sent.
 		t.Reset(wait)

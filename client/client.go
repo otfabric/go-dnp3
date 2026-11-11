@@ -20,6 +20,7 @@ import (
 	"github.com/otfabric/go-dnp3/internal/channel"
 	"github.com/otfabric/go-dnp3/internal/logx"
 	"github.com/otfabric/go-dnp3/link"
+	"github.com/otfabric/go-dnp3/secauth"
 )
 
 // DefaultPort is the registered DNP3 port, also used for TLS.
@@ -49,15 +50,10 @@ type Client struct {
 	// started is closed when the startup sequence of the current channel
 	// has ended: automatic tasks wait for it.
 	started chan struct{}
-	// sessionKey is the control direction session key negotiated on the
-	// current channel, nil before the first session key change.
-	sessionKey []byte
-	// lastChallenge is the last challenge (g120v1 fragment) received on
-	// the current channel and csq the challenge sequence number aggressive
-	// mode requests continue from.
-	lastChallenge []byte
-	lastMAC       app.MACAlgorithm
-	csq           uint32
+	// auth is the secure authentication state of the current channel and
+	// counters the security statistics.
+	auth     authState
+	counters authCounters
 	// rekey asks the key change loop for a key change now.
 	rekey chan struct{}
 
@@ -106,6 +102,7 @@ func New(addr string, opts ...Option) (*Client, error) {
 		closeCh: make(chan struct{}),
 		rekey:   make(chan struct{}, 1),
 	}
+	c.counters = newAuthCounters()
 	c.rm, _ = o.metrics.(dnp3.RequestMetrics)
 	c.events = newDispatcher(c)
 	c.wg.Add(2)
@@ -210,8 +207,7 @@ func (c *Client) connect(ctx context.Context) error {
 		return dnp3.ErrClosed
 	}
 	c.ch, c.sess, c.remote, c.dialing = ch, sess, remote, false
-	clear(c.sessionKey)
-	c.sessionKey, c.lastChallenge = nil, nil
+	c.auth.reset()
 	started := make(chan struct{})
 	c.started = started
 	c.lastUns = nil
@@ -427,6 +423,7 @@ func (c *Client) receive(sess *channel.Session, data []byte) {
 		}
 		return
 	}
+	c.count(secauth.StatTotalMessagesReceived)
 	if m := c.opts.metrics; m != nil {
 		m.OnFragmentReceived(c.remoteAddr(), f, len(data))
 	}
@@ -439,14 +436,14 @@ func (c *Client) receive(sess *channel.Session, data []byte) {
 		p := c.pending
 		c.mu.Unlock()
 		if p == nil || !p.accept(f, data) {
-			c.log.Debug("response nobody waits for ignored", "seq", f.Control.Seq)
+			c.onStrayAuth(sess, f, data)
 		}
 	case app.FuncUnsolicitedResponse:
 		if f.Control.CON {
 			if c.opts.noUnsConfirm {
 				c.log.Debug("unsolicited response not confirmed (WithUnsolicitedConfirm)", "seq", f.Control.Seq)
 			} else {
-				c.confirm(sess, f.Control.Seq, true)
+				c.confirmResponse(sess, f, data, true)
 			}
 		}
 		c.mu.Lock()
@@ -464,19 +461,24 @@ func (c *Client) receive(sess *channel.Session, data []byte) {
 	}
 }
 
-// confirm sends an application confirmation.
-func (c *Client) confirm(sess *channel.Session, seq uint8, uns bool) {
-	f := &app.Fragment{Control: app.Control{FIR: true, FIN: true, UNS: uns, Seq: seq}, Function: app.FuncConfirm}
-	data, _ := f.Encode()
+// sendConfirm sends the application confirmation f (confirmResponse makes
+// it), and keeps it: the outstation may challenge it.
+func (c *Client) sendConfirm(sess *channel.Session, f *app.Fragment) {
+	data, err := f.Encode()
+	if err != nil {
+		c.log.Debug("confirmation not sent", "error", err)
+		return
+	}
+	c.mu.Lock()
+	c.auth.lastConfirm = data
+	c.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), c.opts.responseTimeout)
 	defer cancel()
 	if err := sess.Send(ctx, data); err != nil {
 		c.log.Debug("confirmation not sent", "error", err)
 		return
 	}
-	if m := c.opts.metrics; m != nil {
-		m.OnFragmentSent(c.remoteAddr(), f, len(data))
-	}
+	c.sent(f, len(data))
 }
 
 func addrString(a net.Addr) string {

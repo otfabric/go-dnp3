@@ -133,6 +133,7 @@ type options struct {
 	queueLimit       int
 	auth             *secauth.User
 	keyChange        time.Duration
+	keyChangeCount   uint32
 	aggressive       []app.FunctionCode
 	challengeMACs    []app.MACAlgorithm
 }
@@ -148,6 +149,7 @@ func defaultOptions() options {
 		autoIntegrity:    true,
 		queueLimit:       64,
 		keyChange:        15 * time.Minute,
+		keyChangeCount:   DefaultKeyChangeCount,
 	}
 }
 
@@ -390,13 +392,16 @@ func WithSecureAuthentication(u secauth.User) Option {
 
 // WithAggressiveMode sends the requests with the function codes fcs
 // (secauth.DefaultCritical when none are given) in Secure Authentication
-// aggressive mode (IEEE 1815-2012 clause 7.5.2.2.4): with a MAC in the
-// request itself, so that the outstation executes it without a challenge.
-// The MAC covers the last challenge received, so the first critical
-// request of a connection is still challenged. Use it only with an
-// outstation that supports aggressive mode: one that does not refuses the
-// request with an authentication error. New refuses it without
-// WithSecureAuthentication.
+// aggressive mode (IEEE 1815-2012 clause 7.5.3.3, A.45.3 and A.45.9): with
+// a MAC in the request itself, so that the outstation executes it without
+// a challenge. The MAC covers the last challenge received and the whole
+// request up to the MAC value (Table A-9). Aggressive mode is used only
+// once a challenge was answered successfully since the last session key
+// change, so the first critical request after each key change is still
+// challenged; after a refused aggressive mode request the next one is
+// sent normally, and an outstation that answers error 4 (aggressive mode
+// not supported) is not sent aggressive mode again on that connection.
+// New refuses it without WithSecureAuthentication.
 func WithAggressiveMode(fcs ...app.FunctionCode) Option {
 	return func(o *options) error {
 		if len(fcs) == 0 {
@@ -408,13 +413,16 @@ func WithAggressiveMode(fcs ...app.FunctionCode) Option {
 }
 
 // WithChallengeMACs limits the MAC algorithms an outstation's challenge
-// may ask for. The challenge (g120v1, IEEE 1815-2012 clause 7) names the
-// algorithm of the reply and of aggressive mode requests; a challenge asking for another one fails
-// the request with dnp3.ErrAuthentication. By default every algorithm
-// package secauth computes is accepted except the obsolete HMAC-SHA-1
-// truncated to 4 octets. The algorithm of secauth.User is the one the
-// session key change and the outstation's key status use; it need not be
-// in the list.
+// may ask for. The challenge (g120v1, IEEE 1815-2012 A.45.1) names the
+// algorithm of the reply and of aggressive mode requests; a challenge
+// asking for another one fails the request with dnp3.ErrAuthentication.
+// By default every algorithm package secauth computes is accepted except
+// the obsolete HMAC-SHA-1 truncated to 4 octets and, over TCP/IP or
+// UDP/IP (the built-in dialer, or a stream whose remote address is a TCP
+// or UDP address), the truncations to 8 octets, which clauses 7.6.1.1.1
+// and 7.6.1.1.2 allow on serial links only; this option can allow them. The
+// algorithm of secauth.User is the one the session key change and the
+// outstation's key status use; it need not be in the list.
 func WithChallengeMACs(algs ...app.MACAlgorithm) Option {
 	return func(o *options) error {
 		if len(algs) == 0 {
@@ -431,13 +439,38 @@ func WithChallengeMACs(algs ...app.MACAlgorithm) Option {
 }
 
 // WithKeyChangeInterval sets how often the session keys are changed while
-// connected, with an update key. The default is 15 minutes.
+// connected, with an update key (IEEE 1815-2012 clause 7.6.1.4.3). The
+// default is 15 minutes. 0 disables the interval: the keys are then
+// changed only after the key change count (WithKeyChangeCount), as the
+// clause allows for devices that communicate infrequently. A negative
+// interval is refused.
 func WithKeyChangeInterval(d time.Duration) Option {
 	return func(o *options) error {
-		if d <= 0 {
+		if d < 0 {
 			return invalidOption("key change interval %v", d)
 		}
 		o.keyChange = d
+		return nil
+	}
+}
+
+// MaxKeyChangeCount is the largest session key change count: half the
+// range of the key change sequence number (IEEE 1815-2012 clause
+// 7.6.1.4.4).
+const MaxKeyChangeCount = 1 << 31
+
+// WithKeyChangeCount sets the session key change count (IEEE 1815-2012
+// clause 7.6.1.4.4): with an update key, the session keys are also changed
+// once n authentication messages were sent or received since the last
+// change (challenges and errors received, replies and aggressive mode
+// requests sent). The default is DefaultKeyChangeCount (1000); n ranges
+// from 1 to MaxKeyChangeCount.
+func WithKeyChangeCount(n uint32) Option {
+	return func(o *options) error {
+		if n < 1 || n > MaxKeyChangeCount {
+			return invalidOption("key change count %d: 1 to %d", n, MaxKeyChangeCount)
+		}
+		o.keyChangeCount = n
 		return nil
 	}
 }

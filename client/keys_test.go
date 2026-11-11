@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -178,8 +179,15 @@ func TestChallengeBeforeKeyChange(t *testing.T) {
 	if _, err := c.onAuthResponse(testCtx(t), nil, ch, nil, nil); !errors.Is(err, dnp3.ErrAuthentication) {
 		t.Fatalf("challenge without session keys: %v", err)
 	}
-	if _, err := New("127.0.0.1", WithKeyChangeInterval(0)); !errors.Is(err, dnp3.ErrInvalidOption) {
-		t.Fatal("key change interval 0 accepted")
+	if _, err := New("127.0.0.1", WithKeyChangeInterval(-time.Second)); !errors.Is(err, dnp3.ErrInvalidOption) {
+		t.Fatal("negative key change interval accepted")
+	}
+	// 0 disables the interval: the key change count alone (IEEE 1815-2012
+	// clause 7.6.1.4.3).
+	if c, err := New("127.0.0.1", WithKeyChangeInterval(0)); err != nil {
+		t.Fatalf("key change interval 0: %v", err)
+	} else {
+		_ = c.Close()
 	}
 	if _, err := New("127.0.0.1", WithAggressiveMode()); !errors.Is(err, dnp3.ErrInvalidOption) {
 		t.Fatal("aggressive mode without secure authentication accepted")
@@ -349,7 +357,9 @@ func TestAggressiveMode(t *testing.T) {
 }
 
 // TestRekeyOnAuthError: an authentication error in answer to a request
-// asks for a key change; the request fails with it.
+// fails it. With a pre-shared session key there are no session keys to
+// change, so no key change is asked for; with an update key error 1 asks
+// for one (TestSpec7_5_3_4RekeyThrottle).
 func TestRekeyOnAuthError(t *testing.T) {
 	addr := fakeAuthOutstation(t, func(*app.Fragment) []app.Header {
 		return []app.Header{app.FreeFormat(app.G120V7, app.AuthError{User: 1, Code: app.AuthErrAuthenticationFailed})}
@@ -364,8 +374,8 @@ func TestRekeyOnAuthError(t *testing.T) {
 	if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); !errors.As(err, &ae) {
 		t.Fatalf("control refused with an authentication error: %v", err)
 	}
-	if len(c.rekey) != 1 {
-		t.Fatal("no key change asked for after the authentication error")
+	if len(c.rekey) != 0 {
+		t.Fatal("key change asked for with a pre-shared session key")
 	}
 }
 
@@ -410,11 +420,23 @@ func TestChallengeMACOptions(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 	for alg, want := range map[app.MACAlgorithm]bool{
-		app.MACHMACSHA1Trunc4: false, app.MACHMACSHA1Trunc8: true, app.MACHMACSHA1Trunc10: true,
-		app.MACHMACSHA256Trunc8: true, app.MACHMACSHA256Trunc16: true, app.MACAESGMAC: false, app.MACNone: false,
+		app.MACHMACSHA1Trunc4: false, app.MACHMACSHA1Trunc8: false, app.MACHMACSHA1Trunc10: true,
+		app.MACHMACSHA256Trunc8: false, app.MACHMACSHA256Trunc16: true, app.MACAESGMAC: false, app.MACNone: false,
 	} {
 		if got := c.acceptsMAC(alg); got != want {
-			t.Errorf("default acceptsMAC(%s) = %v", alg, got)
+			t.Errorf("default acceptsMAC(%s) over TCP = %v", alg, got)
+		}
+	}
+	// Over a serial stream the 8-octet truncations are allowed (IEEE
+	// 1815-2012 clauses 7.6.1.1.1, 7.6.1.1.2).
+	serial, err := New("line", WithStream(func(context.Context) (io.ReadWriteCloser, net.Addr, error) { return nil, nil, io.EOF }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = serial.Close() }()
+	for _, alg := range []app.MACAlgorithm{app.MACHMACSHA1Trunc8, app.MACHMACSHA256Trunc8} {
+		if !serial.acceptsMAC(alg) {
+			t.Errorf("acceptsMAC(%s) over a serial stream = false", alg)
 		}
 	}
 	c, err = New("127.0.0.1", WithChallengeMACs(app.MACHMACSHA1Trunc4))
