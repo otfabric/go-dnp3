@@ -88,6 +88,7 @@ const (
 	fAttribute
 	fRaw
 	fActivation // g91v1: carried as Raw, sized by its own count and lengths
+	fBufferFill // g81v1: device storage buffer fill status
 	fFileAuth
 	fFileCommand
 	fFileCommandStatus
@@ -226,6 +227,8 @@ func (d *desc) size(gv GroupVariation) int {
 		return 2 << (gv.Variation() - 1) // 2, 4, 8
 	case fUint8, fDataSetChars:
 		return 1
+	case fBufferFill:
+		return 3
 	case fSecStat:
 		return 7 + d.time.size()
 	case fAuth:
@@ -325,9 +328,11 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		t, _ := d.readTime(&r, c)
 		return BinaryCommandEvent{Value: s&0x80 != 0, Status: CommandStatus(s & 0x7F), Time: t}, r.done()
 	case fCROB:
+		// The status is a UINT7; bit 7 is reserved and set to 0 by the
+		// sender (IEEE 1815-2012 A.8.1.2.2), so it is not read.
 		var v CROB
 		v.setCode(r.u8())
-		v.Count, v.OnTime, v.OffTime, v.Status = r.u8(), r.u32(), r.u32(), CommandStatus(r.u8())
+		v.Count, v.OnTime, v.OffTime, v.Status = r.u8(), r.u32(), r.u32(), CommandStatus(r.u8()&0x7F)
 		return v, r.done()
 	case fCounter:
 		var v Counter
@@ -352,8 +357,10 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 	case fDeadband:
 		return AnalogDeadband{Value: readNum(&r, d.num)}, r.done()
 	case fAnalogOutput:
+		// The control status is a UINT8, 0..255 (IEEE 1815-2012
+		// A.20.1.2.2).
 		v := AnalogOutput{Value: readNum(&r, d.num)}
-		v.Status = CommandStatus(r.u8() & 0x7F)
+		v.Status = CommandStatus(r.u8())
 		return v, r.done()
 	case fAnalogCommandEvent:
 		v := AnalogCommandEvent{Status: CommandStatus(r.u8() & 0x7F)}
@@ -385,6 +392,9 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		return UnsignedInteger{Value: r.u8()}, r.done()
 	case fDataSetChars:
 		return DataSetCharacteristics{Flags: DataSetFlags(r.u8())}, r.done()
+	case fBufferFill:
+		f := r.u8()
+		return BufferFillStatus{Fill: f & 0x7F, Overflow: f&0x80 != 0, Buffer: GV(r.u8(), r.u8())}, r.done()
 	case fSecStat:
 		v := SecurityStatistic{Flags: Flags(r.u8()), Association: r.u16(), Value: r.u32()}
 		v.Time, _ = d.readTime(&r, c)
@@ -490,7 +500,8 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 		b = append(b, o.Code(), o.Count)
 		b = le32(b, o.OnTime)
 		b = le32(b, o.OffTime)
-		return append(b, byte(o.Status)), nil
+		// The reserved bit 7 of the status is set to 0 (A.8.1.2.2).
+		return append(b, byte(o.Status&0x7F)), nil
 	case fCounter:
 		o, ok := v.(Counter)
 		if !ok {
@@ -537,7 +548,7 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 		if over {
 			return b, invalid("set-point %v does not fit %s", o.Value, gv)
 		}
-		return append(appendNum(b, raw, d.num), byte(o.Status&0x7F)), nil
+		return append(appendNum(b, raw, d.num), byte(o.Status)), nil
 	case fAnalogCommandEvent:
 		o, ok := v.(AnalogCommandEvent)
 		if !ok {
@@ -594,7 +605,7 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 		if !ok {
 			return mismatch()
 		}
-		return encodeBCD(b, o.Value, d.size(gv))
+		return encodeBCD(b, o, d.size(gv))
 	case fUint8:
 		o, ok := v.(UnsignedInteger)
 		if !ok {
@@ -607,6 +618,19 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 			return mismatch()
 		}
 		return append(b, byte(o.Flags)), nil
+	case fBufferFill:
+		o, ok := v.(BufferFillStatus)
+		if !ok {
+			return mismatch()
+		}
+		if o.Fill > 0x7F {
+			return b, invalid("buffer fill %d%% does not fit %s", o.Fill, gv)
+		}
+		f := o.Fill
+		if o.Overflow {
+			f |= 0x80
+		}
+		return append(b, f, o.Buffer.Group(), o.Buffer.Variation()), nil
 	case fSecStat:
 		o, ok := v.(SecurityStatistic)
 		if !ok {
@@ -756,26 +780,48 @@ func appendNum(b []byte, v float64, n numKind) []byte {
 	}
 }
 
+// bcdSign is the BCD character this package sends in the most significant
+// position of a negative value. Any of 0xA..0xF means negative there
+// (IEEE 1815-2012 Table 11-2); the standard does not name one to send.
+const bcdSign = 0x0F
+
+// decodeBCD decodes a BCDn value of len(b) octets: two characters to an
+// octet, the least significant first (IEEE 1815-2012 11.3.6.2). A most
+// significant character of 0xA..0xF marks a negative value; anywhere else
+// such a character is illegal (Table 11-2).
 func decodeBCD(b []byte) (Value, error) {
 	var v uint64
-	for _, d := range slices.Backward(b) {
+	neg := false
+	for i, d := range slices.Backward(b) {
 		hi, lo := d>>4, d&0x0F
+		if i == len(b)-1 && hi > 9 {
+			neg, hi = true, 0
+		}
 		if hi > 9 || lo > 9 {
 			return nil, malformed("BCD digit above 9 in % x", b)
 		}
 		v = v*100 + uint64(hi)*10 + uint64(lo)
 	}
-	return BCD{Value: v}, nil
+	return BCD{Value: v, Negative: neg && v != 0}, nil
 }
 
-func encodeBCD(b []byte, v uint64, size int) ([]byte, error) {
+// encodeBCD appends v as a BCD value of size octets. A negative value
+// needs the most significant character for its sign.
+func encodeBCD(b []byte, v BCD, size int) ([]byte, error) {
+	neg := v.Negative && v.Value != 0
+	m := v.Value
 	out := make([]byte, size)
 	for i := range size {
-		out[i] = byte(v%10) | byte(v/10%10)<<4
-		v /= 100
+		out[i] = byte(m%10) | byte(m/10%10)<<4
+		m /= 100
 	}
-	if v != 0 {
-		return b, invalid("BCD value has more than %d digits", 2*size)
+	switch {
+	case m != 0:
+		return b, invalid("BCD value %d has more than %d digits", v.Value, 2*size)
+	case neg && out[size-1]>>4 != 0:
+		return b, invalid("negative BCD value -%d has more than %d digits and a sign", v.Value, 2*size-1)
+	case neg:
+		out[size-1] |= bcdSign << 4
 	}
 	return append(b, out...), nil
 }

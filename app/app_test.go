@@ -219,6 +219,8 @@ func sample(gv GroupVariation, d *desc, i int) Value {
 		return UnsignedInteger{Value: 200}
 	case fDataSetChars:
 		return DataSetCharacteristics{Flags: DataSetReadable | DataSetStatic | DataSetEvents}
+	case fBufferFill:
+		return BufferFillStatus{Fill: uint8(40 + i), Overflow: i%2 == 1, Buffer: G2V1}
 	case fSecStat:
 		return SecurityStatistic{Flags: FlagOnline, Association: 1, Value: 99, Time: ts}
 	case fAttribute:
@@ -531,7 +533,10 @@ func TestEncodeErrors(t *testing.T) {
 		{"attribute too long", Ranged(GV(0, 250), 0, Attribute{Type: AttrVisibleString, Data: make([]byte, 256)}), ErrInvalidValue},
 	}
 	for _, c := range cases {
-		f := &Fragment{Function: FuncResponse, Headers: []Header{c.h}}
+		// The header checks do not depend on the function; a WRITE keeps
+		// the rules for responses alone (TestSpecTable4_8_ResponseHeaders)
+		// from answering first.
+		f := &Fragment{Function: FuncWrite, Headers: []Header{c.h}}
 		if _, err := f.Encode(); !errors.Is(err, c.want) {
 			t.Errorf("%s: err = %v, want %v", c.name, err, c.want)
 		}
@@ -662,6 +667,15 @@ func FuzzDecode(f *testing.F) {
 		// and free format; the corpus in testdata/fuzz/FuzzDecode has more.
 		dscActivateConfigResponse,
 		"C0 81 00 00 5B 01 5B 01 07 00 00 00 00 00 01 01 00",
+		// Negative BCD (11.3.6.1), g81v1 and g82v1, a class object in a
+		// response (refused), a FLT attribute of 3 octets (refused) and a
+		// CROB status with the reserved bit set.
+		"C0 81 00 00 65 01 00 00 01 57 F0 34 F2",
+		"C0 81 00 00 51 01 00 00 01 B2 02 01 64 20 03",
+		"C0 81 80 00 52 01 5B 01 0D 00 03 00 00 00 00 00 00 00 01 00 01 02 06",
+		"C0 81 00 00 3C 02 06",
+		"C0 81 00 00 00 CB 00 00 00 04 03 01 02 03",
+		"C0 81 00 00 0C 01 17 01 03 41 01 64 00 00 00 C8 00 00 00 85",
 	}
 	for _, s := range seeds {
 		f.Add(unhex(f, s))

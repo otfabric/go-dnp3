@@ -9,7 +9,8 @@ import (
 )
 
 // AttrType is the data type code of a device attribute (IEEE 1815-2012
-// Table 11-11).
+// 5.5.4.3, Table 5-16). The codes are those of the object data type codes
+// of Table 11-4.
 type AttrType uint8
 
 // Attribute data types.
@@ -17,10 +18,14 @@ const (
 	AttrVisibleString AttrType = 1
 	AttrUnsignedInt   AttrType = 2
 	AttrSignedInt     AttrType = 3
-	AttrFloat         AttrType = 4
-	AttrOctetString   AttrType = 5
-	AttrBitString     AttrType = 6
-	AttrTime          AttrType = 7
+	// AttrFloat values are 4 or 8 octets; "no other sizes are acceptable"
+	// (IEEE 1815-2012 5.5.4.3 and 11.4).
+	AttrFloat       AttrType = 4
+	AttrOctetString AttrType = 5
+	AttrBitString   AttrType = 6
+	// AttrTime is code 7, DNP3TIME, of Table 11-4 (TIME in Table 5-6):
+	// IEEE 1815-2012 Table 5-16 lists no code 7 for device attributes.
+	AttrTime AttrType = 7
 	// AttrList is the list of attribute variations returned for g0v255;
 	// AttrExtList is the same with a length above 255 (the length octet
 	// holds length-256).
@@ -55,6 +60,11 @@ func (t AttrType) String() string {
 }
 
 // Standard device attribute variations of group 0 (set 0).
+//
+// IEEE 1815-2012 Annex A (A.1.1 to A.1.44) defines 209 to 243, 245 to 250,
+// 252, 254 and 255. The variations 196 to 208 and 244 are not defined in
+// IEEE 1815-2012; there, index 0 variations 1 to 253 are pre-assigned or
+// reserved for assignment by the DNP Users Group (5.5.2).
 const (
 	AttrConfigID                    uint8 = 196
 	AttrConfigVersion               uint8 = 197
@@ -227,7 +237,8 @@ func (a Attribute) Int() (int32, error) {
 	}
 }
 
-// Float returns the value of a floating-point attribute.
+// Float returns the value of a floating-point attribute, of 4 or 8
+// octets.
 func (a Attribute) Float() (float64, error) {
 	if a.Type != AttrFloat {
 		return 0, invalid("attribute is %s, not FLT", a.Type)
@@ -257,8 +268,14 @@ func (a Attribute) List() ([]AttributeListEntry, error) {
 	return out, nil
 }
 
+// floatSize reports whether n octets are a size a floating-point value
+// may have: 4 or 8, "no other sizes are acceptable" (IEEE 1815-2012
+// 5.5.4.3 and 11.4).
+func floatSize(n int) bool { return n == 4 || n == 8 }
+
 // decodeAttribute reads one self-sized attribute from b and returns it
-// with the octets consumed.
+// with the octets consumed. A floating-point attribute of another size
+// than 4 or 8 octets is malformed.
 func decodeAttribute(b []byte) (Attribute, int, error) {
 	if len(b) < 2 {
 		return Attribute{}, 0, truncated("attribute header")
@@ -270,6 +287,9 @@ func decodeAttribute(b []byte) (Attribute, int, error) {
 	if len(b) < 2+n {
 		return Attribute{}, 0, truncated("attribute value of %d octets", n)
 	}
+	if t == AttrFloat && !floatSize(n) {
+		return Attribute{}, 0, malformed("FLT attribute of %d octets", n)
+	}
 	return Attribute{Type: t, Data: clone(b[2 : 2+n])}, 2 + n, nil
 }
 
@@ -280,6 +300,8 @@ func encodeAttribute(b []byte, a Attribute) ([]byte, error) {
 		return b, invalid("extended attribute list of %d octets", n)
 	case a.Type != AttrExtList && n > 255:
 		return b, invalid("attribute of %d octets", n)
+	case a.Type == AttrFloat && !floatSize(n):
+		return b, invalid("FLT attribute of %d octets", n)
 	case a.Type == AttrExtList:
 		n -= 256
 	}

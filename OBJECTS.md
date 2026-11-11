@@ -175,6 +175,8 @@ request, and "other" for commands, procedure objects and the rest.
 | g70v7 | File-control - File Descriptor | other | — |  |
 | g70v8 | File-control - File Specification String | other | — |  |
 | g80v1 | Internal Indications - Packed Format | other | — |  |
+| g81v1 | Device Storage - Buffer Fill Status | other | 3 |  |
+| g82v1 | Device Profile - Functions and Indexes | other | — |  |
 | g83v1 | Data Set - Private Registration Object | other | — |  |
 | g83v2 | Data Set - Private Registration Object Descriptor | other | — |  |
 | g85v1 | Data Set Prototype - With UUID | other | — |  |

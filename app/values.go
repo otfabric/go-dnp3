@@ -28,8 +28,8 @@ type Value interface {
 	isValue()
 }
 
-// Flags is the quality flags octet of a point (IEEE 1815-2012
-// clause 11.9.6.2).
+// Flags is the quality flags octet of a point (IEEE 1815-2012 11.6.1,
+// Table 11-5).
 //
 // The state bits that share the octet with the flags of binary and
 // double-bit points (bit 7, bits 6..7) are not part of Flags: they are the
@@ -57,7 +57,8 @@ const (
 	// FlagChatterFilter: binary and double-bit inputs; the input is
 	// changing too fast and is filtered.
 	FlagChatterFilter Flags = 0x20
-	// FlagRollover: counters; obsolete, sent as zero by current devices.
+	// FlagRollover: counters; obsolete. Outstations shall not set it and
+	// masters shall ignore it (IEEE 1815-2012 Table 11-5).
 	FlagRollover Flags = 0x20
 	// FlagOverRange: analog inputs and outputs; the value exceeds the
 	// range of the variation or of the device.
@@ -65,7 +66,9 @@ const (
 	// FlagDiscontinuity: counters; the value cannot be compared with the
 	// previous one.
 	FlagDiscontinuity Flags = 0x40
-	// FlagReferenceErr: analog inputs; the reference signal is in error.
+	// FlagReferenceErr: analog inputs, analog output status and analog
+	// output events; the value might not have the expected accuracy, for
+	// example because the reference signal is in error.
 	FlagReferenceErr Flags = 0x40
 )
 
@@ -109,10 +112,11 @@ func (d DoubleBit) String() string {
 }
 
 // CommandStatus is the status code of a control (IEEE 1815-2012
-// Table 11-4), returned by the outstation in the echo of a command.
+// Table 11-7), returned by the outstation in the echo of a command.
 type CommandStatus uint8
 
-// Command status codes.
+// Command status codes. IEEE 1815-2012 Table 11-7 defines 0..12, 126 and
+// 127, and reserves 13..125: the codes 13..18 are not defined by it.
 const (
 	StatusSuccess            CommandStatus = 0
 	StatusTimeout            CommandStatus = 1
@@ -218,7 +222,9 @@ func (t TripClose) String() string {
 type Binary struct {
 	Value bool
 	// Flags are not sent in the packed variations (g1v1, g10v1, g12v3,
-	// g80v1) and are zero when decoded from them.
+	// g80v1) and are zero when decoded from them. A master reads a
+	// variation without flags as ONLINE with every exception flag clear
+	// (IEEE 1815-2012 11.6.1.1 NOTE 2).
 	Flags Flags
 	// Time is the time of the event in the variations with time.
 	Time Timestamp
@@ -251,7 +257,10 @@ type CROB struct {
 	Count uint8
 	// OnTime and OffTime are in milliseconds.
 	OnTime, OffTime uint32
-	Status          CommandStatus
+	// Status is a UINT7 on the wire, 0 in a request. Master and outstation
+	// set the reserved bit 7 to 0 (IEEE 1815-2012 A.8.1.2.2); this package
+	// sends it as 0 and does not read it.
+	Status CommandStatus
 }
 
 // Code returns the control code octet.
@@ -321,7 +330,9 @@ type AnalogDeadband struct {
 // AnalogOutput is an analog output block (group 41): a set-point command
 // and its echo.
 type AnalogOutput struct {
-	Value  float64
+	Value float64
+	// Status is the control status octet, 0..255, 0 in a request
+	// (IEEE 1815-2012 A.20.1.2.2).
 	Status CommandStatus
 }
 
@@ -335,7 +346,7 @@ type AnalogCommandEvent struct {
 // IntervalUnit is the unit of the interval of g50v4.
 type IntervalUnit uint8
 
-// Interval units (IEEE 1815-2012 Table 11-23).
+// Interval units of g50v4 (IEEE 1815-2012 A.23.4.2.2).
 const (
 	UnitNone         IntervalUnit = 0
 	UnitMilliseconds IntervalUnit = 1
@@ -383,9 +394,19 @@ type OctetString struct {
 }
 
 // BCD is a binary-coded decimal integer (group 101): 4 digits (v1), 8
-// digits (v2) or 16 digits (v3). Value is the decimal number.
+// digits (v2) or 16 digits (v3). Value is the magnitude of the decimal
+// number and Negative its sign.
+//
+// A negative value carries its sign in the most significant BCD
+// character, so it has one digit fewer: BCDn holds -(10^(n-1)-1) to
+// 10^n-1 (IEEE 1815-2012 11.3.6.1, Table 11-2, and 11.3.6.2). On receipt
+// any of the characters 0xA..0xF in that position marks a negative value;
+// this package sends 0xF, as the standard does not name one. A negative
+// zero is sent, and decoded, as zero.
 type BCD struct {
 	Value uint64
+	// Negative marks a negative number; Value is its magnitude.
+	Negative bool
 }
 
 // UnsignedInteger is an unsigned 8-bit integer (g102v1).
@@ -428,6 +449,20 @@ func (f DataSetFlags) String() string {
 	return strings.Join(parts, "|")
 }
 
+// BufferFillStatus is the device storage buffer fill status (g81v1,
+// IEEE 1815-2012 A.29.1): how full one buffer of the outstation is. The
+// standard does not recommend the object for new implementations
+// (A.29.1.2.3); a master decodes it from outstations that send it.
+type BufferFillStatus struct {
+	// Fill is the percentage of the buffer that is filled, 0..100 (a
+	// UINT7 on the wire).
+	Fill uint8
+	// Overflow reports that the buffer overflowed.
+	Overflow bool
+	// Buffer is the group and variation that identify the buffer.
+	Buffer GroupVariation
+}
+
 // SecurityStatistic is a secure authentication statistic (group 121) or
 // a statistic event (group 122).
 type SecurityStatistic struct {
@@ -442,8 +477,9 @@ type SecurityStatistic struct {
 }
 
 // Raw is a free-format object that this package carries without
-// decoding: the obsolete g70v1, private registration objects (group 83),
-// the data set objects of groups 85..88 but the characteristics (g86v2), the application identifier (g90v1) and
+// decoding: the obsolete g70v1, the device profile (g82v1), private
+// registration objects (group 83), the data set objects of groups 85..88
+// but the characteristics (g86v2), the application identifier (g90v1) and
 // the status of requested operation (g91v1). The data of a g91v1 object
 // are read with [ParseActivateConfigStatus].
 type Raw struct {
@@ -466,5 +502,6 @@ func (OctetString) isValue()            {}
 func (BCD) isValue()                    {}
 func (UnsignedInteger) isValue()        {}
 func (DataSetCharacteristics) isValue() {}
+func (BufferFillStatus) isValue()       {}
 func (SecurityStatistic) isValue()      {}
 func (Raw) isValue()                    {}
