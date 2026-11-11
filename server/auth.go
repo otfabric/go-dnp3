@@ -45,11 +45,15 @@ const DefaultReplyTimeout = 10 * time.Second
 // requests are executed only after the master answered a challenge with
 // the right MAC, or when they carry it themselves in aggressive mode. The
 // outstation takes part in the session key change and keeps the security
-// statistics (g121, g122) per master.
+// statistics (g121, g122) per master. A user number of 0, which IEEE
+// 1815-2012 reserves for an unknown user, is taken as 1, the default user.
 func WithSecureAuthentication(sa SecureAuth) Option {
 	return func(o *options) error {
 		if err := sa.User.Validate(); err != nil {
 			return invalidOption("%v", err)
+		}
+		if sa.User.Number == 0 {
+			sa.User.Number = 1 // 0 is reserved for an unknown user
 		}
 		if sa.Critical == nil {
 			sa.Critical = DefaultCritical

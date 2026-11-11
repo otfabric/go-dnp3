@@ -69,7 +69,9 @@ func AuthData(challenge, criticalFragment []byte) []byte {
 // every connection and at the key change interval. Without one, Key is a
 // pre-shared control direction session key used directly.
 type User struct {
-	// Number is the user number; 1 is the default user.
+	// Number is the user number; 1 is the default user. IEEE 1815-2012
+	// reserves 0 for an unknown user: client.WithSecureAuthentication and
+	// server.WithSecureAuthentication take 0 as 1.
 	Number uint16
 	// UpdateKey is the update key: 16 octets (AES-128 key wrap) or 32
 	// octets (AES-256).

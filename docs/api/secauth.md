@@ -148,7 +148,9 @@ String returns the statistic's name, for example "session key changes".
 
 ```go
 type User struct {
-	// Number is the user number; 1 is the default user.
+	// Number is the user number; 1 is the default user. IEEE 1815-2012
+	// reserves 0 for an unknown user: client.WithSecureAuthentication and
+	// server.WithSecureAuthentication take 0 as 1.
 	Number uint16
 	// UpdateKey is the update key: 16 octets (AES-128 key wrap) or 32
 	// octets (AES-256).
