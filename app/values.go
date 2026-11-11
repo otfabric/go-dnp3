@@ -383,9 +383,19 @@ type OctetString struct {
 }
 
 // BCD is a binary-coded decimal integer (group 101): 4 digits (v1), 8
-// digits (v2) or 16 digits (v3). Value is the decimal number.
+// digits (v2) or 16 digits (v3). Value is the magnitude of the decimal
+// number and Negative its sign.
+//
+// A negative value carries its sign in the most significant BCD
+// character, so it has one digit fewer: BCDn holds -(10^(n-1)-1) to
+// 10^n-1 (IEEE 1815-2012 11.3.6.1, Table 11-2, and 11.3.6.2). On receipt
+// any of the characters 0xA..0xF in that position marks a negative value;
+// this package sends 0xF, as the standard does not name one. A negative
+// zero is sent, and decoded, as zero.
 type BCD struct {
 	Value uint64
+	// Negative marks a negative number; Value is its magnitude.
+	Negative bool
 }
 
 // UnsignedInteger is an unsigned 8-bit integer (g102v1).

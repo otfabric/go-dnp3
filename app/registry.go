@@ -594,7 +594,7 @@ func (d *desc) encodeValue(b []byte, gv GroupVariation, v Value, c *codecCtx) ([
 		if !ok {
 			return mismatch()
 		}
-		return encodeBCD(b, o.Value, d.size(gv))
+		return encodeBCD(b, o, d.size(gv))
 	case fUint8:
 		o, ok := v.(UnsignedInteger)
 		if !ok {
@@ -756,26 +756,48 @@ func appendNum(b []byte, v float64, n numKind) []byte {
 	}
 }
 
+// bcdSign is the BCD character this package sends in the most significant
+// position of a negative value. Any of 0xA..0xF means negative there
+// (IEEE 1815-2012 Table 11-2); the standard does not name one to send.
+const bcdSign = 0x0F
+
+// decodeBCD decodes a BCDn value of len(b) octets: two characters to an
+// octet, the least significant first (IEEE 1815-2012 11.3.6.2). A most
+// significant character of 0xA..0xF marks a negative value; anywhere else
+// such a character is illegal (Table 11-2).
 func decodeBCD(b []byte) (Value, error) {
 	var v uint64
-	for _, d := range slices.Backward(b) {
+	neg := false
+	for i, d := range slices.Backward(b) {
 		hi, lo := d>>4, d&0x0F
+		if i == len(b)-1 && hi > 9 {
+			neg, hi = true, 0
+		}
 		if hi > 9 || lo > 9 {
 			return nil, malformed("BCD digit above 9 in % x", b)
 		}
 		v = v*100 + uint64(hi)*10 + uint64(lo)
 	}
-	return BCD{Value: v}, nil
+	return BCD{Value: v, Negative: neg && v != 0}, nil
 }
 
-func encodeBCD(b []byte, v uint64, size int) ([]byte, error) {
+// encodeBCD appends v as a BCD value of size octets. A negative value
+// needs the most significant character for its sign.
+func encodeBCD(b []byte, v BCD, size int) ([]byte, error) {
+	neg := v.Negative && v.Value != 0
+	m := v.Value
 	out := make([]byte, size)
 	for i := range size {
-		out[i] = byte(v%10) | byte(v/10%10)<<4
-		v /= 100
+		out[i] = byte(m%10) | byte(m/10%10)<<4
+		m /= 100
 	}
-	if v != 0 {
-		return b, invalid("BCD value has more than %d digits", 2*size)
+	switch {
+	case m != 0:
+		return b, invalid("BCD value %d has more than %d digits", v.Value, 2*size)
+	case neg && out[size-1]>>4 != 0:
+		return b, invalid("negative BCD value -%d has more than %d digits and a sign", v.Value, 2*size-1)
+	case neg:
+		out[size-1] |= bcdSign << 4
 	}
 	return append(b, out...), nil
 }
