@@ -108,10 +108,11 @@ vet: ## Run go vet (includes -tags=interop compile of ./interop)
 	@echo "Running go vet"
 	@go vet -tags=$(INTEROP_TAGS) ./...
 
-cross: ## Cross-compile every package without cgo for the supported platforms
-	@for p in linux/amd64 linux/arm64 linux/arm darwin/arm64 windows/amd64; do \
+cross: ## Cross-compile every package, and type-check the tests, without cgo for the supported platforms (32-bit included)
+	@for p in linux/amd64 linux/arm64 linux/arm linux/386 darwin/arm64 windows/amd64; do \
 		echo "Building $$p"; \
 		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} go build ./... || exit 1; \
+		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} go vet -tags=$(INTEROP_TAGS) ./... || exit 1; \
 	done
 
 vuln: ## Run govulncheck
@@ -204,7 +205,7 @@ upstream-watch: ## Compare app/catalog.json with the upstream object definitions
 coverpkg-check: ## Fail when CI's coverpkg (.github/workflows/ci.yml) is not COVER_PKGS
 	@grep -qF -- "$(COVER_PKGS)" .github/workflows/ci.yml || { echo "coverpkg in .github/workflows/ci.yml must be: $(COVER_PKGS)"; exit 1; }
 
-check: generate-check coverpkg-check captures-verify fmt fmt-check lint lint-ci vet vuln test coverage-pkg-check examples docs-check ## Run generate-check + coverpkg-check + captures-verify + format + lint + vet + vuln + test + per-package coverage + docs-check
+check: generate-check coverpkg-check captures-verify fmt fmt-check lint lint-ci vet cross vuln test coverage-pkg-check examples docs-check ## Run generate-check + coverpkg-check + captures-verify + format + lint + vet + cross + vuln + test + per-package coverage + docs-check
 
 # The documents against the code (DOC-008): docsync, as docs.yml runs it.
 docs-check: ## Check that the documents agree with the code (docsync)

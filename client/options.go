@@ -584,7 +584,7 @@ const MaxKeyChangeCount = 1 << 31
 func WithKeyChangeCount(n uint32) Option {
 	return func(o *options) error {
 		if n < 1 || n > MaxKeyChangeCount {
-			return invalidOption("key change count %d: 1 to %d", n, MaxKeyChangeCount)
+			return invalidOption("key change count %d: 1 to %d", n, uint32(MaxKeyChangeCount))
 		}
 		o.keyChangeCount = n
 		return nil
