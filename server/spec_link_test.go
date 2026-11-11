@@ -347,6 +347,48 @@ func TestSpec13_2_3_3_HalfOpenConnectionReplaced(t *testing.T) {
 	}
 }
 
+// TestSpec13_2_3_3_RequestDuringProbe: a request the master sends on its
+// new connection while the current one is probed (clause 13.2.3.3 NOTE 2,
+// p. 382) is held, and answered once the probe goes unanswered and the
+// new connection is taken (Table 13-2 row 4, p. 383). Dropped, it would
+// cost the master a response timeout, and a session key change at
+// connect would fail. On a rejected connection it gets no answer.
+func TestSpec13_2_3_3_RequestDuringProbe(t *testing.T) {
+	t.Run("taken", func(t *testing.T) {
+		addr := serveTCP(t, newServer(t, WithMasters(1), WithLink(Link{Timeout: 300 * time.Millisecond})))
+		old := dialRaw(t, "tcp", addr)
+		old.request(10, readIIN(1))
+		if f := old.response(10); f.Control.Seq != 1 {
+			t.Fatalf("response %s", f)
+		}
+		m := dialLinkMaster(t, addr)
+		m.send(readIIN(2)) // while the old connection is probed
+		if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 2 {
+			t.Fatalf("response %s", f)
+		}
+		if fs := old.closed(); len(fs) != 1 || fs[0].Function != link.PrimaryRequestLinkStatus {
+			t.Fatalf("the old connection got %v, want one keep-alive", fs)
+		}
+	})
+	t.Run("rejected", func(t *testing.T) {
+		addr := serveTCP(t, newServer(t, WithMasters(1)))
+		m := dialLinkMaster(t, addr)
+		m.send(readIIN(1))
+		m.recvFunc(app.FuncResponse)
+		p := dialRaw(t, "tcp", addr)
+		p.write(p.requestFrames(10, readIIN(2))...)
+		for _, f := range p.closed() {
+			if f.Function != link.SecondaryLinkStatus {
+				t.Fatalf("the rejected connection got %s", f.String())
+			}
+		}
+		m.send(readIIN(3))
+		if f := m.recvFunc(app.FuncResponse); f.Control.Seq != 3 {
+			t.Fatalf("response %s", f)
+		}
+	})
+}
+
 // TestSpec13_2_3_3_1_IdleConnection checks clause 13.2.3.3.1 (p. 382)
 // and Table 13-2 row 4 (p. 383) on the outstation: a connection on which
 // no master spoke is closed after the keep-alive interval and the link

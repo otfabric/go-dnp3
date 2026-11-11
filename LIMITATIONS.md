@@ -97,7 +97,8 @@ defines no coding for it.
   while its old connection stands is rejected when the old connection
   answers a link status request (13.2.3.3); a broken old connection is
   replaced. The probe takes up to the link timeout (`Link.Timeout`, 2 s by
-  default, with `Link.Retries`), during which the new connection waits.
+  default, with `Link.Retries`), during which the new connection waits:
+  its requests are held, and answered once it is taken.
 - **The master drops broadcast frames it receives**: clauses 4 to 6 define
   broadcast only for requests to outstations.
 - **The link layer's primary role is minimal**: it resets the link with

@@ -35,8 +35,12 @@ type association struct {
 	once   sync.Once
 
 	// Owned by run.
-	sess       *channel.Session
-	probing    bool // a new connection waits for the probe of the current one
+	sess    *channel.Session
+	probing bool // a new connection waits for the probe of the current one
+	// waiting is that new connection's session, and held its fragments
+	// received during the probe, handled in order once it is taken.
+	waiting    *channel.Session
+	held       []inbound
 	restartIIN bool
 	broadcast  bool
 	lastReq    *lastRequest
@@ -218,6 +222,10 @@ func (a *association) take(sess *channel.Session) {
 		return
 	}
 	a.probing = true
+	if a.waiting != sess {
+		a.held = nil
+	}
+	a.waiting = sess
 	go func() {
 		err := old.Probe()
 		a.post(func() {
@@ -233,8 +241,31 @@ func (a *association) take(sess *channel.Session) {
 				old.Channel().Close(fmt.Errorf("%w: replaced by a new connection of the master: %w", dnp3.ErrConnectionLost, err))
 				a.use(sess)
 			}
+			a.release(sess)
 		})
 	}()
+}
+
+// maxHeld bounds the fragments held for a connection during a probe: a
+// master sends one request at a time, with its confirmations.
+const maxHeld = 8
+
+// release ends the hold on the fragments sess sent during a probe, unless
+// a new probe for sess has started: taken, sess has them handled in the
+// order they arrived (their arrival time is kept); rejected, they are
+// dropped.
+func (a *association) release(sess *channel.Session) {
+	if a.probing && a.waiting == sess {
+		return
+	}
+	held := a.held
+	a.held, a.waiting = nil, nil
+	if a.sess != sess {
+		return
+	}
+	for _, in := range held {
+		a.handle(in)
+	}
 }
 
 // reject refuses sess while the master's current connection stands.
@@ -303,7 +334,9 @@ func (a *association) detach() {
 // clause 13.2.3.2.4, Table 13-1), and they must neither be lost nor take
 // the association away from the TCP connection. A unicast fragment on a
 // session that is not the current one is dropped, unless the association
-// has no live connection: then the session becomes the current one.
+// has no live connection: then the session becomes the current one. A
+// fragment of the new connection that waits for the probe of the current
+// one is held until the probe has decided (see take).
 func (a *association) receive(sess *channel.Session, frag []byte, dest link.Address) {
 	in := inbound{sess: sess, frag: frag, dest: dest, at: time.Now()}
 	a.post(func() {
@@ -312,6 +345,12 @@ func (a *association) receive(sess *channel.Session, frag []byte, dest link.Addr
 			a.handle(in)
 		case dest.Broadcast():
 			a.handle(in)
+		case a.probing && in.sess == a.waiting:
+			if len(a.held) < maxHeld {
+				a.held = append(a.held, in)
+			} else {
+				a.log.Debug("fragment of a connection that waits for a probe: dropped, too many held")
+			}
 		case (a.sess == nil || closing(a.sess.Channel())) && !a.probing:
 			a.use(in.sess)
 			a.handle(in)
