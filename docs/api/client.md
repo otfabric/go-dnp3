@@ -19,10 +19,22 @@ Errors match the sentinels of the root package with errors.Is; see ERRORS.md. AP
 ## Constants
 
 ```go
+const DefaultKeyChangeCount = 1000
+```
+
+DefaultKeyChangeCount is the default session key change count: the number of authentication messages, sent or received, after which the session keys are changed (IEEE 1815-2012 clause 7.6.1.4.4).
+
+```go
 const DefaultPort = 20000
 ```
 
 DefaultPort is the registered DNP3 port, also used for TLS.
+
+```go
+const MaxKeyChangeCount = 1 << 31
+```
+
+MaxKeyChangeCount is the largest session key change count: half the range of the key change sequence number (IEEE 1815-2012 clause 7.6.1.4.4).
 
 ## Types
 
@@ -38,12 +50,8 @@ type Client struct {
 	// started is closed when the startup sequence of the current channel
 	// has ended: automatic tasks wait for it.
 
-	// sessionKey is the control direction session key negotiated on the
-	// current channel, nil before the first session key change.
-
-	// lastChallenge is the last challenge (g120v1 fragment) received on
-	// the current channel and csq the challenge sequence number aggressive
-	// mode requests continue from.
+	// auth is the secure authentication state of the current channel and
+	// counters the security statistics.
 
 	// rekey asks the key change loop for a key change now.
 
@@ -287,6 +295,14 @@ func (c *Client) Request(ctx context.Context, fc app.FunctionCode, headers ...ap
 ```
 
 Request sends any request and returns the response. It is repeated on failure (with WithRetry) only for READ.
+
+#### func (Client) SecurityStatistics
+
+```go
+func (c *Client) SecurityStatistics() []uint32
+```
+
+SecurityStatistics returns the master's security statistics (IEEE 1815-2012 Table 7-6, clause 7.5.2.2), indexed by secauth.Statistic: for example the session key changes, the challenges answered (critical messages sent) and the authentication errors received. They count from New and are all zero without WithSecureAuthentication. The outstation's statistics are read from it as group 121.
 
 #### func (Client) State
 
@@ -534,7 +550,7 @@ WithAddresses sets the link addresses of the master (local) and of the outstatio
 func WithAggressiveMode(fcs ...app.FunctionCode) Option
 ```
 
-WithAggressiveMode sends the requests with the function codes fcs (secauth.DefaultCritical when none are given) in Secure Authentication aggressive mode (IEEE 1815-2012 clause 7.5.2.2.4): with a MAC in the request itself, so that the outstation executes it without a challenge. The MAC covers the last challenge received, so the first critical request of a connection is still challenged. Use it only with an outstation that supports aggressive mode: one that does not refuses the request with an authentication error. New refuses it without WithSecureAuthentication.
+WithAggressiveMode sends the requests with the function codes fcs (secauth.DefaultCritical when none are given) in Secure Authentication aggressive mode (IEEE 1815-2012 clause 7.5.3.3, A.45.3 and A.45.9): with a MAC in the request itself, so that the outstation executes it without a challenge. The MAC covers the last challenge received and the whole request up to the MAC value (Table A-9). Aggressive mode is used only once a challenge was answered successfully since the last session key change, so the first critical request after each key change is still challenged; after a refused aggressive mode request the next one is sent normally, and an outstation that answers error 4 (aggressive mode not supported) is not sent aggressive mode again on that connection. New refuses it without WithSecureAuthentication.
 
 #### func WithAutoClearRestart
 
@@ -566,7 +582,7 @@ WithAutoIntegrity controls whether the client runs an integrity poll when the ou
 func WithChallengeMACs(algs ...app.MACAlgorithm) Option
 ```
 
-WithChallengeMACs limits the MAC algorithms an outstation's challenge may ask for. The challenge (g120v1, IEEE 1815-2012 clause 7) names the algorithm of the reply and of aggressive mode requests; a challenge asking for another one fails the request with dnp3.ErrAuthentication. By default every algorithm package secauth computes is accepted except the obsolete HMAC-SHA-1 truncated to 4 octets. The algorithm of secauth.User is the one the session key change and the outstation's key status use; it need not be in the list.
+WithChallengeMACs limits the MAC algorithms an outstation's challenge may ask for. The challenge (g120v1, IEEE 1815-2012 A.45.1) names the algorithm of the reply and of aggressive mode requests; a challenge asking for another one fails the request with dnp3.ErrAuthentication. By default every algorithm package secauth computes is accepted except the obsolete HMAC-SHA-1 truncated to 4 octets and, over TCP/IP or UDP/IP (the built-in dialer, or a stream whose remote address is a TCP or UDP address), the truncations to 8 octets, which clauses 7.6.1.1.1 and 7.6.1.1.2 allow on serial links only; this option can allow them. The algorithm of secauth.User is the one the session key change and the outstation's key status use; it need not be in the list.
 
 #### func WithDialer
 
@@ -584,13 +600,21 @@ func WithHandler(h Handler) Option
 
 WithHandler sets the handler that receives the measurements of every response and unsolicited response.
 
+#### func WithKeyChangeCount
+
+```go
+func WithKeyChangeCount(n uint32) Option
+```
+
+WithKeyChangeCount sets the session key change count (IEEE 1815-2012 clause 7.6.1.4.4): with an update key, the session keys are also changed once n authentication messages were sent or received since the last change (challenges and errors received, replies and aggressive mode requests sent). The default is DefaultKeyChangeCount (1000); n ranges from 1 to MaxKeyChangeCount.
+
 #### func WithKeyChangeInterval
 
 ```go
 func WithKeyChangeInterval(d time.Duration) Option
 ```
 
-WithKeyChangeInterval sets how often the session keys are changed while connected, with an update key. The default is 15 minutes.
+WithKeyChangeInterval sets how often the session keys are changed while connected, with an update key (IEEE 1815-2012 clause 7.6.1.4.3). The default is 15 minutes. 0 disables the interval: the keys are then changed only after the key change count (WithKeyChangeCount), as the clause allows for devices that communicate infrequently. A negative interval is refused.
 
 #### func WithLink
 

@@ -70,6 +70,7 @@ The master for one outstation.
 | `(*Client).Connect(ctx)` | Open the channel and run the startup sequence; when the sequence fails, the channel is closed and the client is disconnected |
 | `(*Client).Close()` | Close, stop reconnecting and the tasks; waits for the client's goroutines |
 | `(*Client).State()`, `Addr()`, `Outstation()` | Accessors |
+| `(*Client).SecurityStatistics()` | The master's security statistics, indexed by `secauth.Statistic` (session key changes, challenges answered, errors received, ...); all zero without secure authentication |
 
 ### Options
 
@@ -97,12 +98,15 @@ The master for one outstation.
 | `WithUnsolicitedConfirm(bool)` | on | Confirm unsolicited responses that ask for it. Off is for tests and diagnostics only: the outstation repeats them; a repeat reaches the `Handler` once |
 | `WithPoll(Poll)` | none | A periodic READ (`Interval`, `Headers`); repeatable |
 | `WithQueueLimit(n)` | 64 | Requests that may wait for their turn |
-| `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key (on connect, at the interval, and again soon after an authentication failure, with a backoff from 1 s while there are no keys), challenge replies |
-| `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed |
-| `WithChallengeMACs(algs...)` | all but HMAC-SHA-1/4 | The MAC algorithms an outstation's challenge may ask for; the reply and the aggressive mode requests use the challenge's algorithm |
-| `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, after the first challenge; `New` refuses it without `WithSecureAuthentication` |
+| `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key (on connect, at the interval, after the key change count, after an outstation restart, and again soon after an authentication failure, at most 3 times until a change succeeds; while there are no keys a backoff from 1 s, at most 3 retries, then the interval), challenge replies, the key status authenticated with the last monitoring key |
+| `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed; 0 turns the interval off, leaving the count |
+| `WithKeyChangeCount(n)` | 1000 (`DefaultKeyChangeCount`) | The session keys are also changed after n authentication messages sent or received; 1..`MaxKeyChangeCount` (2^31) |
+| `WithChallengeMACs(algs...)` | all but HMAC-SHA-1/4, and over TCP/UDP the 8-octet truncations | The MAC algorithms an outstation's challenge may ask for; the reply and the aggressive mode requests use the challenge's algorithm |
+| `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, once a challenge was answered since the last key change; a refused request makes the next one challenged, error 4 turns it off for the connection; `New` refuses it without `WithSecureAuthentication` |
 
-Constant: `DefaultPort` (20000), the port `Dial` uses when the address has none.
+Constants: `DefaultPort` (20000), the port `Dial` uses when the address has none;
+`DefaultKeyChangeCount` (1000) and `MaxKeyChangeCount` (2^31), the default and
+the largest session key change count.
 
 ### Requests
 
@@ -197,10 +201,11 @@ The outstation.
 | `WithAttributes(map[uint8]app.Attribute)` | none | Device attributes of set 0 |
 | `WithAttributeSet(set, attrs, writable...)` | none | Device attributes of another set; the writable variations take a value of the same type |
 | `WithFileServer(FileServer)` | none | File transfer |
-| `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 10 s), `StatisticsClass` (default 1), `StatisticsThreshold` (default 10) |
+| `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`; always completed with `secauth.MandatoryCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 2 s), `StatisticsClass` (default 1), `StatisticsThreshold` (all statistics; unset: the defaults of Table 7-6), `Thresholds` (per statistic, 1..65 535), `NoAggressiveMode`, `ExpectedKeyChangeInterval` (default 30 min, negative: off), `ExpectedKeyChangeCount` (default 2000), `MaxKeyStatusRequests` (default 5, 2..255) |
 
 Constants: `DefaultPort` (20000), `DefaultTLSPort` (19999), `DefaultEventLimit` (100),
-`DefaultReplyTimeout`, `MaxScheduledFreezes` (16: the FREEZE_AT_TIME
+`DefaultReplyTimeout` (2 s), `DefaultExpectedKeyChangeInterval` (30 min),
+`DefaultExpectedKeyChangeCount` (2000), `DefaultMaxKeyStatusRequests` (5), `MaxScheduledFreezes` (16: the FREEZE_AT_TIME
 requests the server keeps waiting at once; a periodic one keeps its place
 until `Close`); the variable `DefaultCritical`. `Class` is an event class
 (1..3) as `PointConfig`, `Unsolicited` and `SecureAuth` take it.
@@ -283,7 +288,9 @@ directories.
 `KeyWrap(kek, plaintext)`, `KeyUnwrap(kek, wrapped)` (RFC 3394, `ErrKeyWrap`),
 `KeyChangeData(control, monitoring, keyStatus)`, `ParseKeyChangeData(plain, keyStatus...)`,
 `User{Number, UpdateKey, Key, MAC}` (`Algorithm`, `KeyWrapAlgorithm`, `SessionKeyLen`, `Validate`).
-`Statistic` (`StatUnexpectedMessages` ... `StatRekeysDueToRestarts`, `NumStatistics`, `String`): the
-security statistics as g121 indexes. `DefaultCritical`: the function codes challenged by default
-and sent in aggressive mode. `AggressiveOverhead`: what aggressive mode adds to a request.
+`Statistic` (`StatUnexpectedMessages` ... `StatRekeysDueToRestarts`, `NumStatistics`, `String`,
+`DefaultThreshold`): the security statistics as g121 indexes, with the default event thresholds
+of Table 7-6. `DefaultCritical`: the function codes challenged by default and sent in aggressive
+mode. `MandatoryCritical`: the codes Table 7-7 marks MANDATORY, which package server always
+challenges. `AggressiveOverhead`: what aggressive mode adds to a request.
 

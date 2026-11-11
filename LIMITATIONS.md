@@ -28,24 +28,32 @@ comparison with other stacks are in
   user management (g120v8, g120v10..v15, certificates) and AES-GMAC are not
   implemented.
 - Aggressive mode is verified between go-dnp3's ends only: no reference
-  stack in the interop suite has it.
+  stack in the interop suite has it. Its MAC follows Table A-9 since this
+  release; it does not interoperate with go-dnp3 releases before it.
 - The master does not challenge critical responses from an outstation.
-- **Session key lifetime is a time, not a count.** The master changes the
-  session keys at the key change interval (`client.WithKeyChangeInterval`)
-  and after a refused authentication; it does not count the messages sent
-  with them. The outstation keeps session keys until the connection ends
-  or the master changes them, answers every session key status request,
-  and does not invalidate keys after repeated authentication failures.
-  The statistics of those procedures (rekeys due to authentication
-  failure, rekeys due to restarts), of authorization (user roles) and of
-  critical messages sent by the outstation stay 0. An outstation that
-  expires keys by a message count refuses one critical request of a
-  go-dnp3 master each time; the master changes the keys and the next one
-  is accepted.
+- Secure Authentication is off by default (IEEE 1815-2012 clause 7.6.1.4.8
+  asks for on): a library cannot enable it without keys. On the outstation
+  it is set per `Server` and applies to every master of that server; each
+  master has its own association, with its own session keys, sequence
+  numbers and statistics. One user per association.
+- The outstation does not report to other associations that the maximum
+  session key status count was exceeded (clause 7.6.1.4.6, error 12); it
+  logs it. It does not report g0v209/g0v210 by itself; set them with
+  `server.WithAttributes`.
+- `client.Broadcast` does not use aggressive mode: with secure
+  authentication the outstation discards a critical broadcast from a
+  go-dnp3 master.
+- A master with secure authentication and an update key fails `Connect`
+  when the outstation does not take part in the session key change
+  (clause 7.3.6 suggests carrying on with non-critical requests).
 - Without an update key, `secauth.User.Key` is used as the session key with
   no session key change. This is outside SAv5, works only between go-dnp3
   ends or a peer configured the same way, and is meant for testing (see
-  [SECURITY.md](SECURITY.md)).
+  [SECURITY.md](SECURITY.md)). Those keys never expire and are not
+  invalidated after authentication failures.
+- The statistics of authorization (user roles), of update key changes and
+  of critical messages sent by the outstation stay 0: those procedures are
+  not implemented.
 
 ## Objects without procedures
 

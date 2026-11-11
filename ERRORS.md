@@ -27,9 +27,10 @@ How failures are reported, and how to tell them apart.
 | A response with NO_FUNC_CODE_SUPPORT, OBJECT_UNKNOWN, PARAMETER_ERROR or ALREADY_EXECUTING | `*dnp3.IINError` | `errors.As` |
 | A control echoed with a status other than SUCCESS | `*dnp3.CommandError` | `errors.As` |
 | A file operation refused | `*dnp3.FileError` | `errors.As` |
-| An authentication error from the peer | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
-| A challenge without secure authentication configured, for another MAC algorithm, or before the session keys were changed | wraps `dnp3.ErrAuthentication` (with an update key, the client then changes the keys at once) | `errors.Is` |
+| An authentication error from the peer | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication`; also from a no-ack request whose challenge reply was refused | `errors.As`, `errors.Is` |
+| A challenge without secure authentication configured, for another MAC algorithm (an 8-octet MAC over TCP/UDP unless `WithChallengeMACs` allows it), or before the session keys were changed | wraps `dnp3.ErrAuthentication` (with an update key, the client then changes the keys at once) | `errors.Is` |
 | An aggressive mode request, or a challenge reply that came too late, refused | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
+| A session key change whose key status is not authentic (wrong MAC with the last monitoring key), names another user or key wrap algorithm, or whose confirmation is not OK | wraps `dnp3.ErrAuthentication` | `errors.Is` |
 | A response that does not fit the request (a control echo that differs, a missing or unexpected object, a wrong file block, an `ActivateConfig` response without a valid g91v1 status) | wraps `dnp3.ErrProtocol`; a fragment with an unexpected sequence number is ignored, so the request times out | `errors.Is` |
 | Headers of a request that do not encode | the `app` codec error (for example `app.ErrInvalidValue`) | `errors.Is` |
 | An option or argument that cannot be used | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
@@ -154,6 +155,11 @@ fragment. Whichever ends first decides the error: the context's own error,
 or one wrapping `ErrTimeout`. A canceled request does not cancel what the
 outstation already received; a control that timed out may have been
 executed.
+
+With secure authentication, an outstation stops sending error messages past
+Max Error Messages Sent (3 by default) until the next session key change: a
+master with a wrong key then gets `dnp3.ErrTimeout` instead of
+`*dnp3.AuthError`.
 
 ## Retries
 

@@ -21,6 +21,16 @@ API.md lists the whole API; INTEROPERABILITY.md what is implemented, clause by c
 ## Constants
 
 ```go
+const (
+	DefaultExpectedKeyChangeInterval = 30 * time.Minute
+	DefaultExpectedKeyChangeCount    = 2000
+	DefaultMaxKeyStatusRequests      = 5
+)
+```
+
+The defaults of the expected session key change (IEEE 1815-2012 clause 7.6.1.4.5, which recommends twice the master's 15 minutes and 1000 messages) and of the maximum session key status count (7.6.1.4.6).
+
+```go
 const DefaultEventLimit = 100
 ```
 
@@ -33,10 +43,10 @@ const DefaultPort = 20000
 DefaultPort is the registered DNP3 port.
 
 ```go
-const DefaultReplyTimeout = 10 * time.Second
+const DefaultReplyTimeout = 2 * time.Second
 ```
 
-DefaultReplyTimeout is how long a challenge waits for its reply when SecureAuth.ReplyTimeout is zero.
+DefaultReplyTimeout is how long a challenge waits for its reply when SecureAuth.ReplyTimeout is zero: 2 seconds (IEEE 1815-2012 clause 7.6.1.4.1).
 
 ```go
 const MaxScheduledFreezes = 16
@@ -742,7 +752,7 @@ WithMetrics sets the metrics callbacks. A value that also implements dnp3.Server
 #### func WithSecureAuthentication
 
 ```go
-func WithSecureAuthentication(sa SecureAuth) Option
+func WithSecureAuthentication(cfg SecureAuth) Option
 ```
 
 WithSecureAuthentication enables Secure Authentication: critical requests are executed only after the master answered a challenge with the right MAC, or when they carry it themselves in aggressive mode. The outstation takes part in the session key change and keeps the security statistics (g121, g122) per master. A user number of 0, which IEEE 1815-2012 reserves for an unknown user, is taken as 1, the default user.
@@ -913,22 +923,60 @@ type SecureAuth struct {
 	// User is the user and its key.
 	User secauth.User
 	// Critical are the function codes the outstation challenges. Nil
-	// selects DefaultCritical.
+	// selects DefaultCritical. The codes Table 7-7 marks MANDATORY
+	// (secauth.MandatoryCritical) are challenged whatever the list says
+	// (clause 7.5.2.3.2 a): a list without them is completed with them.
 	Critical []app.FunctionCode
-	// ReplyTimeout is how long a challenge waits for the master's reply;
-	// a later reply counts as a reply timeout and is refused. Zero
-	// selects DefaultReplyTimeout.
+	// ReplyTimeout is how long a challenge waits for the master's reply
+	// (clause 7.6.1.4.1). When it expires, the challenged request is
+	// discarded and counted as a reply timeout; past Max Reply Timeouts
+	// the session keys become invalid (COMM_FAIL, Table 7-8). Zero selects
+	// DefaultReplyTimeout.
 	ReplyTimeout time.Duration
 	// StatisticsClass is the event class of security statistic events
-	// (g122); zero selects class 1. StatisticsThreshold is the number of
-	// increments of a statistic between two of its events; zero selects
-	// 10.
+	// (g122); zero selects class 1. StatisticsThreshold, when set (at most
+	// 65 535), is the event threshold of every statistic Thresholds does
+	// not name: the number of increments between two of its events.
 	StatisticsClass     Class
 	StatisticsThreshold uint32
+	// Thresholds sets the event threshold (1..65 535) of single statistics
+	// (clause 7.6.1.4.2). A statistic neither names nor StatisticsThreshold
+	// covers has the default of IEEE 1815-2012 Table 7-6
+	// (secauth.Statistic.DefaultThreshold). The thresholds of
+	// authentication failures, reply timeouts, rekeys due to authentication
+	// failure and error messages sent are also the steps of the maxima the
+	// state machine acts on (Table 7-15): for example, error messages stop
+	// once Error Messages Sent exceeds Max Error Messages Sent, until the
+	// next valid session key change.
+	Thresholds map[secauth.Statistic]uint16
+	// NoAggressiveMode refuses aggressive mode requests (clause 7.6.1.4.7):
+	// they are discarded and, within Max Error Messages Sent, answered with
+	// error 4, aggressive mode not supported.
+	NoAggressiveMode bool
+	// ExpectedKeyChangeInterval is how long session keys stay valid
+	// without a session key change (clause 7.6.1.4.5): once it has passed,
+	// the key status is NOT_INIT until the master changes them. Zero
+	// selects DefaultExpectedKeyChangeInterval; a negative value disables
+	// the interval, leaving ExpectedKeyChangeCount. It does not apply to a
+	// pre-shared session key.
+	ExpectedKeyChangeInterval time.Duration
+	// ExpectedKeyChangeCount is how many authentication messages
+	// (challenges, replies and aggressive mode requests) the session keys
+	// serve before they become invalid without a session key change
+	// (clause 7.6.1.4.5). Zero selects DefaultExpectedKeyChangeCount.
+	ExpectedKeyChangeCount uint32
+	// MaxKeyStatusRequests is how many session key status requests the
+	// outstation takes within the expected key change interval before it
+	// reports, as an error in its log, that the limit was exceeded
+	// (clause 7.6.1.4.6). The requests are still answered. 2..255; zero
+	// selects DefaultMaxKeyStatusRequests.
+	MaxKeyStatusRequests int
 }
 ```
 
 SecureAuth configures DNP3 Secure Authentication version 5 (see package secauth): with an update key, the master negotiates the session keys with the session key change; without, a pre-shared session key is used.
+
+The outstation is the challenger of IEEE 1815-2012 Table 7-8, for one user per master (association).
 
 ### type Server
 

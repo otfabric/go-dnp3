@@ -178,19 +178,40 @@ a pre-shared session key is used directly (outside the standard, see
 
 | Item | Support |
 |------|---------|
-| Challenge of critical requests (g120v1), reply (g120v2) | ✅ both roles: 32 octets of challenge data; the reply and the response keep the sequence number of the critical request |
-| Critical function codes | `secauth.DefaultCritical` (`server.DefaultCritical` is the same slice), configurable; also the default set of `client.WithAggressiveMode` |
-| MAC algorithms | HMAC-SHA-256 truncated to 8 and 16, HMAC-SHA-1 truncated to 4, 8 and 10. The outstation challenges with the algorithm of its `secauth.User`; the master answers with the algorithm the challenge names and uses it for aggressive mode, among those `client.WithChallengeMACs` allows (by default all but the obsolete HMAC-SHA-1/4) |
-| Authentication error (g120v7) | ✅ sent on a wrong MAC, reported as `*dnp3.AuthError` |
-| Session key status request and status (g120v4, v5) | ✅ both roles: fresh challenge data per status, MAC over the last key change with the monitoring key |
-| Session key change (g120v6), AES-128 and AES-256 key wrap (RFC 3394) | ✅ both roles: at every connection and at the key change interval (`client.WithKeyChangeInterval`, default 15 minutes); keys invalid after the connection ends |
+| Challenge of critical requests (g120v1), reply (g120v2) | ✅ both roles: 32 octets of challenge data, user number 0; the reply and the response keep the sequence number of the critical request; the outstation discards other requests while a challenge waits (Table 7-8); the master answers a challenge of a no-ack request and of a CONFIRM |
+| Critical function codes | `secauth.DefaultCritical` (`server.DefaultCritical` is the same slice), configurable, always including the MANDATORY codes of Table 7-7 (`secauth.MandatoryCritical`); also the default set of `client.WithAggressiveMode` |
+| MAC algorithms | HMAC-SHA-256 truncated to 8 and 16, HMAC-SHA-1 truncated to 4, 8 and 10. The outstation challenges with the algorithm of its `secauth.User`; the master answers with the algorithm the challenge names and uses it for aggressive mode, among those `client.WithChallengeMACs` allows (by default all but the obsolete HMAC-SHA-1/4, and over TCP/UDP not the 8-octet truncations, clause 7.6.1.1) |
+| Authentication error (g120v7) | ✅ sent on a wrong MAC, up to Max Error Messages Sent until the next key change (clause 7.5.2.4), reported as `*dnp3.AuthError` |
+| Session key status request and status (g120v4, v5) | ✅ both roles: fresh challenge data per status, MAC over the last key change with the last monitoring key, also for COMM_FAIL after a reconnect; the master checks it; unknown user answered AUTH_FAIL |
+| Session key change (g120v6), AES-128 and AES-256 key wrap (RFC 3394) | ✅ both roles: at every connection, at the key change interval (`client.WithKeyChangeInterval`, default 15 minutes, can be off) and after the key change count (`client.WithKeyChangeCount`, default 1000), after an outstation restart and after an authentication error (each at most 3 times in a row); the outstation invalidates keys after the connection ends, past Max Reply Timeouts or Max Authentication Failures, and after the expected interval (30 minutes) or count (2000) |
 | Key status message in the key change data | the master sends the g120v5 object without its MAC value, the form DSC go-dnp3 requires; the outstation accepts it with or without, as implementations differ |
-| Aggressive mode (g120v3 + g120v9) | ✅ both roles: the master (`client.WithAggressiveMode`) puts a MAC over the last challenge and the request into the request; the outstation executes it without a challenge when the CSQ follows the last one. Verified between go-dnp3's ends only: no reference in dnp3-interop implements it |
-| Reply timeout | ✅ `SecureAuth.ReplyTimeout`, default 10 s: a later reply is refused and counted |
-| Security statistics (g121, g122) | ✅ outstation: the 18 statistics of clause 7.6 per association (the six of procedures go-dnp3 does not implement stay 0: authorization failures, rekeys due to authentication failure, critical messages sent, update key changes and their failures, rekeys due to restarts), read as g121v1, reported as g122v2 events every `StatisticsThreshold` increments in `StatisticsClass`; master: read like any object |
+| Aggressive mode (g120v3 + g120v9) | ✅ both roles: the master (`client.WithAggressiveMode`) puts a MAC over the last challenge and the request up to the MAC value (Table A-9) into the request, once a challenge was answered since the key change; the outstation executes it without a challenge when the CSQ follows the last one, and refuses it with error 4 when `SecureAuth.NoAggressiveMode` is set. Verified between go-dnp3's ends only: no reference in dnp3-interop implements it |
+| Reply timeout | ✅ `SecureAuth.ReplyTimeout`, default 2 s: the challenged request is then discarded and counted |
+| Security statistics (g121, g122) | ✅ outstation: the 18 statistics of clause 7.6 per association, Association ID 0, read as g121v1, reported as g122v2 events in `StatisticsClass` at the thresholds of Table 7-6 (`SecureAuth.Thresholds`, or `StatisticsThreshold` for all); the statistics of procedures go-dnp3 does not implement stay 0 (authorization failures, update key changes and their failures, critical messages sent by the outstation); master: `Client.SecurityStatistics`, and read like any object from the outstation |
 | Update key change (g120v11..v15), user status change (g120v10), certificates (g120v8) | — objects only, procedures not implemented (see [the gaps](#feature-completeness-and-the-remaining-gaps)) |
 | AES-GMAC | — (see [the gaps](#feature-completeness-and-the-remaining-gaps)) |
 | Challenges of critical responses (master challenging the outstation) | — |
+
+### Secure Authentication device profile
+
+- **Session key generation**: the master draws session keys from the
+  operating system's cryptographic random number generator (Go
+  `crypto/rand`), as long as the update key (16 or 32 octets).
+- **Challenge data**: 32 octets from the same generator. It is a
+  cryptographically secure generator, not the FIPS 186-2 algorithm
+  A.45.1.2.2 names.
+- **Critical function codes**: `secauth.DefaultCritical`, always including
+  the MANDATORY codes of Table 7-7.
+- **Users**: one user per association (`secauth.User`); user number 1
+  unless configured.
+- **Defaults** (clause 7.6): reply timeout 2 s, key change interval 15
+  min, key change count 1000, expected key change interval 30 min and
+  count 2000, maximum session key status count 5, statistic thresholds as
+  Table 7-6.
+- **MAC algorithms**: HMAC-SHA-256 and HMAC-SHA-1; 8-octet truncations on
+  serial links only by default for the master.
+- **Key wrap**: AES-128 and AES-256 (RFC 3394); no AES-GMAC, no update key
+  change.
 
 ## Deviations and choices
 
