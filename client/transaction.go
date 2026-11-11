@@ -193,6 +193,16 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 			if first && challenged {
 				c.challengeAccepted()
 			}
+			if f.Control.FIN {
+				// What follows the last fragment, such as a challenge of
+				// its CONFIRM (IEEE 1815-2012 clause 7.5.2.3.2 j), is no
+				// longer this request's.
+				c.mu.Lock()
+				if c.pending == t {
+					c.pending = nil
+				}
+				c.mu.Unlock()
+			}
 			if f.Control.CON {
 				if c.opts.noSolConfirm {
 					c.log.Debug("response not confirmed (WithSolicitedConfirm)", "seq", f.Control.Seq)
