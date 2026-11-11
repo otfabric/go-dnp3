@@ -80,8 +80,8 @@ The master for one outstation.
 | `WithHandler(Handler)` | none | Receives the measurements of every response and unsolicited response |
 | `WithStateHandler(func(State, error))` | none | Channel state changes |
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
-| `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer; the TLS handshake that follows is bounded to 10 s |
-| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`, or `UDPFrom(local, remote)` from a fixed local port), an outstation that connects (`Accept(net.Listener)`, listening only), a pipe |
+| `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer of `Connect`, the reconnects and the dual end point's own dial (`DialContext(ctx, "tcp", addr)`, the address given to `New`); the TLS handshake that follows runs over its connection and is bounded to 10 s. A connection exactly when the error is nil: neither fails the dial, a connection with an error is closed; the error wraps `dnp3.ErrConnectFailed`. It must honour ctx (Connect's, or the reconnect attempt's); nil is refused. `WithStream` openers do not use it |
+| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`, `UDPFrom(local, remote)` from a fixed local port, or `UDPWithDialer(Dialer, addr)` with a caller's dialer, called with network `"udp"`), an outstation that connects (`Accept(net.Listener)`, listening only), a pipe |
 | `WithDualEndpoint(net.Listener, allow)` | off | The TCP dual end point (13.2.3.1.3): dial the outstation and take the connections it establishes on the listener, one at a time, the master's own first; `allow` validates the outstation's address. `Close` closes the listener; excludes `WithStream` |
 | `WithTLS(*tls.Config)` | off | TLS |
 | `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`); `Jitter` (0 to 1, default 0) draws each delay d from [(1-Jitter)·d, d] |
@@ -172,7 +172,7 @@ The outstation.
 | `(*Server).ServeUDPFixed(net.PacketConn, net.Addr)` | DNP3 over UDP answering one fixed master port (Table 13-1 case 1); datagrams from other IP addresses are ignored |
 | `ServeByMasterIP(net.Listener, routes...)` | Multiple masters, method 1 (13.2.3.5.1): each connection goes to the first `Route{Masters, Server or Group}` whose prefix holds the master's IP address; others are closed |
 | `NewGroup(servers...)` | Several outstations, each a `Server` at its own address, on the same connections (multi-drop); `(*Group).ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `Servers`, `Close` |
-| `(*Server).DialAndServe(ctx, addr, Redial)` | The dual end point: connect to the master, serve, reconnect (`Redial{MinDelay, MaxDelay}`, 1 s and 1 min); `ctx.Err()` when ctx ends, `nil` after `Close` |
+| `(*Server).DialAndServe(ctx, addr, Redial)` | The dual end point: connect to the master (with the dialer of `WithDialer`), serve, reconnect (`Redial{MinDelay, MaxDelay, Jitter}`, 1 s, 1 min and 0; `Jitter`, 0 to 1, draws each delay d from [(1-Jitter)·d, d], outside it `dnp3.ErrInvalidOption`); `ctx.Err()` when ctx ends, `nil` after `Close` |
 | `(*Server).Address()` | The outstation's link address |
 | `(*Server).Database()` | The points |
 | `(*Server).SetIndications(bits, on)` | LOCAL_CONTROL, DEVICE_TROUBLE, CONFIG_CORRUPT |
@@ -192,6 +192,7 @@ The outstation.
 | `WithHandler(Handler)` | `NopHandler` | Controls, and the optional handler interfaces |
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithTLS(*tls.Config)` | off | TLS for `ListenAndServe`, and the TLS client configuration of `DialAndServe` |
+| `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer of `DialAndServe` (`DialContext(ctx, "tcp", addr)`; ctx carries the 10 s dial timeout and the cancel of `DialAndServe`'s context and `Close`, and a custom dialer must honour it); with `WithTLS` the handshake runs over its connection. A connection exactly when the error is nil: neither fails the attempt, a connection with an error is closed; failed attempts are logged wrapping `dnp3.ErrConnectFailed`. nil keeps the default. `server.Dialer` has the shape of `client.Dialer` |
 | `WithMaxConnections(n)` | 16 | Concurrent connections |
 | `WithMaxFragment(tx, rx)` | 2048, 2048 | Largest response sent, request reassembled |
 | `WithConfirmTimeout(d)` | 5 s | Wait for an application confirmation |

@@ -14,7 +14,7 @@ func clientGoroutines() []string {
 	buf := make([]byte, 1<<20)
 	buf = buf[:runtime.Stack(buf, true)]
 	var out []string
-	for _, g := range strings.Split(string(buf), "\n\n") {
+	for g := range strings.SplitSeq(string(buf), "\n\n") {
 		for _, fn := range []string{"client.(*Client).watch(", "client.(*Client).reconnectLoop(", "client.(*dualEndpoint).accept("} {
 			if strings.Contains(g, fn) {
 				out = append(out, g)

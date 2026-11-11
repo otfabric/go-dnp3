@@ -21,7 +21,7 @@ How failures are reported, and how to tell them apart.
 | The outstation did not answer in time | wraps `dnp3.ErrTimeout` | `errors.Is` |
 | The connection ended during the request | wraps `dnp3.ErrConnectionLost` | `errors.Is` |
 | No connection | `dnp3.ErrNotConnected` | `errors.Is` |
-| Dial, TLS or stream opener failed | wraps `dnp3.ErrConnectFailed` and the cause | `errors.Is` |
+| Dial, TLS or stream opener failed | wraps `dnp3.ErrConnectFailed` and the cause: the error of a `WithDialer` dialer, so `errors.Is` finds its own sentinels (an allowlist's refusal); a dialer that returned neither a connection nor an error | `errors.Is` |
 | The client or server was closed | `dnp3.ErrClosed` | `errors.Is` |
 | Too many requests waiting; `Connect` while connected | wraps `dnp3.ErrBusy` | `errors.Is` |
 | A response with NO_FUNC_CODE_SUPPORT, OBJECT_UNKNOWN, PARAMETER_ERROR or ALREADY_EXECUTING | `*dnp3.IINError` | `errors.As` |
@@ -191,7 +191,7 @@ through:
 | A failed authentication, a late reply, a refused key change or aggressive mode request | an authentication error object to the master; a warning; the security statistics (g121, g122 events) |
 | `ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `ServeUDPTo` | return the listener's or stream's error; `nil` when `Close` ends them, `dnp3.ErrClosed` when called after `Close`. `Serve` keeps accepting after an `Accept` error other than a closed listener (running out of file descriptors, for one), after a pause; a UDP socket keeps serving after an error that concerns one datagram (an ICMP unreachable, a send to a route that went away) |
 | A TLS handshake of an accepted connection that takes longer than 10 s | the connection is closed and logged (`TLS handshake failed`); it does not hold a connection slot |
-| `DialAndServe` | returns `ctx.Err()` when ctx ends and `nil` after `Close`; failed dials, TLS handshakes and lost connections are retried, not returned |
+| `DialAndServe` | returns `ctx.Err()` when ctx ends and `nil` after `Close`, and `dnp3.ErrInvalidOption` at once for a `Redial.Jitter` outside 0 to 1; failed dials, TLS handshakes and lost connections are retried, not returned: the `error` of their log record wraps `dnp3.ErrConnectFailed` and the dialer's or handshake's error |
 
 ## Detection patterns
 

@@ -16,10 +16,27 @@ import (
 // ("host:port"). Use it with WithStream:
 //
 //	c, err := client.New(addr, client.WithStream(client.UDP(addr)))
+//
+// It dials with a net.Dialer, not the dialer of WithDialer, which a
+// stream opener does not see; use UDPWithDialer to supply one.
 func UDP(addr string) StreamOpener {
+	return UDPWithDialer(nil, addr)
+}
+
+// UDPWithDialer is UDP with the connected UDP socket opened by d: d is
+// called with network "udp" and addr, and with the context of the
+// Connect or reconnect attempt, which it must honour. d is held to the
+// contract of WithDialer: a connection exactly when the error is nil.
+// With d nil it is UDP. A net.Dialer with LocalAddr set is UDPFrom.
+//
+//	d := &net.Dialer{Control: allowlist}
+//	c, err := client.New(addr, client.WithStream(client.UDPWithDialer(d, addr)))
+func UDPWithDialer(d Dialer, addr string) StreamOpener {
+	if d == nil {
+		d = &net.Dialer{}
+	}
 	return func(ctx context.Context) (io.ReadWriteCloser, net.Addr, error) {
-		var d net.Dialer
-		conn, err := d.DialContext(ctx, "udp", addr)
+		conn, err := dialConn(ctx, d, "udp", addr)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -33,18 +50,16 @@ func UDP(addr string) StreamOpener {
 // only. local is "host:port"; an empty host is any address.
 //
 //	c, err := client.New(addr, client.WithStream(client.UDPFrom(":20000", addr)))
+//
+// Like UDP, it does not use the dialer of WithDialer; UDPWithDialer with
+// a dialer that binds local is its counterpart with a dialer.
 func UDPFrom(local, remote string) StreamOpener {
 	return func(ctx context.Context) (io.ReadWriteCloser, net.Addr, error) {
 		la, err := net.ResolveUDPAddr("udp", local)
 		if err != nil {
 			return nil, nil, err
 		}
-		d := net.Dialer{LocalAddr: la}
-		conn, err := d.DialContext(ctx, "udp", remote)
-		if err != nil {
-			return nil, nil, err
-		}
-		return udpConn{conn}, conn.RemoteAddr(), nil
+		return UDPWithDialer(&net.Dialer{LocalAddr: la}, remote)(ctx)
 	}
 }
 

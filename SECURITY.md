@@ -19,10 +19,10 @@ We will acknowledge your report within 48 hours and aim to provide a fix or miti
 
 | Version | Supported |
 |---------|-----------|
-| 1.11.x | Yes |
-| 1.10.x | Yes, until 1.11.0 is released |
-| 1.4.x – 1.9.x | No: upgrade to 1.11.x |
-| 1.0.x – 1.3.x | No: upgrade to 1.11.x. These versions crash the outstation on a malformed READ of g70v5 that any master able to reach it can send (fixed in v1.4.0) |
+| 1.12.x | Yes |
+| 1.11.x | Yes, until 1.12.0 is released |
+| 1.4.x – 1.10.x | No: upgrade to 1.12.x |
+| 1.0.x – 1.3.x | No: upgrade to 1.12.x. These versions crash the outstation on a malformed READ of g70v5 that any master able to reach it can send (fixed in v1.4.0) |
 | 0.x | No |
 
 ## Security Considerations
@@ -34,6 +34,14 @@ Plain DNP3 carries no authentication and no encryption: anyone who can reach an 
 - **Keep plain DNP3 traffic on isolated, trusted networks**; never expose port 20000 to the Internet
 - **Use TLS across untrusted networks** (`client.WithTLS`, `server.WithTLS`), or put a VPN or secured gateway in front of the outstation
 - **Restrict the masters** an outstation answers with `server.WithMasters`. A link address is not an authentication: it only keeps a misconfigured master out
+
+### Restricting the addresses a station connects to
+
+The client (`client.WithDialer`, `client.UDPWithDialer`) and the outstation's dial-out (`server.WithDialer` for `DialAndServe`) open their connections through a dialer the application can supply.
+
+- **Put an address allowlist in the dialer**, for example in `net.Dialer.Control`, which sees the resolved IP address right before the connection is made, and return a sentinel error for a refused address: it reaches the caller wrapped in `dnp3.ErrConnectFailed`, and `errors.Is` finds it
+- **Do not check the host name before dialling**: the name can resolve to another address when the dialer resolves it again (DNS rebinding), so a check of the name leaves that gap
+- `client.UDP`, `client.UDPFrom` and a `StreamOpener` of `WithStream` do not use `client.WithDialer`: use `client.UDPWithDialer` or apply the allowlist in the opener
 
 ### TLS
 

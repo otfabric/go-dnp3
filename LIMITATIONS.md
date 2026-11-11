@@ -79,6 +79,20 @@ defines no coding for it.
 
 ## Behaviour to plan for
 
+- **Dialers**: `client.WithDialer` covers the client's TCP and TLS
+  connections, its reconnects and its own dial of the dual end point;
+  `server.WithDialer` covers `DialAndServe`. A `WithStream` opener opens
+  its stream itself and does not use `client.WithDialer`: `client.UDP` and
+  `client.UDPFrom` dial with a `net.Dialer`; use
+  `client.UDPWithDialer(d, addr)`, or a `StreamOpener` of your own, to
+  supply one. `client.Accept`, `WithDualEndpoint`'s listener and the
+  server's listeners and UDP sockets accept and do not dial. The client's
+  dialer gets the context of `Connect` (or of the reconnect attempt), not
+  a dial timeout of the library: a custom dialer sets its own, as the
+  default's 10 s. `client.WithDialer(nil)` is refused with
+  `dnp3.ErrInvalidOption`, as since v1.0.0; `server.WithDialer(nil)` keeps
+  the default.
+
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends. `WithMasterIPs` and
   `ServeUDPFixed` limit who may.

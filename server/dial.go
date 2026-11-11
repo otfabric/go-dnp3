@@ -5,8 +5,12 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"net"
 	"time"
+
+	dnp3 "github.com/otfabric/go-dnp3"
 )
 
 // Redial configures how DialAndServe reconnects: with exponential backoff
@@ -17,6 +21,12 @@ type Redial struct {
 	MinDelay time.Duration
 	// MaxDelay caps the delay. Zero means 1 minute.
 	MaxDelay time.Duration
+	// Jitter randomizes each delay, so that outstations that lost their
+	// connections together do not reconnect together: a fraction from 0
+	// to 1, each delay is drawn uniformly from [(1-Jitter)·d, d] of the
+	// delay d that doubles. Zero, the default, waits d exactly. It has the
+	// semantics of client.Reconnect.Jitter.
+	Jitter float64
 }
 
 // DialAndServe is the outstation's end of a TCP connection that the
@@ -33,7 +43,15 @@ type Redial struct {
 // own has priority (clause 13.2.3.1.3): while a master is connected to
 // the server's listener, DialAndServe does not connect, and checks again
 // every r.MinDelay.
+//
+// The connection is opened by the dialer of WithDialer, by default a
+// net.Dialer. A failed attempt is logged with an error that wraps
+// dnp3.ErrConnectFailed and the dialer's error. DialAndServe fails with
+// dnp3.ErrInvalidOption when r.Jitter is not within [0, 1].
 func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error {
+	if !validJitter(r.Jitter) {
+		return invalidOption("redial jitter %v not within [0, 1]", r.Jitter)
+	}
 	if r.MinDelay <= 0 {
 		r.MinDelay = time.Second
 	}
@@ -82,9 +100,10 @@ func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		s.log.Info("connection to the master lost, reconnecting", "address", addr, "error", err, "delay", delay)
+		wait := jittered(delay, r.Jitter)
+		s.log.Info("connection to the master lost, reconnecting", "address", addr, "error", err, "delay", wait)
 		select {
-		case <-time.After(delay):
+		case <-time.After(wait):
 		case <-ctx.Done():
 			if s.isClosed() {
 				return nil
@@ -95,11 +114,16 @@ func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error 
 	}
 }
 
+// errNoConn is the error of an attempt whose dialer returned neither a
+// connection nor an error.
+var errNoConn = errors.New("dialer returned neither a connection nor an error")
+
+// dial opens a connection to the master, with TLS when configured. Its
+// errors wrap dnp3.ErrConnectFailed and the cause.
 func (s *Server) dial(ctx context.Context, addr string) (net.Conn, error) {
-	d := net.Dialer{Timeout: handshakeTimeout}
-	conn, err := d.DialContext(ctx, "tcp", addr)
+	conn, err := dialConn(ctx, s.opts.dialer, addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", dnp3.ErrConnectFailed, err)
 	}
 	if s.opts.tls == nil {
 		return conn, nil
@@ -113,7 +137,29 @@ func (s *Server) dial(ctx context.Context, addr string) (net.Conn, error) {
 	defer cancel()
 	if err := tc.HandshakeContext(hctx); err != nil {
 		_ = conn.Close()
-		return nil, err
+		return nil, fmt.Errorf("%w: TLS handshake: %w", dnp3.ErrConnectFailed, err)
 	}
 	return tc, nil
+}
+
+// dialConn opens a TCP connection with d, or with the default net.Dialer
+// when d is nil, under the dial timeout, and holds d to the contract of
+// net.Dialer: a connection exactly when the error is nil.
+func dialConn(ctx context.Context, d Dialer, addr string) (net.Conn, error) {
+	if d == nil {
+		d = &net.Dialer{Timeout: handshakeTimeout}
+	}
+	dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer cancel()
+	conn, err := d.DialContext(dctx, "tcp", addr)
+	switch {
+	case err != nil:
+		if conn != nil {
+			_ = conn.Close()
+		}
+		return nil, err
+	case conn == nil:
+		return nil, errNoConn
+	}
+	return conn, nil
 }

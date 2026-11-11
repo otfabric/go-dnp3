@@ -21,7 +21,17 @@ import (
 // Option configures a [Client].
 type Option func(*options) error
 
-// Dialer opens TCP connections; *net.Dialer satisfies it.
+// Dialer opens TCP connections; *net.Dialer satisfies it, as does a
+// proxy's or a jump host's DialContext.
+//
+// Like net.Dialer, a Dialer returns a non-nil connection exactly when the
+// error is nil: one that returns neither fails the dial, and a connection
+// returned together with an error is closed. Its error reaches the caller
+// wrapped in dnp3.ErrConnectFailed, so errors.Is finds the dialer's own
+// sentinels. It must honour ctx: the context of Connect (or Dial), with
+// the caller's deadline and cancel, and on a reconnect one that ends with
+// the attempt (at least 10 seconds) or Close. The dial timeout is the
+// dialer's own; the default's is 10 seconds.
 type Dialer interface {
 	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 }
@@ -237,7 +247,17 @@ func WithMetrics(m dnp3.Metrics) Option {
 	return func(o *options) error { o.metrics = m; return nil }
 }
 
-// WithDialer sets the dialer of TCP connections.
+// WithDialer sets the dialer of TCP connections: it is called with
+// network "tcp" and the address given to New, for Connect, the
+// reconnects of WithReconnect and the client's own connections of the
+// dual end point (WithDualEndpoint); with WithTLS the TLS handshake runs
+// over the connection it returns (tls.Client). Use it to bind a source
+// address, dial through a proxy, or refuse addresses (see SECURITY.md: an
+// allowlist belongs in the dialer, for example in net.Dialer.Control,
+// which sees the resolved IP). A StreamOpener of WithStream opens its own
+// stream and does not use it: UDP and UDPFrom dial with a net.Dialer,
+// UDPWithDialer takes a dialer. The default is a net.Dialer with a 10
+// second timeout; nil is refused with dnp3.ErrInvalidOption.
 func WithDialer(d Dialer) Option {
 	return func(o *options) error {
 		if d == nil {

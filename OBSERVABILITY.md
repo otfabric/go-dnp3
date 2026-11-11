@@ -61,7 +61,7 @@ identifiers.
 | info | `master reconnected, closing its previous connection` | |
 | info | `unsolicited response given up` | `seq`, `events` |
 | info | `session keys changed` | `user` |
-| info | `connection to the master lost, reconnecting` (`DialAndServe`, also after a failed dial) | `address`, `error`, `delay` |
+| info | `connection to the master lost, reconnecting` (`DialAndServe`, also after a failed dial) | `address`, `error` (after a failed dial or TLS handshake, wrapping `dnp3.ErrConnectFailed`), `delay` (the delay before the next attempt, with `Redial.Jitter` applied) |
 | warn | `connection lost`, `reconnect failed` | `error`, `retry_in` (the delay before the next attempt, with `Reconnect.Jitter` applied) |
 | warn | `request failed, retrying` | `function`, `attempt`, `retry_in` (the pause, with `Retry.Jitter` applied), `error` |
 | warn | `automatic task failed` | `task`, `error` |
