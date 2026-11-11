@@ -433,6 +433,7 @@ func (s *Server) bind(ch *channel.Channel, master link.Address) *channel.Session
 	sess = ch.AddSession(channel.SessionConfig{
 		Local:           s.opts.address,
 		Remote:          master,
+		SelfAddress:     s.opts.selfAddress,
 		Confirmed:       s.opts.link.Confirmed,
 		ResponseTimeout: s.opts.link.Timeout,
 		Retries:         s.opts.link.Retries,

@@ -37,11 +37,12 @@ func (s *Server) ServeUDPTo(pc net.PacketConn, peer net.Addr) error {
 // from peer's IP address only, from any of its ports; WithMasterIPs, when
 // given, applies as well.
 func (s *Server) ServeUDPFixed(pc net.PacketConn, peer net.Addr) error {
-	ip, ok := ipOf(peer)
-	if !ok {
+	ua, ok := peer.(*net.UDPAddr)
+	if !ok || ua == nil {
 		_ = pc.Close()
 		return invalidOption("ServeUDPFixed: %v is not a UDP address", peer)
 	}
+	ip, _ := ipOf(ua)
 	allow := func(a net.Addr) bool {
 		got, ok := ipOf(a)
 		return ok && got == ip && s.opts.masterIPAllowed(a)
