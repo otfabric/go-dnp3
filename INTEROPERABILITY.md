@@ -45,7 +45,7 @@ of a device profile, and how it has been verified.
 | DIR bit (9.2.4.1.3.1) | ✅ set on transmission, ignored on receipt |
 | UNCONFIRMED_USER_DATA | ✅ default |
 | CONFIRMED_USER_DATA with RESET_LINK_STATES and the frame count bit | ✅ both roles (`Link.Confirmed`), for serial links: 13.2.1.1 forbids it over IP, and a channel on TCP or UDP with it logs a warning. Repeats are acknowledged and discarded by FCB; NACK with DFC 0 resets the link once |
-| TEST_LINK_STATES | ✅ answered; FCB toggled when expected |
+| TEST_LINK_STATES | ✅ answered; FCB toggled when expected; a repeat is answered with the previous ACK or NACK (9.2.6.2, Table 9-7). The primary does not send it |
 | REQUEST_LINK_STATUS / LINK_STATUS | ✅ answered; sent as keep-alive (`Link.KeepAlive`, default 60 s); any secondary answer shows the link alive, one other than LINK_STATUS is logged as an error (Table 9-6) |
 | Primary frame timeout and retries | ✅ `Link.Timeout`, `Link.Retries` |
 | DFC (data flow control, 9.2.4.1.3.5) | ✅ set while the receive queue is full; CONFIRMED_USER_DATA that would overflow it is answered NACK; a NACK with DFC set is not repeated (Table 9-6 row 28) |

@@ -90,6 +90,10 @@ defines no coding for it.
   default, with `Link.Retries`), during which the new connection waits.
 - **The master drops broadcast frames it receives**: clauses 4 to 6 define
   broadcast only for requests to outstations.
+- **The link layer's primary role is minimal**: it resets the link with
+  RESET_LINK_STATES before confirmed user data only, and never sends
+  TEST_LINK_STATES (Table 9-6 allows both). Collision avoidance on shared
+  serial media (9.2.10) is not implemented.
 - **Keep-alive can be disabled** (`Link.KeepAlive` negative) for testing;
   13.2.3.3.1 does not allow it in service.
 - **Event headers with a range or index qualifier**: the outstation selects
