@@ -134,8 +134,13 @@ func TestSpecWithFileTimeout_Invalid(t *testing.T) {
 			t.Errorf("WithFileTimeout(%v, %d): %v", c.d, c.class, err)
 		}
 	}
-	if s, err := New(); err != nil || s.opts.fileTimeout != DefaultFileTimeout || s.opts.fileClass != 1 {
-		t.Fatalf("defaults: %v %v class %d", err, s.opts.fileTimeout, s.opts.fileClass)
+	s, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if s.opts.fileTimeout != DefaultFileTimeout || s.opts.fileClass != 1 {
+		t.Fatalf("defaults: %v class %d", s.opts.fileTimeout, s.opts.fileClass)
 	}
 }
 
@@ -165,10 +170,15 @@ func TestSpec5_3_8_Rule9_HandlesUnique(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = srv.Close() })
 	a, b := srv.association(1), srv.association(2)
 	open := func(as *association) uint32 {
-		r := as.file(req(1, app.FuncOpenFile, app.FreeFormat(app.G70V3, app.FileCommand{Name: "/f", Mode: app.FileModeRead, RequestID: 1})))
-		return r.plans[0].headers[0].Objects[0].Value.(app.FileCommandStatus).Handle
+		got := make(chan uint32, 1)
+		as.post(func() {
+			r := as.file(req(1, app.FuncOpenFile, app.FreeFormat(app.G70V3, app.FileCommand{Name: "/f", Mode: app.FileModeRead, RequestID: 1})))
+			got <- r.plans[0].headers[0].Objects[0].Value.(app.FileCommandStatus).Handle
+		})
+		return <-got
 	}
 	if ha, hb := open(a), open(b); ha == hb {
 		t.Fatalf("both associations got handle %d", ha)

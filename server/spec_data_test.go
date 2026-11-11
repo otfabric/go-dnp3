@@ -58,7 +58,7 @@ func TestSpecTable4_11_FreezeAtTime(t *testing.T) {
 	}
 	first := got[0]
 	onGrid := func(base time.Time) bool { return first.Sub(base)%interval == 0 }
-	if first.Before(before) || first.After(after.Add(interval)) || !(onGrid(before.Truncate(time.Hour)) || onGrid(after.Truncate(time.Hour))) {
+	if first.Before(before) || first.After(after.Add(interval)) || (!onGrid(before.Truncate(time.Hour)) && !onGrid(after.Truncate(time.Hour))) {
 		t.Fatalf("first freeze at %v, requested between %v and %v", first, before, after)
 	}
 
