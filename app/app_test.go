@@ -667,6 +667,15 @@ func FuzzDecode(f *testing.F) {
 		// and free format; the corpus in testdata/fuzz/FuzzDecode has more.
 		dscActivateConfigResponse,
 		"C0 81 00 00 5B 01 5B 01 07 00 00 00 00 00 01 01 00",
+		// Negative BCD (11.3.6.1), g81v1 and g82v1, a class object in a
+		// response (refused), a FLT attribute of 3 octets (refused) and a
+		// CROB status with the reserved bit set.
+		"C0 81 00 00 65 01 00 00 01 57 F0 34 F2",
+		"C0 81 00 00 51 01 00 00 01 B2 02 01 64 20 03",
+		"C0 81 80 00 52 01 5B 01 0D 00 03 00 00 00 00 00 00 00 01 00 01 02 06",
+		"C0 81 00 00 3C 02 06",
+		"C0 81 00 00 00 CB 00 00 00 04 03 01 02 03",
+		"C0 81 00 00 0C 01 17 01 03 41 01 64 00 00 00 C8 00 00 00 85",
 	}
 	for _, s := range seeds {
 		f.Add(unhex(f, s))
