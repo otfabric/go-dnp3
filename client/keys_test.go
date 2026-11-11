@@ -192,7 +192,9 @@ func TestChallengeBeforeKeyChange(t *testing.T) {
 	if _, err := New("127.0.0.1", WithAggressiveMode()); !errors.Is(err, dnp3.ErrInvalidOption) {
 		t.Fatal("aggressive mode without secure authentication accepted")
 	}
-	// Asking twice for a key change while one is pending asks once.
+	// Asking twice for a key change while one is pending asks once. Close
+	// first stops the key change loop, which would take the request.
+	_ = c.Close()
 	c.rekeySoon()
 	c.rekeySoon()
 	if len(c.rekey) != 1 {
