@@ -49,6 +49,10 @@ MaxKeyChangeCount is the largest session key change count: half the range of the
 ```go
 type Client struct {
 
+	// held is the channel whose startup sequence a Connect runs: its loss
+	// is that Connect's error, not a reason to reconnect. When its watch
+	// sees it lost, it sets heldLost and heldErr for the Connect.
+
 	// proc is the state of the master procedures of the current channel.
 
 	// integrity is when the last integrity poll completed, so that an

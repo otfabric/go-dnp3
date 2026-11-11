@@ -47,7 +47,13 @@ type Client struct {
 	state   dnp3.State
 	closed  bool
 	dialing bool
-	pending *transaction
+	// held is the channel whose startup sequence a Connect runs: its loss
+	// is that Connect's error, not a reason to reconnect. When its watch
+	// sees it lost, it sets heldLost and heldErr for the Connect.
+	held     *channel.Channel
+	heldLost bool
+	heldErr  error
+	pending  *transaction
 	// proc is the state of the master procedures of the current channel.
 	proc procState
 	// integrity is when the last integrity poll completed, so that an
@@ -183,31 +189,59 @@ func (c *Client) Connect(ctx context.Context) error {
 
 // establish connects a client that is dialing and not connected, and
 // leaves it disconnected when that fails.
+//
+// The channel is held during its startup sequence: when it is lost then,
+// its watch leaves the outcome here instead of reconnecting, so that a
+// failed Connect leaves no reconnect behind it, which would dial next to
+// the caller's next Connect.
 func (c *Client) establish(ctx context.Context) error {
 	c.setState(dnp3.StateConnecting, nil)
-	err := c.connect(ctx)
+	ch, err := c.connect(ctx, true)
+	c.mu.Lock()
+	lost, lostErr := c.heldLost, c.heldErr
+	c.held, c.heldLost, c.heldErr = nil, false, nil
 	if err != nil {
 		// A channel whose startup sequence failed is closed: Connect
 		// either connects or leaves the client disconnected.
-		c.mu.Lock()
 		c.dialing = false
-		ch := c.ch
-		c.ch, c.sess = nil, nil
+		if ch != nil && c.ch == ch {
+			c.ch, c.sess = nil, nil
+		}
 		c.mu.Unlock()
 		c.setState(dnp3.StateDisconnected, err)
 		if ch != nil {
 			ch.Close(nil)
 		}
+		return err
 	}
-	return err
+	if !lost {
+		c.mu.Unlock()
+		return nil
+	}
+	// The startup sequence succeeded and the channel was lost right
+	// after it: what its watch would have done.
+	reconnect := !c.closed && c.opts.reconnect != nil && lostErr != nil
+	if reconnect {
+		c.dialing = true
+	}
+	c.mu.Unlock()
+	if !reconnect {
+		c.setState(dnp3.StateDisconnected, lostErr)
+		return nil
+	}
+	c.setState(dnp3.StateConnecting, lostErr)
+	c.wg.Go(c.reconnectLoop)
+	return nil
 }
 
-// connect opens the stream and starts the channel. The caller has set
-// dialing.
-func (c *Client) connect(ctx context.Context) error {
+// connect opens the stream and starts the channel, held for the startup
+// sequence when hold is set (see establish). The caller has set dialing.
+// It returns the channel it started, also when its startup sequence
+// failed.
+func (c *Client) connect(ctx context.Context, hold bool) (*channel.Channel, error) {
 	stream, remote, err := c.open(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %w", dnp3.ErrConnectFailed, err)
+		return nil, fmt.Errorf("%w: %w", dnp3.ErrConnectFailed, err)
 	}
 	ka := c.opts.link.KeepAlive
 	if ka == 0 {
@@ -231,9 +265,21 @@ func (c *Client) connect(ctx context.Context) error {
 	if c.closed {
 		c.mu.Unlock()
 		ch.Close(nil)
-		return dnp3.ErrClosed
+		return nil, dnp3.ErrClosed
+	}
+	if c.ch != nil {
+		// Never two channels: one replaced without being closed would go on
+		// answering the outstation's link status requests, and an
+		// outstation keeps the connection of a connected master (IEEE
+		// 1815-2012 clause 13.2.3.3).
+		c.mu.Unlock()
+		ch.Close(nil)
+		return nil, fmt.Errorf("%w: already connected", dnp3.ErrBusy)
 	}
 	c.ch, c.sess, c.remote, c.dialing = ch, sess, remote, false
+	if hold {
+		c.held = ch
+	}
 	c.auth.reset()
 	started := make(chan struct{})
 	c.started = started
@@ -254,9 +300,9 @@ func (c *Client) connect(ctx context.Context) error {
 	close(started)
 	if err != nil {
 		c.log.Warn("startup sequence failed", "error", err)
-		return err
+		return ch, err
 	}
-	return nil
+	return ch, nil
 }
 
 // handshakeTimeout bounds the TLS handshake of a connection, so that an
@@ -316,7 +362,11 @@ func (c *Client) watch(ch *channel.Channel) {
 	}
 	p := c.pending
 	closed := c.closed
-	reconnect := !closed && c.opts.reconnect != nil && err != nil
+	held := c.held == ch
+	if held {
+		c.held, c.heldLost, c.heldErr = nil, true, err
+	}
+	reconnect := !closed && !held && c.opts.reconnect != nil && err != nil
 	if reconnect {
 		c.dialing = true
 	}
@@ -328,6 +378,9 @@ func (c *Client) watch(ch *channel.Channel) {
 		return
 	}
 	c.log.Warn("connection lost", "error", err)
+	if held {
+		return // the Connect running its startup sequence decides
+	}
 	if !reconnect {
 		c.setState(dnp3.StateDisconnected, err)
 		return
@@ -362,7 +415,7 @@ func (c *Client) reconnectLoop() {
 			case <-ctx.Done():
 			}
 		}()
-		err := c.connect(ctx)
+		_, err := c.connect(ctx, false)
 		cancel()
 		if err == nil {
 			return
