@@ -234,9 +234,9 @@ func serveUDP(t *testing.T, s *Server) (string, chan error) {
 	return pc.LocalAddr().String(), errc
 }
 
-// dialMaster connects the scripted master of the conformance tests, whose
+// dialLinkMaster connects the scripted master of the conformance tests, whose
 // link layer answers the outstation's keep-alives.
-func dialMaster(t *testing.T, addr string) *master {
+func dialLinkMaster(t *testing.T, addr string) *master {
 	t.Helper()
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -301,7 +301,7 @@ func TestSpec13_2_3_3_SecondConnectionRejected(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			addr := serveTCP(t, newServer(t, c.opts...))
-			m := dialMaster(t, addr)
+			m := dialLinkMaster(t, addr)
 			m.send(readIIN(1))
 			m.recvFunc(app.FuncResponse)
 			p := dialRaw(t, "tcp", addr)
@@ -336,7 +336,7 @@ func TestSpec13_2_3_3_HalfOpenConnectionReplaced(t *testing.T) {
 		t.Fatalf("response %s", f)
 	}
 	// The old connection falls silent; the master connects again.
-	m := dialMaster(t, addr)
+	m := dialLinkMaster(t, addr)
 	fs := old.closed()
 	if len(fs) != 1 || fs[0].Function != link.PrimaryRequestLinkStatus || fs[0].Src != 10 {
 		t.Fatalf("the old connection got %v, want one keep-alive", fs)
@@ -464,7 +464,7 @@ func TestSpecTable13_1_BroadcastOverUDPBesideTCP(t *testing.T) {
 	s := newServer(t, WithHandler(h))
 	tcpAddr := serveTCP(t, s)
 	udpAddr, udpDone := serveUDP(t, s)
-	m := dialMaster(t, tcpAddr)
+	m := dialLinkMaster(t, tcpAddr)
 	m.send(readIIN(1))
 	m.recvFunc(app.FuncResponse)
 	for i := range 2 {
@@ -674,7 +674,7 @@ func TestSpec13_2_2_2_DefaultPorts(t *testing.T) {
 // connected to the listener, and connects once it left.
 func TestSpec13_2_3_1_3_DialAndServeWaitsWhileConnected(t *testing.T) {
 	s := newServer(t)
-	m := dialMaster(t, serveTCP(t, s))
+	m := dialLinkMaster(t, serveTCP(t, s))
 	m.send(readIIN(1))
 	m.recvFunc(app.FuncResponse)
 	eventually(t, "the master's connection", s.streamConnected)

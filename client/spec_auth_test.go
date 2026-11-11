@@ -680,7 +680,10 @@ func TestSpec7_5_2_2_MasterStatistics(t *testing.T) {
 	if s[secauth.StatCriticalMessagesSent] != 2 || s[secauth.StatTotalMessagesSent] < 3 || s[secauth.StatTotalMessagesReceived] < 3 {
 		t.Fatalf("statistics %v", s)
 	}
-	// A wrong key: an error message received.
+	// A wrong key: an error message received. The first master closes
+	// first: an outstation rejects a second connection of a master that is
+	// connected (IEEE 1815-2012 13.2.3.3).
+	_ = c.Close()
 	w, err := Dial(testCtx(t), addr, quiet(WithSecureAuthentication(secauth.User{Number: 1, Key: []byte("another session key, 32 octets!")}))...)
 	if err != nil {
 		t.Fatal(err)
@@ -711,6 +714,7 @@ func TestSpec7_6_1_1_TruncationOverTCP(t *testing.T) {
 	if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); !errors.Is(err, dnp3.ErrAuthentication) {
 		t.Fatalf("HMAC-SHA-256/8 over TCP: %v", err)
 	}
+	_ = c.Close() // one connection per master (13.2.3.3)
 	allowed, err := Dial(testCtx(t), addr, quiet(WithChallengeMACs(app.MACHMACSHA256Trunc8), WithSecureAuthentication(secauth.User{Number: 1, Key: specKey}))...)
 	if err != nil {
 		t.Fatal(err)
