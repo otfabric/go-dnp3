@@ -56,7 +56,7 @@ func timeAnswer(iin func() app.IIN) func(req specFrag) [][]byte {
 func TestSpec10_3_4_1_UnconfirmedUserData(t *testing.T) {
 	o := newSpecOutstation(t, timeAnswer(func() app.IIN { return 0 }))
 	m := &frameMetrics{}
-	c := specDial(t, o, append(quiet, WithMetrics(m), WithLink(Link{Confirmed: true, Retries: 2}))...)
+	c := specDial(t, o, append(specQuiet, WithMetrics(m), WithLink(Link{Confirmed: true, Retries: 2}))...)
 	ctx := testCtx(t)
 	if err := c.SyncTime(ctx, TimeSyncLAN); err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestSpec10_3_4_1_RetryIsNewRequest(t *testing.T) {
 			}
 			return answer(req)
 		})
-		c := specDial(t, o, append(quiet, WithResponseTimeout(100*time.Millisecond),
+		c := specDial(t, o, append(specQuiet, WithResponseTimeout(100*time.Millisecond),
 			WithRetry(Retry{Attempts: 2, Backoff: 10 * time.Millisecond}))...)
 		if err := c.SyncTime(testCtx(t), tc.p); err != nil {
 			t.Fatalf("procedure %d: %v", tc.p, err)
@@ -140,7 +140,7 @@ func TestSpec10_3_4_1_RetryIsNewRequest(t *testing.T) {
 // WithRetry.
 func TestSpec10_3_4_1_WriteTimeNotRetried(t *testing.T) {
 	o := newSpecOutstation(t, func(specFrag) [][]byte { return nil })
-	c := specDial(t, o, append(quiet, WithResponseTimeout(100*time.Millisecond),
+	c := specDial(t, o, append(specQuiet, WithResponseTimeout(100*time.Millisecond),
 		WithRetry(Retry{Attempts: 3, Backoff: 10 * time.Millisecond}))...)
 	if err := c.WriteTime(testCtx(t), time.Now()); !errors.Is(err, dnp3.ErrTimeout) {
 		t.Fatalf("unanswered WRITE: %v", err)
@@ -165,7 +165,7 @@ func TestSpec4_4_15_DelayMeasureRoundTrip(t *testing.T) {
 		}
 		return [][]byte{delayResponse(req.f.Control.Seq, 0, 5*time.Millisecond)}
 	})
-	c := specDial(t, o, append(quiet, WithResponseTimeout(200*time.Millisecond),
+	c := specDial(t, o, append(specQuiet, WithResponseTimeout(200*time.Millisecond),
 		WithRetry(Retry{Attempts: 2, Backoff: 50 * time.Millisecond}))...)
 	processing, rtt, err := c.DelayMeasure(testCtx(t))
 	if err != nil {
@@ -205,7 +205,7 @@ func TestSpec10_3_3_1_NonLANDelay(t *testing.T) {
 		}
 		return [][]byte{empty(req, 0)}
 	})
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	if err := c.SyncTime(testCtx(t), TimeSyncNonLAN); err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestSpec10_3_3_2_LANRecordedTime(t *testing.T) {
 		}
 		return [][]byte{empty(req, 0)}
 	})
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	before := time.Now().Truncate(time.Millisecond)
 	if err := c.SyncTime(testCtx(t), TimeSyncLAN); err != nil {
 		t.Fatal(err)
@@ -436,7 +436,7 @@ func TestSpec4_5_5_NeedTimeOptions(t *testing.T) {
 // as in example EX 4-14: C? 02 50 01 00 07 07 00.
 func TestSpec4_5_8_ClearRestartOctets(t *testing.T) {
 	o := newSpecOutstation(t, func(req specFrag) [][]byte { return [][]byte{empty(req, 0)} })
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	if err := c.ClearRestart(testCtx(t)); err != nil {
 		t.Fatal(err)
 	}

@@ -50,7 +50,7 @@ func TestSpec11_6_5_WithoutFlagsOnline(t *testing.T) {
 	o := newSpecOutstation(t, func(req specFrag) [][]byte {
 		return [][]byte{respond(t, req, 0, append(without, with)...)}
 	})
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	res, err := c.Read(testCtx(t), app.ClassHeaders(0)...)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestSpec4_4_17_2_1_WriteFileRequest(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 6e6, time.UTC)
 	s := &fileStation{t: t, block: 1024}
 	o := newSpecOutstation(t, s.answer)
-	c := specDial(t, o, append(quiet, WithMaxRequestFragment(249))...)
+	c := specDial(t, o, append(specQuiet, WithMaxRequestFragment(249))...)
 	long := bytes.Repeat([]byte("0123456789"), 100) // 1000 octets
 	n, err := c.WriteFile(testCtx(t), "f", bytes.NewReader(long), 700, FileOptions{Created: created, Permissions: 0o640})
 	if err != nil || n != 700 {
@@ -207,7 +207,7 @@ func TestSpec4_4_17_2_1_WriteFileRequest(t *testing.T) {
 func TestSpecA_27_5_ReadRequests(t *testing.T) {
 	s := &fileStation{t: t, block: 4, data: []byte("0123456789")}
 	o := newSpecOutstation(t, s.answer)
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	var out bytes.Buffer
 	if _, err := c.ReadFile(testCtx(t), "f", &out, FileOptions{MaxBlockSize: 4}); err != nil || out.String() != "0123456789" {
 		t.Fatalf("ReadFile: %q %v", out.String(), err)
@@ -241,7 +241,7 @@ func TestSpecA_27_5_ReadRequests(t *testing.T) {
 func TestSpec5_3_8_Rule13_ReadErrorAborts(t *testing.T) {
 	s := &fileStation{t: t, block: 4, data: []byte("0123456789"), readStatus: app.FileFatal}
 	o := newSpecOutstation(t, s.answer)
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	var out bytes.Buffer
 	n, err := c.ReadFile(testCtx(t), "f", &out, FileOptions{})
 	var fe *dnp3.FileError
@@ -331,7 +331,7 @@ func TestSubsetLevelResponses(t *testing.T) {
 		return [][]byte{frag(app.SingleControl(req.f.Control.Seq), app.FuncResponse, 0, next)}
 	})
 	rec := newMeasRecorder()
-	c := specDial(t, o, append(quiet, WithHandler(rec))...)
+	c := specDial(t, o, append(specQuiet, WithHandler(rec))...)
 	var seq uint8
 	confirms, measurements, cases := 0, 0, 0
 	for _, r := range rows {

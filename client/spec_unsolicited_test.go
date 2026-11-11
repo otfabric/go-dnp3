@@ -75,7 +75,7 @@ func TestSpec4_6_6_Rule6_ConfirmedDuringRequest(t *testing.T) {
 		return [][]byte{uns(true, true, true, 9, 0, event1), frag(ctl(true, true, false, req.f.Control.Seq), app.FuncResponse, 0, event0)}
 	})
 	rec := newMeasRecorder()
-	c := specDial(t, o, append(quiet, WithHandler(rec))...)
+	c := specDial(t, o, append(specQuiet, WithHandler(rec))...)
 	res, err := c.Read(testCtx(t), app.ClassHeaders(1)...)
 	if err != nil || len(res.Fragments) != 1 || res.Measurements()[0].Index != 0 {
 		t.Fatalf("read with an unsolicited response in between: %v %v", res, err)
@@ -94,7 +94,7 @@ func TestSpec4_6_6_Rule6_ConfirmedDuringRequest(t *testing.T) {
 func TestSpec4_6_6_Rule4_FIRFINIgnored(t *testing.T) {
 	o := newSpecOutstation(t, func(specFrag) [][]byte { return nil })
 	rec := newMeasRecorder()
-	specDial(t, o, append(quiet, WithHandler(rec))...)
+	specDial(t, o, append(specQuiet, WithHandler(rec))...)
 	o.push(t, uns(false, false, true, 3, 0, event0))
 	o.push(t, uns(true, false, true, 4, 0, event1))
 	if cs := o.waitConfirms(t, 2); cs[0].Seq != 3 || cs[1].Seq != 4 || !cs[0].UNS || !cs[1].UNS {
@@ -111,7 +111,7 @@ func TestSpec4_6_6_Rule4_FIRFINIgnored(t *testing.T) {
 func TestSpec4_6_6_Rule2_StaticData(t *testing.T) {
 	o := newSpecOutstation(t, func(specFrag) [][]byte { return nil })
 	rec := newMeasRecorder()
-	specDial(t, o, append(quiet, WithHandler(rec))...)
+	specDial(t, o, append(specQuiet, WithHandler(rec))...)
 	o.push(t, uns(true, true, false, 0, 0, []byte{0x01, 0x02, 0x00, 0x05, 0x05, 0x81})) // g1v2 index 5
 	ms := rec.wait(t, 1)
 	if ms[0].GV != app.G1V2 || ms[0].Index != 5 || ms[0].Event {
@@ -192,7 +192,7 @@ func TestSpec4_2_2_4_4_UNSContradiction(t *testing.T) {
 		}
 	})
 	rec := newMeasRecorder()
-	c := specDial(t, o, append(quiet, WithHandler(rec))...)
+	c := specDial(t, o, append(specQuiet, WithHandler(rec))...)
 	// An unsolicited response with UNS 0.
 	o.push(t, frag(ctl(true, true, true, 7), app.FuncUnsolicitedResponse, 0, event1))
 	res, err := c.Read(testCtx(t), app.ClassHeaders(1)...)
@@ -247,7 +247,7 @@ func (*holdMetrics) OnRetry(net.Addr, uint16, app.FunctionCode, int, error)     
 func TestSpec4_3_Rule13_UnsolicitedConfirmBeforeRequest(t *testing.T) {
 	m := &holdMetrics{held: make(chan struct{}), release: make(chan struct{}), reading: make(chan struct{})}
 	o := newSpecOutstation(t, func(req specFrag) [][]byte { return [][]byte{empty(req, 0)} })
-	c := specDial(t, o, append(quiet, WithMetrics(m))...)
+	c := specDial(t, o, append(specQuiet, WithMetrics(m))...)
 	o.push(t, uns(true, true, true, 2, 0, event0))
 	<-m.held // the client has the unsolicited response, not yet confirmed
 	done := make(chan error, 1)

@@ -164,9 +164,9 @@ func (o *specOutstation) requests() []app.FunctionCode {
 	return out
 }
 
-// quiet turns off everything the client does on its own, for the tests
+// specQuiet turns off everything the client does on its own, for the tests
 // that look at one request.
-var quiet = []Option{WithStartup(Startup{}), WithAutoIntegrity(false), WithAutoClearRestart(false),
+var specQuiet = []Option{WithStartup(Startup{}), WithAutoIntegrity(false), WithAutoClearRestart(false),
 	WithAutoEventPoll(false), WithTimeSync(TimeSyncNone)}
 
 // specDial connects a client to o with a short response timeout; opts

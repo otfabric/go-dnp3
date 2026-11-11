@@ -49,7 +49,7 @@ func TestSpec7_8_8_TLSDefaultPort(t *testing.T) {
 // that carries the bit.
 func TestSpec4_5_13_AlreadyExecuting(t *testing.T) {
 	o := newSpecOutstation(t, func(req specFrag) [][]byte { return [][]byte{empty(req, app.IINAlreadyExecuting)} })
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	_, err := c.Read(testCtx(t), app.ClassHeaders(1)...)
 	var ie *dnp3.IINError
 	if !errors.As(err, &ie) || !ie.IIN.Has(app.IINAlreadyExecuting) {

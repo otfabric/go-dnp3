@@ -77,7 +77,7 @@ func TestSpec4_4_4_3_Rule8_SelectEchoComparedOctetForOctet(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := newSpecOutstation(t, selectAnswer(0, tc.mutate))
-			c := specDial(t, o, quiet...)
+			c := specDial(t, o, specQuiet...)
 			_, err := c.Operate(testCtx(t), SelectBeforeOperate, tc.cmds...)
 			if !errors.Is(err, dnp3.ErrProtocol) {
 				t.Fatalf("mismatched select response: %v", err)
@@ -90,7 +90,7 @@ func TestSpec4_4_4_3_Rule8_SelectEchoComparedOctetForOctet(t *testing.T) {
 
 	// The exact echo is operated.
 	o := newSpecOutstation(t, selectAnswer(0, func(b []byte) []byte { return b }))
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	st, err := c.Operate(testCtx(t), SelectBeforeOperate, CROB(0, app.OpLatchOn, 100, 100), SetPoint(2, 7))
 	if err != nil || !slices.Equal(st, []app.CommandStatus{app.StatusSuccess, app.StatusSuccess}) {
 		t.Fatalf("exact echo: %v %v", st, err)
@@ -122,7 +122,7 @@ func TestSpec4_4_4_3_Rule8_SelectErrorsStopOperate(t *testing.T) {
 				b[crobStatus] = byte(tc.status)
 				return b
 			}))
-			c := specDial(t, o, quiet...)
+			c := specDial(t, o, specQuiet...)
 			_, err := c.Operate(testCtx(t), SelectBeforeOperate, CROB(0, app.OpLatchOn, 100, 100))
 			var ie *dnp3.IINError
 			var ce *dnp3.CommandError
@@ -166,7 +166,7 @@ func TestSpec4_4_4_3_Rule6_TruncatedResponse(t *testing.T) {
 			objects := truncate(app.StatusSuccess, app.StatusNotSupported)(bytes.Clone(req.raw[2:]))
 			return [][]byte{frag(app.SingleControl(req.f.Control.Seq), app.FuncResponse, 0, objects)}
 		})
-		c := specDial(t, o, quiet...)
+		c := specDial(t, o, specQuiet...)
 		st, err := c.Operate(testCtx(t), mode, three...)
 		var ce *dnp3.CommandError
 		if !errors.As(err, &ce) || ce.Index != 1 || ce.Status != app.StatusNotSupported {
@@ -190,7 +190,7 @@ func TestSpec4_4_4_3_Rule6_TruncatedResponse(t *testing.T) {
 			objects := truncate(statuses...)(bytes.Clone(req.raw[2:]))
 			return [][]byte{frag(app.SingleControl(req.f.Control.Seq), app.FuncResponse, 0, objects)}
 		})
-		c := specDial(t, o, quiet...)
+		c := specDial(t, o, specQuiet...)
 		if _, err := c.Operate(testCtx(t), DirectOperate, three...); !errors.Is(err, dnp3.ErrProtocol) {
 			t.Fatalf("statuses %v of 3 controls: %v", statuses, err)
 		}
@@ -204,7 +204,7 @@ func TestSpec4_4_4_3_Rule6_TruncatedResponse(t *testing.T) {
 // number N+1 of a select with N.
 func TestSpec4_4_4_3_Rule9_SelectOperateSequence(t *testing.T) {
 	o := newSpecOutstation(t, func(req specFrag) [][]byte { return [][]byte{echo(req, 0)} })
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	if _, err := c.Operate(testCtx(t), SelectBeforeOperate, CROB(4, app.OpPulseOn, 250, 0), SetPoint(1, 2.5)); err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestSpec4_4_4_3_Rule9_SelectOperateSequence(t *testing.T) {
 // is not answered is sent once, and so is a direct operate.
 func TestSpec4_4_4_3_Rule9_SelectNotRetried(t *testing.T) {
 	o := newSpecOutstation(t, func(specFrag) [][]byte { return nil })
-	c := specDial(t, o, append(quiet, WithResponseTimeout(100*time.Millisecond),
+	c := specDial(t, o, append(specQuiet, WithResponseTimeout(100*time.Millisecond),
 		WithRetry(Retry{Attempts: 3, Backoff: 10 * time.Millisecond}))...)
 	if _, err := c.Operate(testCtx(t), SelectBeforeOperate, CROB(0, app.OpLatchOn, 0, 0)); !errors.Is(err, dnp3.ErrTimeout) {
 		t.Fatalf("unanswered select: %v", err)
@@ -248,7 +248,7 @@ func TestSpec4_4_4_3_Rule9_SelectNotRetried(t *testing.T) {
 // nothing (OBJECTS1-15).
 func TestSpecA_8_1_2_2_RequestFields(t *testing.T) {
 	o := newSpecOutstation(t, func(req specFrag) [][]byte { return [][]byte{echo(req, 0)} })
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	for _, cmd := range []Command{
 		{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Queue: true}},
 		{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1, Status: app.StatusTimeout}},

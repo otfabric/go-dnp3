@@ -49,7 +49,7 @@ func TestSpec4_3_Rule14_SequenceIncrements(t *testing.T) {
 		}
 		return [][]byte{empty(req, 0)}
 	})
-	c := specDial(t, o, append(quiet, WithMaxRequestFragment(249))...)
+	c := specDial(t, o, append(specQuiet, WithMaxRequestFragment(249))...)
 	tooLong := make([]app.Header, 100) // 2 + 3*100 octets
 	for i := range tooLong {
 		tooLong[i] = app.AllObjects(app.G1V0)
@@ -105,7 +105,7 @@ func TestSpec4_3_Rule11_RequestsWithoutCON(t *testing.T) {
 		}
 		return [][]byte{empty(req, 0)}
 	})
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	ctx := testCtx(t)
 	steps := []func() error{
 		func() error { _, err := c.IntegrityPoll(ctx); return err },
@@ -150,7 +150,7 @@ func TestSpec4_3_Rule18_ConfirmEachFragment(t *testing.T) {
 			frag(ctl(false, true, true, n+2), app.FuncResponse, 0, event0),
 		}
 	})
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	for k := range 6 { // across a wrap of the sequence numbers
 		res, err := c.Read(testCtx(t), app.ClassHeaders(1)...)
 		if err != nil || len(res.Fragments) != 3 {
@@ -174,7 +174,7 @@ func TestSpec4_3_Rule13_ConfirmBeforeNextRequest(t *testing.T) {
 	o := newSpecOutstation(t, func(req specFrag) [][]byte {
 		return [][]byte{frag(ctl(true, true, true, req.f.Control.Seq), app.FuncResponse, 0, event0)}
 	})
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	for range 5 {
 		if _, err := c.Read(testCtx(t), app.ClassHeaders(1)...); err != nil {
 			t.Fatal(err)
@@ -222,7 +222,7 @@ func TestSpec4_3_Rule4_RequestFragmentLimit(t *testing.T) {
 	}
 
 	o := newSpecOutstation(t, func(req specFrag) [][]byte { return [][]byte{empty(req, 0)} })
-	c := specDial(t, o, append(quiet, WithMaxRequestFragment(249))...)
+	c := specDial(t, o, append(specQuiet, WithMaxRequestFragment(249))...)
 	if _, err := c.Read(testCtx(t), at249...); err != nil {
 		t.Fatalf("request of 249 octets: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestSpec4_3_Rule4_RequestFragmentLimit(t *testing.T) {
 
 	// No limit by default.
 	p := newSpecOutstation(t, func(req specFrag) [][]byte { return [][]byte{empty(req, 0)} })
-	d := specDial(t, p, quiet...)
+	d := specDial(t, p, specQuiet...)
 	if _, err := d.Read(testCtx(t), at250...); err != nil {
 		t.Fatalf("request of 250 octets without a limit: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestSpecTable6_2_Row1_LateResponseDiscarded(t *testing.T) {
 		}
 		return [][]byte{frag(ctl(true, true, false, req.f.Control.Seq), app.FuncResponse, 0, event1)}
 	})
-	c := specDial(t, o, append(quiet, WithResponseTimeout(100*time.Millisecond))...)
+	c := specDial(t, o, append(specQuiet, WithResponseTimeout(100*time.Millisecond))...)
 	if _, err := c.Read(testCtx(t), app.ClassHeaders(1)...); !errors.Is(err, dnp3.ErrTimeout) {
 		t.Fatalf("unanswered read: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestSpecTable6_2_Rows3_5_AwaitFirstDiscards(t *testing.T) {
 			frag(ctl(true, true, true, n), app.FuncResponse, 0, event0),    // row 6
 		}
 	})
-	c := specDial(t, o, quiet...)
+	c := specDial(t, o, specQuiet...)
 	res, err := c.Read(testCtx(t), app.ClassHeaders(1)...)
 	if err != nil || len(res.Fragments) != 1 || res.Measurements()[0].Index != 0 {
 		t.Fatalf("response: %v %v", res, err)
@@ -336,7 +336,7 @@ func TestSpecTable6_2_Rows8_14_RepeatConfirmedAgain(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := newSpecOutstation(t, func(req specFrag) [][]byte { return tc.frags(req.f.Control.Seq) })
-			c := specDial(t, o, quiet...)
+			c := specDial(t, o, specQuiet...)
 			res, err := c.Read(testCtx(t), app.ClassHeaders(1)...)
 			if err != nil || len(res.Fragments) != tc.count {
 				t.Fatalf("response: %v %v", res, err)
@@ -401,7 +401,7 @@ func TestSpecTable6_2_AssemblyAbandoned(t *testing.T) {
 				// waits for.
 				return append(out, frag(ctl(false, true, true, n+uint8(tc.good)), app.FuncResponse, 0, event0))
 			})
-			c := specDial(t, o, quiet...)
+			c := specDial(t, o, specQuiet...)
 			if _, err := c.Read(testCtx(t), app.ClassHeaders(1)...); !errors.Is(err, dnp3.ErrProtocol) {
 				t.Fatalf("response with an unexpected fragment: %v", err)
 			}
@@ -440,7 +440,7 @@ func TestSpecTable6_2_Row18_FragmentTimeout(t *testing.T) {
 	o := newSpecOutstation(t, func(req specFrag) [][]byte {
 		return [][]byte{frag(ctl(true, false, true, req.f.Control.Seq), app.FuncResponse, 0, event0)}
 	})
-	c := specDial(t, o, append(quiet, WithResponseTimeout(100*time.Millisecond))...)
+	c := specDial(t, o, append(specQuiet, WithResponseTimeout(100*time.Millisecond))...)
 	if _, err := c.Read(testCtx(t), app.ClassHeaders(1)...); !errors.Is(err, dnp3.ErrTimeout) {
 		t.Fatalf("incomplete response: %v", err)
 	}

@@ -228,7 +228,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 				// Assembly.
 				if bytes.Equal(rf.raw, last) {
 					c.log.Debug("repeated response fragment", "seq", f.Control.Seq)
-					c.confirmResponse(sess, f)
+					c.confirmSolicited(sess, f)
 					timer.Reset(c.opts.responseTimeout)
 					continue
 				}
@@ -237,7 +237,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 						dnp3.ErrProtocol, f.Control.Seq, f.Control.FIR, expect, fc)
 				}
 			}
-			c.confirmResponse(sess, f)
+			c.confirmSolicited(sess, f)
 			last = rf.raw
 			res.Fragments = append(res.Fragments, f)
 			res.raw = append(res.raw, rf.raw)
@@ -264,9 +264,9 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	}
 }
 
-// confirmResponse confirms a solicited response fragment that asks for it
+// confirmSolicited confirms a solicited response fragment that asks for it
 // (CON), unless WithSolicitedConfirm turned that off.
-func (c *Client) confirmResponse(sess *channel.Session, f *app.Fragment) {
+func (c *Client) confirmSolicited(sess *channel.Session, f *app.Fragment) {
 	if !f.Control.CON {
 		return
 	}
