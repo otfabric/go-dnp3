@@ -245,7 +245,7 @@ func TestSpec7_5_2_4_ErrorMessagesStop(t *testing.T) {
 		select {
 		case f := <-m.in:
 			e := authErr(t, f)
-			if f.Control.Seq != seq || e.Code != app.AuthErrAuthenticationFailed || e.CSQ != ch.CSQ || e.User != 1 || e.Time == 0 {
+			if f.Control.Seq != seq || f.Control.CON || e.Code != app.AuthErrAuthenticationFailed || e.CSQ != ch.CSQ || e.User != 1 || e.Time == 0 {
 				t.Fatalf("error %d: %v %+v", i, f.Control, e)
 			}
 			errorsSeen++
@@ -412,7 +412,12 @@ func TestSpec7_6_1_4_7_NoAggressiveMode(t *testing.T) {
 func TestSpecA_45_5_KeyStatus(t *testing.T) {
 	uk := []byte("0123456789abcdef0123456789abcdef")
 	m := newMaster(t, WithHandler(&countingHandler{}), WithSecureAuthentication(SecureAuth{User: secauth.User{Number: 1, UpdateKey: uk}}))
-	st := m.keyStatus(0, 1)
+	m.send(req(0, app.FuncAuthRequest, app.Counted(app.G120V4, app.AuthSessionKeyStatusRequest{User: 1})))
+	f := m.recvFunc(app.FuncAuthResponse)
+	st := f.Headers[0].Objects[0].Value.(app.AuthSessionKeyStatus)
+	if f.Control.CON || f.Control.Seq != 0 { // clause 7.5.2.3.1, p.207: CON is not set
+		t.Fatalf("key status control %v", f.Control)
+	}
 	if st.KSQ != 1 || st.User != 1 || st.KeyWrap != app.KeyWrapAES256 || st.Status != app.KeyStatusNotInit || st.MAC != app.MACNone || len(st.MACValue) != 0 {
 		t.Fatalf("first key status %+v", st)
 	}

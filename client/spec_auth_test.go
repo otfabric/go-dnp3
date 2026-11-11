@@ -431,9 +431,10 @@ func TestSpec7_5_2_3_2_J_ChallengedConfirm(t *testing.T) {
 // is set, and a confirmation of the key change.
 type keyChangeOutstation struct {
 	uk                 []byte
-	tamper             atomic.Bool
+	tamper, refuse     atomic.Bool
 	keyWrap            atomic.Uint32
 	user               atomic.Uint32
+	badRequest         atomic.Bool // a key status request not encoded as A.45.4 says
 	ksq                uint32
 	status, monitoring []byte
 	change             []byte
@@ -448,6 +449,10 @@ func (o *keyChangeOutstation) answer(f *app.Fragment, raw []byte, send func(*app
 	}
 	switch v := f.Headers[0].Objects[0].Value.(type) {
 	case app.AuthSessionKeyStatusRequest:
+		// A.45.4.2.3, p.726: g120v4 with qualifier 0x07, count 1.
+		if !bytes.Equal(raw[2:6], []byte{0x78, 0x04, 0x07, 0x01}) {
+			o.badRequest.Store(true)
+		}
 		o.ksq++
 		st := app.AuthSessionKeyStatus{KSQ: o.ksq, User: uint16(o.user.Load()), KeyWrap: app.KeyWrap(o.keyWrap.Load()), Status: app.KeyStatusNotInit, Challenge: []byte{1, 2, 3, 4}}
 		if o.monitoring != nil {
@@ -470,6 +475,10 @@ func (o *keyChangeOutstation) answer(f *app.Fragment, raw []byte, send func(*app
 		if err != nil {
 			return
 		}
+		if o.refuse.Load() {
+			reply(app.AuthSessionKeyStatus{KSQ: o.ksq, User: 1, KeyWrap: app.KeyWrapAES128, Status: app.KeyStatusAuthFail, Challenge: []byte{5, 6, 7, 8}})
+			return
+		}
 		o.monitoring, o.change = mon, raw
 		mac, _ := secauth.MAC(app.MACHMACSHA256Trunc16, mon, raw)
 		reply(app.AuthSessionKeyStatus{KSQ: o.ksq, User: 1, KeyWrap: app.KeyWrapAES128, Status: app.KeyStatusOK, Challenge: []byte{5, 6, 7, 8},
@@ -482,7 +491,8 @@ func (o *keyChangeOutstation) answer(f *app.Fragment, raw []byte, send func(*app
 // master shall consider an attack underway if the MAC of a key status is
 // invalid under the most recently valid monitoring direction session key;
 // Table 7-13, p.231-234: a Key Status OK that is not authentic is counted
-// as an authentication failure and discarded. A.45.5, p.728: the key
+// as an authentication failure and discarded, and a confirmation with a
+// status other than OK fails the key change. A.45.5, p.728: the key
 // status names the user and the key wrap algorithm, which the master
 // checks (A.45.6).
 func TestSpec7_5_4_2_KeyStatusAuthenticated(t *testing.T) {
@@ -522,6 +532,44 @@ func TestSpec7_5_4_2_KeyStatusAuthenticated(t *testing.T) {
 	o.user.Store(2)
 	if err := c.changeSessionKeys(testCtx(t)); !errors.Is(err, dnp3.ErrAuthentication) {
 		t.Fatalf("key status of another user: %v", err)
+	}
+	o.user.Store(1)
+	o.refuse.Store(true)
+	if err := c.changeSessionKeys(testCtx(t)); !errors.Is(err, dnp3.ErrAuthentication) || !bytes.Equal(c.controlKey(), key) {
+		t.Fatalf("confirmation AUTH_FAIL: %v", err)
+	}
+	if o.badRequest.Load() {
+		t.Fatal("a key status request not encoded as g120v4, qualifier 0x07, count 1")
+	}
+}
+
+// TestSpec7_3_6_NonSecureOutstation: clause 7.3.6, p.172 (recommended): a
+// secure device detects that the other device does not support secure
+// authentication, and non-critical data can still be exchanged. With an
+// update key the failed session key change fails Connect (the outstation
+// answers NO_FUNC_CODE_SUPPORT) and is counted; with a pre-shared session
+// key, which needs no key change, non-critical requests work.
+func TestSpec7_3_6_NonSecureOutstation(t *testing.T) {
+	_, addr := outstation(t)
+	c, err := New(addr, quiet(WithSecureAuthentication(secauth.User{Number: 1, UpdateKey: testUpdateKey}))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	var ie *dnp3.IINError
+	if err := c.Connect(testCtx(t)); !errors.As(err, &ie) || !ie.IIN.Has(app.IINNoFuncCodeSupport) {
+		t.Fatalf("session key change with an outstation without secure authentication: %v", err)
+	}
+	if s := c.SecurityStatistics(); s[secauth.StatFailedSessionKeyChanges] != 1 {
+		t.Fatalf("failed session key changes %d", s[secauth.StatFailedSessionKeyChanges])
+	}
+	p, err := Dial(testCtx(t), addr, quiet(WithSecureAuthentication(secauth.User{Number: 1, Key: specKey}))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = p.Close() }()
+	if _, err := p.Read(testCtx(t), app.AllObjects(app.G1V0)); err != nil {
+		t.Fatalf("non-critical READ: %v", err)
 	}
 }
 

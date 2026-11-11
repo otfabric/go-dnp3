@@ -166,7 +166,8 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 			f := rf.f
 			if f.Function == app.FuncAuthResponse {
 				// Secure authentication: a challenge of the request or of
-				// a CONFIRM, or an error (IEEE 1815-2012 clause 7.5.2.3).
+				// a CONFIRM, or an error (IEEE 1815-2012 clauses 7.5.1.3,
+				// 7.5.2.3.2 j).
 				critical, ofRequest := c.challenged(f.Control.Seq, seq, data, len(res.Fragments) > 0)
 				if critical == nil {
 					c.onStrayAuth(sess, f, rf.raw)
