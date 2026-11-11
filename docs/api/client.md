@@ -670,7 +670,7 @@ WithRetry enables retries of the requests that are safe to repeat.
 func WithSecureAuthentication(u secauth.User) Option
 ```
 
-WithSecureAuthentication enables Secure Authentication version 5: the client answers the outstation's challenges of critical requests. With an update key in u it first runs the session key change on every connection, and again at the key change interval; with only a session key it uses that key directly. Without this option a challenge fails the request with dnp3.ErrAuthentication.
+WithSecureAuthentication enables Secure Authentication version 5: the client answers the outstation's challenges of critical requests. With an update key in u it first runs the session key change on every connection, and again at the key change interval; with only a session key it uses that key directly. A user number of 0, which IEEE 1815-2012 reserves for an unknown user, is taken as 1, the default user. Without this option a challenge fails the request with dnp3.ErrAuthentication.
 
 #### func WithSolicitedConfirm
 

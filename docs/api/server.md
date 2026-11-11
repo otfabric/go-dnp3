@@ -745,7 +745,7 @@ WithMetrics sets the metrics callbacks. A value that also implements dnp3.Server
 func WithSecureAuthentication(sa SecureAuth) Option
 ```
 
-WithSecureAuthentication enables Secure Authentication: critical requests are executed only after the master answered a challenge with the right MAC, or when they carry it themselves in aggressive mode. The outstation takes part in the session key change and keeps the security statistics (g121, g122) per master.
+WithSecureAuthentication enables Secure Authentication: critical requests are executed only after the master answered a challenge with the right MAC, or when they carry it themselves in aggressive mode. The outstation takes part in the session key change and keeps the security statistics (g121, g122) per master. A user number of 0, which IEEE 1815-2012 reserves for an unknown user, is taken as 1, the default user.
 
 #### func WithSelectTimeout
 

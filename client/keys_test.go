@@ -426,3 +426,33 @@ func TestChallengeMACOptions(t *testing.T) {
 		t.Error("WithChallengeMACs list not applied")
 	}
 }
+
+// TestUserNumberZero: user number 0, reserved for an unknown user, is
+// taken as the default user 1 at both ends.
+func TestUserNumberZero(t *testing.T) {
+	accept := server.HandlerFunc(func(context.Context, server.Command, server.OperateType) app.CommandStatus { return app.StatusSuccess })
+	_, addr := outstation(t, server.WithHandler(accept),
+		server.WithSecureAuthentication(server.SecureAuth{User: secauth.User{Number: 1, UpdateKey: testUpdateKey}}))
+	c, err := Dial(testCtx(t), addr, WithSecureAuthentication(secauth.User{UpdateKey: testUpdateKey}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if c.opts.auth.Number != 1 {
+		t.Fatalf("user number %d", c.opts.auth.Number)
+	}
+	if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
+		t.Fatalf("challenged control as user 0: %v", err)
+	}
+
+	_, addr = outstation(t, server.WithHandler(accept),
+		server.WithSecureAuthentication(server.SecureAuth{User: secauth.User{UpdateKey: testUpdateKey}}))
+	c2, err := Dial(testCtx(t), addr, WithSecureAuthentication(secauth.User{Number: 1, UpdateKey: testUpdateKey}))
+	if err != nil {
+		t.Fatalf("outstation configured with user 0: %v", err)
+	}
+	defer func() { _ = c2.Close() }()
+	if _, err := c2.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
+		t.Fatalf("challenged control against an outstation configured with user 0: %v", err)
+	}
+}
