@@ -301,7 +301,7 @@ request row of Tables 14-2 to 14-4 is answered without an error IIN:
 | Chaos: corrupted, split and delayed octets and killed connections under load, with and without secure authentication | ✅ `e2e/chaos_test.go` |
 | Link procedures frame by frame; noisy and duplicating lines | ✅ |
 | Outstation conformance with a scripted master | ✅ |
-| Request rows of the subset level tables 14-1 to 14-3 (levels 1 to 3), each answered without an error IIN | ✅ `TestSubsetLevelTables`; not a statement of a subset level |
+| Request rows of the subset level Tables 14-2 to 14-4 (levels 1 to 3), each answered without an error IIN | ✅ `TestSubsetLevelTables`; not a statement of a subset level |
 | DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |

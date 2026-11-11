@@ -42,6 +42,10 @@ files next to the code (`link`, `transport`, `internal/channel`, `app`,
 part, in `e2e/spec_*_test.go`. The standard is not in the repository: it is
 copyrighted, so the tests carry clause references, not its text. A test
 that pins behaviour the standard leaves open says so.
+`TestSubsetLevelTables` (outstation) and `TestSubsetLevelResponses`
+(master) walk the request and response rows of the subset level Tables
+14-2 to 14-4 (levels 1 to 3); they check the rows, not a subset level
+claim.
 
 ## Recorded traffic
 
