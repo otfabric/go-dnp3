@@ -198,13 +198,15 @@ The outstation.
 | `WithLink(Link)` | unconfirmed | As for the client. A TCP connection on which no master sends a frame within `KeepAlive` and `Timeout` is closed |
 | `WithEventLimits(map[PointType]int)` | 100 each | Events buffered per type and master |
 | `WithTimeSync(interval)` | never | NEED_TIME at start and after the interval |
+| `WithDeadbandIntegerOnly(bool)` | off | Analog input deadbands (g34) in variations 1 and 2 only; a READ of g34v3 gets IIN2.1 |
 | `WithAttributes(map[uint8]app.Attribute)` | none | Device attributes of set 0 |
 | `WithAttributeSet(set, attrs, writable...)` | none | Device attributes of another set; the writable variations take a value of the same type |
 | `WithFileServer(FileServer)` | none | File transfer |
+| `WithFileTimeout(d, class)` | 5 min, class 1 | An open file no request names for `d` is closed and reported with a g70v6 HANDLE_EXPIRED event in `class` |
 | `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`; always completed with `secauth.MandatoryCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 2 s), `StatisticsClass` (default 1), `StatisticsThreshold` (all statistics; unset: the defaults of Table 7-6), `Thresholds` (per statistic, 1..65 535), `NoAggressiveMode`, `ExpectedKeyChangeInterval` (default 30 min, negative: off), `ExpectedKeyChangeCount` (default 2000), `MaxKeyStatusRequests` (default 5, 2..255) |
 
 Constants: `DefaultPort` (20000), `DefaultTLSPort` (19999), `DefaultEventLimit` (100),
-`DefaultReplyTimeout` (2 s), `DefaultExpectedKeyChangeInterval` (30 min),
+`DefaultFileTimeout` (5 min), `DefaultReplyTimeout` (2 s), `DefaultExpectedKeyChangeInterval` (30 min),
 `DefaultExpectedKeyChangeCount` (2000), `DefaultMaxKeyStatusRequests` (5), `MaxScheduledFreezes` (16: the FREEZE_AT_TIME
 requests the server keeps waiting at once; a periodic one keeps its place
 until `Close`); the variable `DefaultCritical`. `Class` is an event class
