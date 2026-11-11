@@ -5,6 +5,9 @@ package server
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
+	"net/netip"
+	"slices"
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -44,15 +47,21 @@ type Unsolicited struct {
 
 // Link configures the data link layer.
 type Link struct {
-	// Confirmed sends user data as CONFIRMED_USER_DATA. The default,
-	// unconfirmed, is what IEEE 1815-2012 recommends on TCP.
+	// Confirmed sends user data as CONFIRMED_USER_DATA. Set it on serial
+	// links only: IEEE 1815-2012 clause 13.2.1.1 forbids confirmed link
+	// frames over TCP and UDP, and a channel on a network stream with it
+	// logs a warning. The default is UNCONFIRMED_USER_DATA.
 	Confirmed bool
 	// Timeout is the wait for a link layer answer. Zero means 2 seconds.
 	Timeout time.Duration
 	// Retries is the number of repeats of an unanswered primary frame.
 	Retries int
-	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent.
-	// Zero means 60 seconds; a negative value disables it.
+	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent
+	// (the keep-alive of IEEE 1815-2012 clause 13.2.3.3.1); a peer that
+	// does not answer it ends the connection. Zero means 60 seconds; any
+	// positive duration is taken. A negative value disables it, which the
+	// clause allows for testing only: in service, set a long interval
+	// instead.
 	KeepAlive time.Duration
 }
 
@@ -77,6 +86,7 @@ type options struct {
 	attributes     map[uint16]*attributeSet
 	files          FileServer
 	auth           *SecureAuth
+	masterIPs      []netip.Prefix
 }
 
 func defaultOptions() options {
@@ -324,6 +334,64 @@ func (o *options) addAttributeSet(set uint16, attrs map[uint8]app.Attribute, wri
 	}
 	o.attributes[set] = as
 	return nil
+}
+
+// WithMasterIPs limits the masters to those whose IP address lies in one
+// of prefixes: a TCP connection from another address is closed when it is
+// accepted, and a UDP datagram from another address is ignored. The
+// default accepts any address. IEEE 1815-2012 clause 13.2.3.2.2 d requires
+// an outstation to be configurable to accept UDP requests only from
+// specific master IP addresses, and clause 13.2.3.1.4 a recommends the
+// same validation of TCP connection requests. A single address is a prefix
+// of its full length, such as netip.MustParsePrefix("192.0.2.7/32").
+//
+// The check applies to Serve, ListenAndServe, ServeUDP, ServeUDPTo and
+// ServeUDPFixed; ServeConn serves the stream it is given.
+func WithMasterIPs(prefixes ...netip.Prefix) Option {
+	return func(o *options) error {
+		if len(prefixes) == 0 {
+			return invalidOption("WithMasterIPs: no prefix")
+		}
+		for _, p := range prefixes {
+			if !p.IsValid() {
+				return invalidOption("WithMasterIPs: invalid prefix %v", p)
+			}
+		}
+		o.masterIPs = slices.Clone(prefixes)
+		return nil
+	}
+}
+
+// ipOf returns the IP address of a TCP or UDP address.
+func ipOf(a net.Addr) (netip.Addr, bool) {
+	switch a := a.(type) {
+	case *net.TCPAddr:
+		return a.AddrPort().Addr().Unmap(), true
+	case *net.UDPAddr:
+		return a.AddrPort().Addr().Unmap(), true
+	}
+	return netip.Addr{}, false
+}
+
+// inPrefixes reports whether the IP address of a lies in one of prefixes.
+// An address without an IP address is in none.
+func inPrefixes(prefixes []netip.Prefix, a net.Addr) bool {
+	ip, ok := ipOf(a)
+	if !ok {
+		return false
+	}
+	for _, p := range prefixes {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// masterIPAllowed reports whether a master at a may connect: always
+// without WithMasterIPs.
+func (o *options) masterIPAllowed(a net.Addr) bool {
+	return len(o.masterIPs) == 0 || inPrefixes(o.masterIPs, a)
 }
 
 // WithFileServer serves file transfer (group 70) from fs.

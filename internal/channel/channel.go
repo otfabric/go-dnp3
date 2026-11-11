@@ -13,6 +13,7 @@
 package channel
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +37,67 @@ type writeDeadliner interface {
 	SetWriteDeadline(t time.Time) error
 }
 
+// DatagramStream is implemented by a Stream whose reads are datagrams,
+// such as a UDP socket. A link frame never spans datagrams (IEEE
+// 1815-2012 clause 13.2.3.2.3), so the channel decodes each datagram on
+// its own: it takes every frame in it, and a damaged or cut frame costs
+// the rest of that datagram only.
+type DatagramStream interface {
+	// ReadDatagram returns the next datagram. An error ends the channel.
+	ReadDatagram() ([]byte, error)
+}
+
+// frameReader is a link.Reader, or the per-datagram reader.
+type frameReader interface {
+	ReadFrame() (link.Frame, error)
+}
+
+// datagramReader reads the frames of a DatagramStream, one datagram at a
+// time.
+type datagramReader struct {
+	s   DatagramStream
+	cur *link.Reader // over the current datagram; nil between datagrams
+}
+
+func (d *datagramReader) ReadFrame() (link.Frame, error) {
+	for {
+		if d.cur == nil {
+			dg, err := d.s.ReadDatagram()
+			if err != nil {
+				return link.Frame{}, err
+			}
+			d.cur = link.NewReader(bytes.NewReader(dg))
+		}
+		f, err := d.cur.ReadFrame()
+		switch {
+		case errors.Is(err, io.EOF):
+			d.cur = nil // the datagram is done
+		case errors.Is(err, io.ErrUnexpectedEOF):
+			d.cur = nil
+			return link.Frame{}, fmt.Errorf("%w: frame cut at the end of a datagram", link.ErrFraming)
+		default:
+			return f, err
+		}
+	}
+}
+
+// netStream reports whether s is a network stream (TCP, TLS or UDP), as
+// opposed to a serial line or a pipe.
+func netStream(s Stream) bool {
+	if _, ok := s.(DatagramStream); ok {
+		return true
+	}
+	c, ok := s.(net.Conn)
+	if !ok {
+		return false
+	}
+	switch c.LocalAddr().(type) {
+	case *net.TCPAddr, *net.UDPAddr:
+		return true
+	}
+	return false
+}
+
 // Config configures a channel.
 type Config struct {
 	// Remote is the address of the peer, for logs and metrics.
@@ -57,9 +119,10 @@ type key struct{ local, remote link.Address }
 
 // Channel is one byte stream and the sessions on it.
 type Channel struct {
-	cfg    Config
-	stream Stream
-	reader *link.Reader
+	cfg      Config
+	stream   Stream
+	reader   frameReader
+	datagram bool
 
 	wmu sync.Mutex // serializes writes
 
@@ -78,15 +141,23 @@ func New(s Stream, cfg Config) *Channel {
 	if cfg.WriteTimeout <= 0 {
 		cfg.WriteTimeout = 10 * time.Second
 	}
-	return &Channel{
+	c := &Channel{
 		cfg:      cfg,
 		stream:   s,
-		reader:   link.NewReader(s),
 		sessions: make(map[key]*Session),
 		closing:  make(chan struct{}),
 		done:     make(chan struct{}),
 	}
+	if d, ok := s.(DatagramStream); ok {
+		c.reader, c.datagram = &datagramReader{s: d}, true
+	} else {
+		c.reader = link.NewReader(s)
+	}
+	return c
 }
+
+// Datagram reports whether the channel runs over a datagram socket.
+func (c *Channel) Datagram() bool { return c.datagram }
 
 // Start starts reading. The channel runs until Close is called or the
 // stream fails.
@@ -157,6 +228,10 @@ func (c *Channel) AddSession(cfg SessionConfig) *Session {
 		return s
 	}
 	s := newSession(c, cfg)
+	if cfg.Confirmed && netStream(c.stream) {
+		c.cfg.Log.Warn("confirmed user data on a network stream: IEEE 1815-2012 clause 13.2.1.1 forbids it over TCP and UDP",
+			"local_addr", cfg.Local, "remote_addr", cfg.Remote)
+	}
 	c.sessions[k] = s
 	c.wg.Add(1)
 	go s.run()
@@ -192,13 +267,14 @@ func (c *Channel) Session(local, remote link.Address) *Session {
 }
 
 // broadcastTargets returns the sessions that take a frame from remote to
-// a broadcast or the self address.
-func (c *Channel) broadcastTargets(remote link.Address) []*Session {
+// dest, a broadcast address or the self address: every session of the
+// remote for a broadcast, those with SelfAddress for the self address.
+func (c *Channel) broadcastTargets(dest, remote link.Address) []*Session {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []*Session
 	for k, s := range c.sessions {
-		if k.remote == remote {
+		if k.remote == remote && (dest != link.SelfAddress || s.cfg.SelfAddress) {
 			out = append(out, s)
 		}
 	}
@@ -242,7 +318,7 @@ func (c *Channel) readLoop() {
 				// also when it is the master's first frame to it.
 				c.cfg.Accept(f.Dest, f.Src)
 			}
-			targets := c.broadcastTargets(f.Src)
+			targets := c.broadcastTargets(f.Dest, f.Src)
 			for _, s := range targets {
 				s.handleFrame(f)
 			}

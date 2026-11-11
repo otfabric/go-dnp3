@@ -90,7 +90,7 @@ func (f Function) String() string {
 // range above is reserved for the special addresses below.
 type Address uint16
 
-// Special addresses (IEEE 1815-2012 clause 9.2.5.3).
+// Special addresses (IEEE 1815-2012 clause 9.2.5.2).
 const (
 	// MaxStationAddress is the largest address of an individual station.
 	MaxStationAddress Address = 0xFFEF

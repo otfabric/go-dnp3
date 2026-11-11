@@ -20,14 +20,34 @@ import (
 // dropped, as an unreachable datagram would be, and repeated by the
 // unsolicited retries. Use ServeUDPTo to name the master's address up front.
 func (s *Server) ServeUDP(pc net.PacketConn) error {
-	return s.ServeConn(&udpStream{pc: pc}, pc.LocalAddr())
+	return s.ServeConn(&udpStream{pc: pc, allow: s.opts.masterIPAllowed}, pc.LocalAddr())
 }
 
 // ServeUDPTo is ServeUDP with the master's address known from the start:
 // unsolicited responses reach it before it sent anything. A datagram from
 // another address takes over the socket, as with ServeUDP.
 func (s *Server) ServeUDPTo(pc net.PacketConn, peer net.Addr) error {
-	return s.ServeConn(&udpStream{pc: pc, peer: peer}, pc.LocalAddr())
+	return s.ServeConn(&udpStream{pc: pc, peer: peer, allow: s.opts.masterIPAllowed}, pc.LocalAddr())
+}
+
+// ServeUDPFixed serves DNP3 over UDP on pc with responses always sent to
+// peer, the master's address and port: case 1 of IEEE 1815-2012 Table
+// 13-1, "send responses to a fixed port at the master", where ServeUDP is
+// case 2 (reply to the port the request came from). Datagrams are taken
+// from peer's IP address only, from any of its ports; WithMasterIPs, when
+// given, applies as well.
+func (s *Server) ServeUDPFixed(pc net.PacketConn, peer net.Addr) error {
+	ua, ok := peer.(*net.UDPAddr)
+	if !ok || ua == nil {
+		_ = pc.Close()
+		return invalidOption("ServeUDPFixed: %v is not a UDP address", peer)
+	}
+	ip, _ := ipOf(ua)
+	allow := func(a net.Addr) bool {
+		got, ok := ipOf(a)
+		return ok && got == ip && s.opts.masterIPAllowed(a)
+	}
+	return s.ServeConn(&udpStream{pc: pc, peer: peer, fixed: true, allow: allow}, pc.LocalAddr())
 }
 
 // udpStream adapts a packet socket to the stream a channel runs over.
@@ -36,26 +56,48 @@ type udpStream struct {
 	mu   sync.Mutex
 	peer net.Addr
 	buf  []byte
+	// fixed keeps peer whatever address datagrams come from.
+	fixed bool
+	// allow, when not nil, decides whether a datagram's sender is taken.
+	allow func(net.Addr) bool
 }
 
-// Read returns the octets of the datagrams received. An error that
-// concerns one datagram only (see channel.DatagramErrorPasses) is skipped:
-// it does not end the socket.
-func (u *udpStream) Read(b []byte) (int, error) {
-	for len(u.buf) == 0 {
-		dg := make([]byte, 65535)
+// ReadDatagram returns the next datagram received; its sender becomes the
+// peer. An error that concerns one datagram only (see
+// channel.DatagramErrorPasses) is skipped: it does not end the socket.
+// The channel decodes each datagram on its own (channel.DatagramStream).
+func (u *udpStream) ReadDatagram() ([]byte, error) {
+	dg := make([]byte, 65535)
+	for {
 		n, addr, err := u.pc.ReadFrom(dg)
 		if err != nil {
 			if !channel.DatagramErrorPasses(err) {
-				return 0, err
+				return nil, err
 			}
 			time.Sleep(time.Millisecond) // a socket that keeps failing does not spin
 			continue
 		}
-		u.mu.Lock()
-		u.peer = addr
-		u.mu.Unlock()
-		u.buf = dg[:n]
+		if u.allow != nil && !u.allow(addr) {
+			continue // not a master this outstation takes
+		}
+		if !u.fixed {
+			u.mu.Lock()
+			u.peer = addr
+			u.mu.Unlock()
+		}
+		return dg[:n], nil
+	}
+}
+
+// Read returns the octets of the datagrams received, as one stream. The
+// channel uses ReadDatagram instead.
+func (u *udpStream) Read(b []byte) (int, error) {
+	if len(u.buf) == 0 {
+		dg, err := u.ReadDatagram()
+		if err != nil {
+			return 0, err
+		}
+		u.buf = dg
 	}
 	n := copy(b, u.buf)
 	u.buf = u.buf[n:]

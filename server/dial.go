@@ -20,15 +20,19 @@ type Redial struct {
 }
 
 // DialAndServe is the outstation's end of a TCP connection that the
-// outstation establishes (the dual end point of IEEE 1815-2012 annex
-// A.3, for an outstation behind a firewall or on a dial-out link): it
-// connects to the master at addr, with TLS when WithTLS was given (the
+// outstation establishes (the dual end point of IEEE 1815-2012 clause
+// 13.2.3.1.3, for an outstation behind a firewall or on a dial-out link):
+// it connects to the master at addr, with TLS when WithTLS was given (the
 // outstation is then the TLS client: the configuration's RootCAs verify
 // the master, its Certificates are presented, ServerName defaults to the
-// host of addr), serves
-// the connection like an accepted one, and connects again when it ends,
-// with the delays of r. It returns when ctx is done (ctx.Err()) or the
-// server is closed (nil).
+// host of addr), serves the connection like an accepted one, and connects
+// again when it ends, with the delays of r. It returns when ctx is done
+// (ctx.Err()) or the server is closed (nil).
+//
+// Only one connection to the master stands at a time, and the master's
+// own has priority (clause 13.2.3.1.3): while a master is connected to
+// the server's listener, DialAndServe does not connect, and checks again
+// every r.MinDelay.
 func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error {
 	if r.MinDelay <= 0 {
 		r.MinDelay = time.Second
@@ -53,6 +57,17 @@ func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error 
 	for {
 		if s.isClosed() {
 			return nil
+		}
+		if s.streamConnected() {
+			select {
+			case <-time.After(r.MinDelay):
+				continue
+			case <-ctx.Done():
+				if s.isClosed() {
+					return nil
+				}
+				return ctx.Err()
+			}
 		}
 		conn, err := s.dial(ctx, addr)
 		if err == nil {

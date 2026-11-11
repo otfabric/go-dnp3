@@ -73,6 +73,9 @@ type Client struct {
 	// needTime is the NEED_TIME indication of the outstation's latest
 	// response.
 	needTime atomic.Bool
+
+	// dual is the dual end point of WithDualEndpoint, nil without.
+	dual *dualEndpoint
 }
 
 // New returns a client for the outstation at addr ("host:port"; the port
@@ -86,6 +89,9 @@ func New(addr string, opts ...Option) (*Client, error) {
 	}
 	if o.aggressive != nil && o.auth == nil {
 		return nil, invalidOption("WithAggressiveMode needs WithSecureAuthentication")
+	}
+	if o.dualListener != nil && o.opener != nil {
+		return nil, invalidOption("WithDualEndpoint and WithStream exclude each other")
 	}
 	if o.opener == nil {
 		if _, _, err := net.SplitHostPort(addr); err != nil {
@@ -104,6 +110,9 @@ func New(addr string, opts ...Option) (*Client, error) {
 	}
 	c.counters = newAuthCounters()
 	c.rm, _ = o.metrics.(dnp3.RequestMetrics)
+	if o.dualListener != nil {
+		c.dual = &dualEndpoint{c: c, l: o.dualListener, allow: o.dualAllow, wake: make(chan struct{}, 1)}
+	}
 	c.events = newDispatcher(c)
 	c.wg.Add(2)
 	go c.events.run()
@@ -157,6 +166,12 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 	c.dialing = true
 	c.mu.Unlock()
+	return c.establish(ctx)
+}
+
+// establish connects a client that is dialing and not connected, and
+// leaves it disconnected when that fails.
+func (c *Client) establish(ctx context.Context) error {
 	c.setState(dnp3.StateConnecting, nil)
 	err := c.connect(ctx)
 	if err != nil {
@@ -243,9 +258,21 @@ func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, e
 	if c.opts.opener != nil {
 		return c.opts.opener(ctx)
 	}
-	conn, err := c.opts.dialer.DialContext(ctx, "tcp", c.addr)
+	if c.dual != nil {
+		return c.dual.open(ctx)
+	}
+	conn, err := c.dial(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+	return conn, conn.RemoteAddr(), nil
+}
+
+// dial opens a TCP connection to the outstation, with TLS when configured.
+func (c *Client) dial(ctx context.Context) (net.Conn, error) {
+	conn, err := c.opts.dialer.DialContext(ctx, "tcp", c.addr)
+	if err != nil {
+		return nil, err
 	}
 	if c.opts.tls != nil {
 		cfg := c.opts.tls.Clone()
@@ -259,11 +286,11 @@ func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, e
 		cancel()
 		if err != nil {
 			_ = conn.Close()
-			return nil, nil, fmt.Errorf("TLS handshake: %w", err)
+			return nil, fmt.Errorf("TLS handshake: %w", err)
 		}
 		conn = tc
 	}
-	return conn, conn.RemoteAddr(), nil
+	return conn, nil
 }
 
 // watch waits for a channel to end and reconnects when configured.
@@ -309,6 +336,9 @@ func (c *Client) reconnectLoop() {
 			c.mu.Unlock()
 			return
 		case <-timer.C:
+		case <-c.dual.woken():
+			// The outstation connected to the dual end point: the attempt
+			// takes its connection now.
 		}
 		// Close ends an attempt in progress, not only the wait between
 		// attempts.
@@ -371,6 +401,7 @@ func (c *Client) Close() error {
 	if ch != nil {
 		ch.Close(nil)
 	}
+	c.dual.close()
 	c.wg.Wait()
 	// The dispatcher has stopped: the last notification is delivered here,
 	// after every earlier one.
