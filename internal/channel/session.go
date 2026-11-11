@@ -4,6 +4,7 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -21,13 +22,21 @@ type SessionConfig struct {
 	Local, Remote link.Address
 
 	// Master is set for the master end: it sets the DIR bit of every
-	// frame, and frames from the peer must have it clear. A master ignores
-	// broadcast frames.
+	// frame. A master ignores broadcast frames. The DIR bit of received
+	// frames is not checked: receivers should ignore it (IEEE 1815-2012
+	// clause 9.2.4.1.3.1).
 	Master bool
+
+	// SelfAddress makes the session take frames sent to the self address
+	// 0xFFFC as its own (clause 9.2.5.2.2). Without it they are not
+	// delivered to the session.
+	SelfAddress bool
 
 	// Confirmed selects CONFIRMED_USER_DATA, preceded by a reset of the
 	// link states, instead of UNCONFIRMED_USER_DATA. IEEE 1815-2012
-	// recommends unconfirmed user data on TCP.
+	// clause 13.2.1.1 forbids it over TCP and UDP: it is meant for serial
+	// lines, and a session that has it on a network stream logs a
+	// warning.
 	Confirmed bool
 
 	// ResponseTimeout is how long a primary frame waits for its secondary
@@ -39,7 +48,9 @@ type SessionConfig struct {
 	Retries int
 
 	// KeepAlive is the idle time after which REQUEST_LINK_STATUS is sent.
-	// A peer that does not answer closes the channel. Zero disables it.
+	// A peer that does not answer closes the channel, except on a
+	// datagram channel, which has no connection to close: there the
+	// failure is logged and the socket keeps serving. Zero disables it.
 	KeepAlive time.Duration
 
 	// MaxFragment is the largest fragment reassembled; zero means
@@ -157,17 +168,28 @@ func (s *Session) run() {
 				timer.Reset(max(s.cfg.KeepAlive-idle, time.Millisecond))
 				continue
 			}
+			timer.Reset(s.cfg.KeepAlive)
+			if s.ch.datagram && s.ch.Peer() == nil {
+				// Nobody to ask yet: a UDP socket before its first datagram.
+				continue
+			}
 			// Probe on another goroutine so that delivery goes on.
 			probing = true
-			go func() { probe <- s.requestLinkStatus() }()
-			timer.Reset(s.cfg.KeepAlive)
+			go func() { probe <- s.Probe() }()
 		case err := <-probe:
 			probing = false
-			if err != nil {
-				s.ch.cfg.Log.Warn("keep-alive failed", "remote_addr", s.cfg.Remote, "error", err)
-				s.ch.Close(fmt.Errorf("%w: no answer to REQUEST_LINK_STATUS: %w", dnp3.ErrTimeout, err))
-				return
+			if err == nil {
+				continue
 			}
+			s.ch.cfg.Log.Warn("keep-alive failed", "remote_addr", s.cfg.Remote, "error", err)
+			if s.ch.datagram {
+				// A datagram socket has no connection that could be
+				// broken (IEEE 1815-2012 Table 13-2 is about TCP): it
+				// keeps serving whoever sends next.
+				continue
+			}
+			s.ch.Close(fmt.Errorf("%w: no answer to REQUEST_LINK_STATUS: %w", dnp3.ErrTimeout, err))
+			return
 		}
 	}
 }
@@ -228,8 +250,11 @@ func (s *Session) send(ctx context.Context, frag []byte, dest link.Address) erro
 }
 
 // sendConfirmed sends one segment as CONFIRMED_USER_DATA, resetting the
-// link first when needed. A NACK means the secondary lost its link state:
-// the link is reset and the frame repeated once.
+// link first when needed (IEEE 1815-2012 Table 9-6). A NACK with DFC
+// clear means the secondary lost its link state: the link is reset and
+// the frame repeated once (rows 27 and 14). A NACK with DFC set means its
+// buffers are full: the frame fails without a repeat and the next one
+// starts with a reset (row 28).
 func (s *Session) sendConfirmed(ctx context.Context, f *link.Frame) error {
 	for attempt := 0; ; attempt++ {
 		if !s.linkReset {
@@ -253,6 +278,9 @@ func (s *Session) sendConfirmed(ctx context.Context, f *link.Frame) error {
 		case r.Function == link.SecondaryAck:
 			s.fcb = !s.fcb
 			return nil
+		case r.Function == link.SecondaryNack && r.DFC:
+			s.linkReset = false
+			return fmt.Errorf("%w: confirmed user data refused: the secondary station is busy (NACK with DFC)", dnp3.ErrProtocol)
 		case r.Function == link.SecondaryNack && attempt == 0:
 			s.linkReset = false
 		default:
@@ -262,8 +290,12 @@ func (s *Session) sendConfirmed(ctx context.Context, f *link.Frame) error {
 	}
 }
 
-// requestLinkStatus sends REQUEST_LINK_STATUS and waits for LINK_STATUS.
-func (s *Session) requestLinkStatus() error {
+// Probe sends REQUEST_LINK_STATUS, the keep-alive message of IEEE
+// 1815-2012 clause 13.2.3.3.1, and waits for the answer. It fails only
+// when no answer comes: any secondary frame shows that the peer is there.
+// An answer other than LINK_STATUS is noted as an error and the link
+// stays up (Table 9-6 rows 19 and 33).
+func (s *Session) Probe() error {
 	s.pmu.Lock()
 	defer s.pmu.Unlock()
 	f := link.Frame{Dir: s.cfg.Master, Function: link.PrimaryRequestLinkStatus, Dest: s.cfg.Remote, Src: s.cfg.Local}
@@ -272,7 +304,11 @@ func (s *Session) requestLinkStatus() error {
 		return err
 	}
 	if r.Function != link.SecondaryLinkStatus {
-		return fmt.Errorf("%w: request link status answered with %s", dnp3.ErrProtocol, r.Function)
+		err := fmt.Errorf("%w: request link status answered with %s", dnp3.ErrProtocol, r.Function)
+		s.ch.cfg.Log.Warn("keep-alive answered with another function", "remote_addr", s.cfg.Remote, "error", err)
+		if s.ch.cfg.Metrics != nil {
+			s.ch.cfg.Metrics.OnDecodeError(s.ch.cfg.Remote, err)
+		}
 	}
 	return nil
 }
@@ -326,7 +362,12 @@ func (s *Session) handleFrame(f link.Frame) {
 	s.lastRx.Store(time.Now().UnixNano())
 	log := s.ch.cfg.Log
 	if f.Dir == s.cfg.Master {
-		log.Debug("frame with the DIR bit of this station's role ignored", "frame", f.String())
+		// Receivers should ignore the DIR bit (clause 9.2.4.1.3.1): the
+		// address pair already decided that the frame is for this session.
+		log.Debug("frame with the DIR bit of this station's role", "frame", f.String())
+	}
+	if f.Dest == link.SelfAddress && !s.cfg.SelfAddress {
+		log.Debug("frame to the self address ignored: not enabled", "frame", f.String())
 		return
 	}
 	broadcast := f.Dest.Broadcast()
@@ -374,12 +415,23 @@ func (s *Session) handleFrame(f link.Frame) {
 			log.Info("confirmed user data while the link is not reset ignored")
 			return
 		}
-		if !broadcast {
-			s.reply(link.SecondaryAck)
-		}
 		if f.FCB != s.expectFCB {
+			if !broadcast {
+				s.reply(link.SecondaryAck)
+			}
 			log.Debug("repeated confirmed user data discarded", "frame", f.String())
 			return
+		}
+		if !broadcast && s.wouldOverflow(f.Data) {
+			// Receive buffers full: NACK with DFC, and the frame count bit
+			// stays, so that the primary sends the frame again (clauses
+			// 9.2.4.1.3.5 and 9.2.7.2).
+			log.Warn("confirmed user data refused: receive queue full", "frame", f.String())
+			s.reply(link.SecondaryNack)
+			return
+		}
+		if !broadcast {
+			s.reply(link.SecondaryAck)
 		}
 		s.expectFCB = !s.expectFCB
 		s.receive(f.Data, f.Dest)
@@ -390,17 +442,33 @@ func (s *Session) handleFrame(f link.Frame) {
 	}
 }
 
+// reply sends a secondary frame. Its DFC bit reports whether the receive
+// queue is full (clause 9.2.4.1.3.5).
 func (s *Session) reply(fn link.Function) {
-	f := link.Frame{Dir: s.cfg.Master, Function: fn, Dest: s.cfg.Remote, Src: s.cfg.Local}
+	f := link.Frame{Dir: s.cfg.Master, Function: fn, Dest: s.cfg.Remote, Src: s.cfg.Local, DFC: s.queueFull()}
 	if err := s.ch.writeFrame(&f); err != nil {
 		s.ch.cfg.Log.Debug("link reply not sent", "error", err)
 	}
+}
+
+// queueFull reports whether no further fragment can be queued.
+func (s *Session) queueFull() bool { return len(s.queue) == cap(s.queue) }
+
+// wouldOverflow reports whether seg would complete a fragment that the full
+// queue cannot take.
+func (s *Session) wouldOverflow(seg []byte) bool {
+	return len(seg) > 0 && transport.Header(seg[0]).FIN() && s.queueFull()
 }
 
 // receive feeds a segment to the reassembler and queues a completed
 // fragment.
 func (s *Session) receive(seg []byte, dest link.Address) {
 	frag, err := s.reasm.Add(seg)
+	if errors.Is(err, transport.ErrDuplicate) {
+		// A repeat (clause 8.2.1.4 rule 5.3), not damage.
+		s.ch.cfg.Log.Debug("repeated segment discarded", "error", err)
+		return
+	}
 	if err != nil {
 		s.ch.cfg.Log.Debug("segment discarded", "error", err)
 		if s.ch.cfg.Metrics != nil {

@@ -10,7 +10,7 @@ import (
 // Reader reads frames from a byte stream: a TCP connection, a serial port
 // or the payload of UDP datagrams written into a pipe.
 //
-// It resynchronises after damage as IEEE 1815-2012 clause 9.2.6 requires:
+// It resynchronises after damage as IEEE 1815-2012 clause 9.2.9 requires:
 // octets before a start sequence are skipped, a header with a bad CRC is
 // skipped one octet at a time so that a start sequence inside it is found,
 // and a frame with a bad data block CRC is discarded whole.

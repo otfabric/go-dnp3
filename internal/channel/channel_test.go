@@ -265,11 +265,16 @@ func TestSecondaryProcedures(t *testing.T) {
 		t.Fatal("after test link states")
 	}
 
-	// A frame with the wrong DIR bit, and an invalid FCV, are ignored.
-	bad := pri(link.PrimaryUnconfirmedUserData, false, segmentOf([]byte{4}))
-	bad.Dir = false
-	m.write(bad)
-	bad = pri(link.PrimaryRequestLinkStatus, false, nil)
+	// The DIR bit of a received frame is ignored (IEEE 1815-2012 clause
+	// 9.2.4.1.3.1): the frame is taken. A frame with an invalid FCV is
+	// not (Table 9-7 rows 11 and 24 allow silence).
+	wrongDir := pri(link.PrimaryUnconfirmedUserData, false, segmentOf([]byte{4}))
+	wrongDir.Dir = false
+	m.write(wrongDir)
+	if d := in.next(t); !bytes.Equal(d.frag, []byte{4}) {
+		t.Fatalf("frame with DIR clear: %v", d.frag)
+	}
+	bad := pri(link.PrimaryRequestLinkStatus, false, nil)
 	bad.FCV = true
 	m.write(bad)
 	m.silent(200 * time.Millisecond)
