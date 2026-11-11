@@ -75,6 +75,25 @@ a failed write, a keep-alive that went unanswered (that one wraps
 `ErrTimeout` too). The request that was waiting fails with it; a client with
 `WithReconnect` reconnects, and the next request can succeed.
 
+A NACK with DFC set to a confirmed frame (`Link.Confirmed`) fails the
+send with `ErrProtocol` ("secondary station is busy"); the frame is not
+repeated (Table 9-6).
+
+On the outstation, a connection ends with:
+
+- `ErrClosed` when its master is already connected over another
+  connection that answers a link status request (13.2.3.3);
+- `ErrConnectionLost`, "replaced by a new connection", for the old
+  connection that did not answer it;
+- `ErrTimeout` when no master sent a frame within the keep-alive interval
+  and the link timeout.
+
+`server.WithMasterIPs` without a prefix or with an invalid one,
+`ServeByMasterIP` without routes, with an invalid prefix or without
+exactly one target in a route, `ServeUDPFixed` with a peer that is not a
+UDP address, and `client.WithDualEndpoint` with a nil listener or together
+with `WithStream` fail with `ErrInvalidOption`.
+
 A `Connect` whose startup sequence fails (a refused session key change, an
 integrity poll without an answer) returns that error and closes the
 channel: the client is `StateDisconnected`. A step the outstation answers
@@ -114,6 +133,8 @@ PARAMETER_ERROR otherwise).
 | `transport.ErrEmpty` | A segment without a header octet |
 | `transport.ErrNoFirst` | A segment without FIR while no fragment was being assembled |
 | `transport.ErrSequence` | A segment whose sequence number does not follow the previous one; the partial fragment is discarded |
+| `transport.ErrDuplicate` | A segment that repeats the previous one octet for octet (Table 8-1); it is discarded and the fragment goes on. Not an error of the channel |
+| `transport.ErrNoData` | A segment with a transport header and no data octets (8.2.2) |
 | `transport.ErrTooLarge` | A fragment grew beyond the reassembler's limit and is discarded |
 | `secauth.ErrKeyWrap` | Wrapped key data does not unwrap: a wrong key, damaged data, a failed integrity check, a wrong session key length, or a key status message that differs from the last one sent |
 

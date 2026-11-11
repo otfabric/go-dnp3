@@ -58,7 +58,8 @@ methods. Group 91 is decoded for ACTIVATE_CONFIG (`Client.ActivateConfig`,
 ## Behaviour to plan for
 
 - **UDP outstation**: one socket serves one master at a time; a master
-  behind another address takes it over when it sends.
+  behind another address takes it over when it sends. `WithMasterIPs` and
+  `ServeUDPFixed` limit who may.
 - **Multi-fragment requests** are not reassembled by the outstation: a
   request is one fragment.
 - **Frames for another address are dropped**: a master hears only frames
@@ -71,8 +72,15 @@ methods. Group 91 is decoded for ACTIVATE_CONFIG (`Client.ActivateConfig`,
   response, with one g70v5 block in it. A file object reported later in an
   event or unsolicited response, or a response with several blocks, fails
   the transfer. The references in the interop suite answer this way.
-- **Associations are per master address**: a master that reconnects while
-  its old connection stands takes over, and the old connection is closed.
+- **Associations are per master address**: a master that connects again
+  while its old connection stands is rejected when the old connection
+  answers a link status request (13.2.3.3); a broken old connection is
+  replaced. The probe takes up to the link timeout (`Link.Timeout`, 2 s by
+  default, with `Link.Retries`), during which the new connection waits.
+- **The master drops broadcast frames it receives**: clauses 4 to 6 define
+  broadcast only for requests to outstations.
+- **Keep-alive can be disabled** (`Link.KeepAlive` negative) for testing;
+  13.2.3.3.1 does not allow it in service.
 - **Event headers with a range or index qualifier**: the outstation selects
   events by all objects (0x06) or a count (0x07..0x09). A range or an index
   list in an event header does not select points: it is answered with all

@@ -80,13 +80,14 @@ The master for one outstation.
 | `WithStateHandler(func(State, error))` | none | Channel state changes |
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer; the TLS handshake that follows is bounded to 10 s |
-| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`), an outstation that connects (`Accept(net.Listener)`, the dual end point), a pipe |
+| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`, or `UDPFrom(local, remote)` from a fixed local port), an outstation that connects (`Accept(net.Listener)`, listening only), a pipe |
+| `WithDualEndpoint(net.Listener, allow)` | off | The TCP dual end point (13.2.3.1.3): dial the outstation and take the connections it establishes on the listener, one at a time, the master's own first; `allow` validates the outstation's address. `Close` closes the listener; excludes `WithStream` |
 | `WithTLS(*tls.Config)` | off | TLS |
 | `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`) |
 | `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`) |
 | `WithResponseTimeout(d)` | 5 s | Per response fragment |
 | `WithMaxFragment(n)` | 2048 | Largest fragment reassembled |
-| `WithLink(Link)` | unconfirmed | `Confirmed`, `Timeout`, `Retries`, `KeepAlive` |
+| `WithLink(Link)` | unconfirmed | `Confirmed` (serial only: 13.2.1.1 forbids it over IP), `Timeout` (2 s), `Retries`, `KeepAlive` (60 s, any positive duration; negative disables it, for testing only) |
 | `WithStartup(Startup)` | nothing | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect |
 | `WithTimeSync(TimeSync)` | `TimeSyncNone` | Synchronize on NEED_TIME: `TimeSyncLAN`, `TimeSyncNonLAN` |
 | `WithAutoClearRestart(bool)` | on | Clear DEVICE_RESTART when reported |
@@ -156,11 +157,13 @@ The outstation.
 | Symbol | Meaning |
 |--------|---------|
 | `New(opts...)` | An outstation |
-| `(*Server).ListenAndServe(addr)` | TCP (with `WithTLS`, TLS) on addr, `:20000` when empty |
+| `(*Server).ListenAndServe(addr)` | TCP (with `WithTLS`, TLS) on addr; when empty `:20000`, or `:19999` with TLS |
 | `(*Server).Serve(net.Listener)` | Accept on any listener |
 | `(*Server).ServeConn(io.ReadWriteCloser, net.Addr)` | Serve one stream: serial, a pipe |
 | `(*Server).ServeUDP(net.PacketConn)` | DNP3 over UDP; answers the address that sent last |
 | `(*Server).ServeUDPTo(net.PacketConn, net.Addr)` | The same, with the master's address known from the start |
+| `(*Server).ServeUDPFixed(net.PacketConn, net.Addr)` | DNP3 over UDP answering one fixed master port (Table 13-1 case 1); datagrams from other IP addresses are ignored |
+| `ServeByMasterIP(net.Listener, routes...)` | Multiple masters, method 1 (13.2.3.5.1): each connection goes to the first `Route{Masters, Server or Group}` whose prefix holds the master's IP address; others are closed |
 | `NewGroup(servers...)` | Several outstations, each a `Server` at its own address, on the same connections (multi-drop); `(*Group).ListenAndServe`, `Serve`, `ServeConn`, `ServeUDP`, `Servers`, `Close` |
 | `(*Server).DialAndServe(ctx, addr, Redial)` | The dual end point: connect to the master, serve, reconnect (`Redial{MinDelay, MaxDelay}`, 1 s and 1 min); `ctx.Err()` when ctx ends, `nil` after `Close` |
 | `(*Server).Address()` | The outstation's link address |
@@ -178,6 +181,7 @@ The outstation.
 | `WithAddress(a)` | 10 | Outstation link address |
 | `WithMasters(addrs...)` | any | Masters answered; their associations exist from the start |
 | `WithSelfAddress(bool)` | off | Accept the self address 0xFFFC |
+| `WithMasterIPs(prefixes...)` | any | Masters by IP address: other TCP connections are closed at accept, other UDP datagrams ignored |
 | `WithHandler(Handler)` | `NopHandler` | Controls, and the optional handler interfaces |
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithTLS(*tls.Config)` | off | TLS for `ListenAndServe`, and the TLS client configuration of `DialAndServe` |
@@ -187,7 +191,7 @@ The outstation.
 | `WithSelectTimeout(d)` | 10 s | A SELECT's validity |
 | `WithMaxControls(n)` | 16 | Controls per request; more get TOO_MANY_OBJS |
 | `WithUnsolicited(Unsolicited)` | disabled | `Enabled`, `Classes`, `HoldTime`, `HoldCount`, `Retries`, `RetryDelay` |
-| `WithLink(Link)` | unconfirmed | `Confirmed`, `Timeout`, `Retries`, `KeepAlive` |
+| `WithLink(Link)` | unconfirmed | As for the client. A TCP connection on which no master sends a frame within `KeepAlive` and `Timeout` is closed |
 | `WithEventLimits(map[PointType]int)` | 100 each | Events buffered per type and master |
 | `WithTimeSync(interval)` | never | NEED_TIME at start and after the interval |
 | `WithAttributes(map[uint8]app.Attribute)` | none | Device attributes of set 0 |
@@ -195,7 +199,7 @@ The outstation.
 | `WithFileServer(FileServer)` | none | File transfer |
 | `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 10 s), `StatisticsClass` (default 1), `StatisticsThreshold` (default 10) |
 
-Constants: `DefaultPort` (20000), `DefaultEventLimit` (100),
+Constants: `DefaultPort` (20000), `DefaultTLSPort` (19999), `DefaultEventLimit` (100),
 `DefaultReplyTimeout`, `MaxScheduledFreezes` (16: the FREEZE_AT_TIME
 requests the server keeps waiting at once; a periodic one keeps its place
 until `Close`); the variable `DefaultCritical`. `Class` is an event class
@@ -261,7 +265,7 @@ directories.
 `Header` (`NewHeader`, `FIR`, `FIN`, `Seq`), `Segmenter` (`Segment`,
 `Seq`), `Reassembler` (`NewReassembler`, `Add`, `Reset`, `Pending`),
 `MaxSegment`, `MaxSegmentData`, `DefaultMaxFragment`; errors `ErrEmpty`, `ErrNoFirst`,
-`ErrSequence`, `ErrTooLarge`.
+`ErrSequence`, `ErrTooLarge`, `ErrDuplicate`, `ErrNoData`.
 
 ## Package `link`
 

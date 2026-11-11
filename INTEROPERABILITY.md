@@ -23,11 +23,15 @@ of a device profile, and how it has been verified.
 
 | Item | Master | Outstation |
 |------|--------|------------|
-| TCP, port 20000 | ✅ | ✅ any number of connections (`WithMaxConnections`) |
-| TLS | ✅ `crypto/tls` | ✅ |
-| UDP | ✅ connected socket | ✅ one master per socket; `ServeUDPTo` names the master for unsolicited responses before it sends |
+| TCP, port 20000 (13.2.3.1) | ✅ initiating end point, any port | ✅ listening end point, any port, any number of connections (`WithMaxConnections`) |
+| TLS (7.8.8, 13.2.2.2) | ✅ `crypto/tls` | ✅; `ListenAndServe("")` with `WithTLS` listens on 19999 (`DefaultTLSPort`) |
+| UDP (13.2.3.2) | ✅ connected socket (`UDP`), from a given local port (`UDPFrom`); every frame of a datagram is decoded | ✅ one master per socket. Table 13-1 case 2, reply to the request's port: `ServeUDP`, `ServeUDPTo`; case 1, a fixed master port: `ServeUDPFixed`. While the master is on TCP, its broadcasts over UDP are taken without disturbing the TCP connection |
 | Serial, any byte stream | ✅ `WithStream` | ✅ `ServeConn` |
-| Dual end point (outstation dials the master) | ✅ `client.Accept`: waits for the outstation's connection, again after each loss with `WithReconnect` | ✅ `DialAndServe`: connects, serves, reconnects with backoff (`Redial`); TLS with the outstation as TLS client |
+| Dual end point (13.2.3.1.3) | ✅ `WithDualEndpoint`: dials the outstation and takes the outstation's connections, one connection at a time, the master's own first, with address validation; `client.Accept` only listens, again after each loss with `WithReconnect` | ✅ `DialAndServe`: connects, serves, reconnects with backoff (`Redial`), and does not dial while the master is connected; TLS with the outstation as TLS client |
+| A second connection of a connected master (13.2.3.3) | — | ✅ rejected while the first answers a link status request; a broken first connection is replaced |
+| Keep-alive (13.2.3.3.1) | ✅ `Link.KeepAlive`, default 60 s, any positive duration; disabling it is for testing | ✅ the same; a TCP connection on which no master sends a frame within one interval and the link timeout is closed |
+| IP address validation (13.2.3.1.4, 13.2.3.2.2 d, 13.3.1) | ✅ `allow` of `WithDualEndpoint` | ✅ `WithMasterIPs`, TCP and UDP |
+| Multiple masters (13.2.3.5) | — | ✅ per master address on one listener; method 1, by the master's IP address: `ServeByMasterIP`; method 2, a port per master: a listener per `Server` or `Group` |
 
 ## Data link layer
 
@@ -35,14 +39,16 @@ of a device profile, and how it has been verified.
 |------|---------|
 | FT3 frames, CRC per header and 16-octet block | ✅ encode and decode, 1..250 octets of user data |
 | Resynchronisation after damage | ✅ skip to start octets, step through a bad header, drop a frame with a bad data CRC |
-| Addresses 0..0xFFEF, broadcast 0xFFFD..0xFFFF | ✅; the master sends broadcasts with `Client.Broadcast` and ignores those it receives; broadcasts carry only user data |
-| Self address 0xFFFC | ✅ outstation, `WithSelfAddress` |
+| Addresses 0..0xFFEF, broadcast 0xFFFD..0xFFFF | ✅; the master sends broadcasts with `Client.Broadcast` and drops those it receives, as clauses 4 to 6 define broadcast only for requests; broadcasts carry only user data |
+| Self address 0xFFFC (9.2.5.2.2) | ✅ outstation, opt-in with `WithSelfAddress`; the master never takes it |
+| Reserved addresses 0xFFF0..0xFFFB | ✅ not answered |
+| DIR bit (9.2.4.1.3.1) | ✅ set on transmission, ignored on receipt |
 | UNCONFIRMED_USER_DATA | ✅ default |
-| CONFIRMED_USER_DATA with RESET_LINK_STATES and the frame count bit | ✅ both roles (`Link.Confirmed`); repeats discarded by FCB; NACK resets the link once |
+| CONFIRMED_USER_DATA with RESET_LINK_STATES and the frame count bit | ✅ both roles (`Link.Confirmed`), for serial links: 13.2.1.1 forbids it over IP, and a channel on TCP or UDP with it logs a warning. Repeats are acknowledged and discarded by FCB; NACK with DFC 0 resets the link once |
 | TEST_LINK_STATES | ✅ answered; FCB toggled when expected |
-| REQUEST_LINK_STATUS / LINK_STATUS | ✅ answered; sent as keep-alive (`Link.KeepAlive`, default 60 s) |
+| REQUEST_LINK_STATUS / LINK_STATUS | ✅ answered; sent as keep-alive (`Link.KeepAlive`, default 60 s); any secondary answer shows the link alive, one other than LINK_STATUS is logged as an error (Table 9-6) |
 | Primary frame timeout and retries | ✅ `Link.Timeout`, `Link.Retries` |
-| DFC (data flow control) | sent as 0; ignored on receipt |
+| DFC (data flow control, 9.2.4.1.3.5) | ✅ set while the receive queue is full; CONFIRMED_USER_DATA that would overflow it is answered NACK; a NACK with DFC set is not repeated (Table 9-6 row 28) |
 | Function codes the standard does not define (such as the obsolete 1, reset of user process) | ignored, no answer: frames are dropped as framing errors. The DNP3 IED certification procedure 6.6.2.2 accepts no answer or a NACK; the recorded run of that procedure against the opendnp3 outstation (testdata/captures) is replayed against go-dnp3's with the same result |
 | FCV checked against the function | ✅ frames with an invalid FCV are ignored |
 | Multi-drop: several outstations on one channel | ✅ master: one `Client` per outstation, each with its own connection (TCP, UDP); the client has no channel shared by several outstations on one serial line. Outstation: `server.Group`, several `Server`s, each at its own address, on the same connections, serial lines and UDP sockets; broadcasts reach all of them |
@@ -51,8 +57,8 @@ of a device profile, and how it has been verified.
 
 | Item | Support |
 |------|---------|
-| Segments of up to 249 octets of fragment data (250 with the transport header), FIR/FIN, six-bit sequence | ✅ |
-| Reassembly rules of clause 8.2.1.2 | ✅ FIR restarts, a gap discards the fragment, a non-FIR outside a fragment is discarded |
+| Segments of 1 to 249 octets of fragment data (250 with the transport header), FIR/FIN, six-bit sequence (8.2.2) | ✅; a segment without data is rejected |
+| Reception rules of 8.2.1.4 and Table 8-1 | ✅ FIR restarts, a repeat of the previous segment is discarded and the fragment goes on, any other sequence error discards the fragment, a non-FIR outside a fragment is discarded |
 | Fragment size | 2048 by default, at least 249 (`WithMaxFragment`) |
 
 ## Application layer
@@ -196,9 +202,10 @@ a pre-shared session key is used directly (outside the standard, see
   testing (see [SECURITY.md](SECURITY.md)).
 - **A read of an index that does not exist** is answered with the indexes
   that do and PARAMETER_ERROR.
-- **Associations are per master address.** A master that reconnects from
-  a new connection while its old one stands takes over: the old connection
-  is closed. Events, unsolicited classes and selections belong to the
+- **Associations are per master address.** A master that connects again
+  while its old connection stands is rejected when the old one answers a
+  link status request, and replaces it when it does not (13.2.3.3, NOTE
+  2). Events, unsolicited classes and selections belong to the
   association, not to the connection.
 - **DEVICE_RESTART** is set per association when it is created, so that
   every master sees it once.
