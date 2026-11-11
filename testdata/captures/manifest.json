@@ -40,6 +40,15 @@
       "revision": "a5c48f8b07ca93a3b8979975a6e3a8db2f55f66a",
       "licence": "none stated; README: 'USING THIS PCAP/CSV FILE REQUIRES THAT YOU CITE THE ABOVE PAPER' (Igbe, Darwish, Saadawi, 'Deterministic Dendritic Cell Algorithm Application to Smart-Grid Cyber Attack Detection', IEEE CSCloud 2017)",
       "redistribution": "committed byte-identical; the paper is cited in README.md as the source requires"
+    },
+    {
+      "id": "unknown-origin",
+      "name": "Captures of unknown origin",
+      "url": "",
+      "revision": "",
+      "licence": "unknown: the source and its terms are not known",
+      "redistribution": "committed byte-identical at the maintainer's decision, with the origin recorded as unknown; remove a file if its owner objects",
+      "unknown_origin": true
     }
   ],
   "files": [
@@ -5222,6 +5231,33 @@
         "UNSOLICITED_RESPONSE"
       ],
       "limitations": "testbed of the cited paper (attack scenarios: injected and replayed DNP3 traffic); the master and outstation implementations are not stated in the repository"
+    },
+    {
+      "id": "unknown-origin-poll-select-operate",
+      "source": "unknown-origin",
+      "name": "unknown_unknown_poll-select-operate.pcap",
+      "original_name": "dnp3_example.pcap",
+      "path": "dnp3_example.pcap",
+      "url": "",
+      "sha256": "d9b22ee7b5ece4a78d8f9995aff20d55bfb315752ce136f97c77eb5ce73511bf",
+      "size": 115403,
+      "recorded": "2020-03-10",
+      "class": "C",
+      "storage": "raw",
+      "local": "unknown-origin/unknown_unknown_poll-select-operate.pcap",
+      "devices": [],
+      "peers": [
+        "master 10.10.20.5 (link address 100, VMware MAC address 00:0c:29:4f:60:cf)",
+        "outstation 10.10.20.8:20000 (link address 5); its MAC address 00:30:a7:1c:08:a3 lies in the OUI of Schweitzer Engineering Laboratories, a hint, not an identification"
+      ],
+      "operations": [
+        "READ",
+        "SELECT",
+        "OPERATE",
+        "RESPONSE",
+        "UNSOLICITED_RESPONSE"
+      ],
+      "limitations": "origin unknown: handed over without its source, terms or recording set-up. Filtered to the packets that carry DNP3: no TCP handshakes, closes or pure ACKs. The outstation never identifies itself (no device attributes are read), so nothing here is a statement about SEL or any device. One long connection with integrity polls (g60v1) and four unsolicited g2v2 events the master never confirms; ten short connections of select-before-operate (nine of 14 pairs, one with 8 SELECT and 7 OPERATE: 134 SELECT and 133 OPERATE in all), alternating TRIP and CLOSE pulses of 500 ms"
     }
   ],
   "examined": [

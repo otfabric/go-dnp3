@@ -31,7 +31,7 @@ rewritten by `make captures-oracle` (Wireshark 4.6.9).
 |---|---|---|
 | A | verified physical-device traffic: the device identified by its own answers in the recording | none |
 | B | credibly documented physical-device traffic, not verified from the traffic | none |
-| C | independent recorded traffic, hardware origin unknown | 15 |
+| C | independent recorded traffic, hardware origin unknown | 16 |
 | D | simulated or software test-bed traffic | 167 |
 | E | standards-derived examples or generated fixtures | none here (the unit tests have them) |
 
@@ -50,6 +50,7 @@ states.
 | `iti-dnp3-conformance/` | the same, `pcaps/dnp3/opendnp3-3/conformance/` | the same | 140 captures with the runner's `log.html` | D | CC-BY-4.0. A DNP3 conformance runner (master side) against the opendnp3 3.0 outstation (named by the directory and the commit "Bring in the opendnp3 3.0 conformance captures", 2020-05-28), on loopback |
 | `iti-zeek-dnp3/` | the same, `pcaps/bro/dnp3/` | the same | 12 | C | CC-BY-4.0. The DNP3 traces of the Bro (Zeek) test suite; no provenance stated |
 | `igbe/` | [igbe/DNP3-Dataset-Plus-SnortRules](https://github.com/igbe/DNP3-Dataset-Plus-SnortRules) | `a5c48f8b07ca93a3b8979975a6e3a8db2f55f66a` | 1 | C | no licence; the README requires citing Igbe, Darwish and Saadawi, "Deterministic Dendritic Cell Algorithm Application to Smart-Grid Cyber Attack Detection", IEEE CSCloud 2017, which we do here |
+| `unknown-origin/` | not known: a capture handed to the maintainer, its source and author unknown | none | 1 | C | not known; committed byte-identical at the maintainer's decision with the origin recorded as unknown, and removed if its owner objects. `TestManifest` requires such a source to have no URL or revision and its files to be class C or D |
 
 [nblair2/go-dnp3](https://github.com/nblair2/go-dnp3) (`56a515110af9a82191841c0e90363b5d1c2d79d5`)
 lists 167 of the ITI `pcaps/dnp3` files in `test/corpus.txt` at ITI revision
@@ -79,6 +80,12 @@ tools save captures of the user's own devices, and the public DNP3 data sets
 found (this ITI collection, the igbe set, the DNP3 Intrusion Detection
 Dataset on Zenodo record 7348493) are test beds of software. Statements about
 real devices need a capture of an identified one.
+
+A second hint, also not evidence: in
+`unknown-origin/unknown_unknown_poll-select-operate.pcap` the outstation's
+MAC address 00:30:a7:1c:08:a3 lies in the OUI 00-30-A7 assigned to Schweitzer
+Engineering Laboratories (SEL). The capture says nothing else about the
+device, its origin is unknown, and the file stays class C.
 
 ## Names
 
@@ -134,20 +141,21 @@ have the same name with `.log.html`.
 | `iti-zeek-dnp3/unknown_unknown_select-operate.pcap` | `dnp3_select_operate.pcap` | C | 2011-12-21 | SELECT, OPERATE |
 | `iti-zeek-dnp3/unknown_unknown_write.pcap` | `dnp3_write.pcap` | C | 2011-12-21 | WRITE |
 | `igbe/unknown_unknown_ddca-smart-grid-attacks.pcap` | `dnp3dataset_capture.pcap` | C | 2017-02-13 | 26058 packets, 546 TCP connections with DNP3: polls, controls, injected cold restarts and other attacks |
+| `unknown-origin/unknown_unknown_poll-select-operate.pcap` | `dnp3_example.pcap` | C | 2020-03-10 | 834 DNP3 packets (handshakes and pure ACKs filtered out): one connection with polls (g60v1–v4) and 4 g2v2 unsolicited responses the master does not confirm; ten connections of SELECT/OPERATE (134 SELECT, 133 OPERATE; nine of 14 pairs) (g12v1 TRIP and CLOSE pulses of 500 ms), the next SELECT sent before the previous answers (see Comparison rules) |
 
 ## What the tests do
 
 | Test | Package | What |
 |---|---|---|
 | `TestManifest` | `internal/capture` | manifest, SHA256SUMS and files agree; names follow the scheme; no class A or B |
-| `TestRoundTrip` | `internal/capture` | each of the 13690 decoded link frames and 12456 decoded fragments encodes back to the recorded octets |
+| `TestRoundTrip` | `internal/capture` | each of the 14524 decoded link frames and 13188 decoded fragments encodes back to the recorded octets |
 | `TestTshark` | `internal/capture` | link header, transport header, application header, IIN and object headers (group, variation, qualifier) of every frame against Wireshark's dissector |
 | `TestConformanceLog` | `internal/capture` | the octets the runner logged sending and receiving are the capture's reassembled streams; its link, transport and application decoding (1063 L, 1024 T and 968 A rows, 1206 object header rows and 4858 values) against go-dnp3's |
 | `TestAnomalies`, `TestTransport`, `TestCoverage`, `TestFunctionsSeen` | `internal/capture` | every framing, transport and application error classified; no transport refusal; coverage.json up to date |
-| `TestFuzzSeeds` | `internal/capture` | 370 fuzz seeds from the captures in `link`, `app`, `server` and `client` |
-| `TestCaptureClientReplay` | `client` | 5543 recorded requests sent through `Client.Request` (or `Broadcast`), byte-identical to the recorded ones apart from the sequence number; the recorded responses (5534 fragments, 82142 measurements) accepted; 647 unsolicited responses reach the Handler and are confirmed |
+| `TestFuzzSeeds` | `internal/capture` | 382 fuzz seeds from the captures in `link`, `app`, `server` and `client` |
+| `TestCaptureClientReplay` | `client` | 5908 recorded requests sent through `Client.Request` (or `Broadcast`), byte-identical to the recorded ones apart from the sequence number; the recorded responses (5899 fragments, 100960 measurements) accepted; 651 unsolicited responses reach the Handler and are confirmed |
 | `TestCaptureClientReadFile`, `…ListDirectory`, `…WriteFile`, `…DeleteFile`, `…SelectOperate`, `…TimeSync`, `…DelayMeasure`, `…Restart` | `client` | the client's procedures against the recorded outstations, its requests compared with the recorded masters' |
-| `TestCaptureServerReplay` | `server` | 5569 recorded requests sent to the outstation; whether answered, FIR and sequence, IIN2 error bits and control echoes compared |
+| `TestCaptureServerReplay` | `server` | 5933 recorded requests sent to the outstation; whether answered, FIR and sequence, IIN2 error bits and control echoes compared |
 | `TestCaptureServerLinkReplay` | `server` | the octets of masters that use the link layer (resets, link status, confirmed data, damaged frames) sent as captured; the outstation's link reactions compared |
 
 Conversations are reassembled per TCP direction in sequence order
@@ -171,6 +179,14 @@ that completed it.
   recorded outstation's state and configuration and are not compared. Its
   database is built from what the recorded outstation reported; outputs it
   answered NOT_SUPPORTED for are left out.
+- **Requests are paired with responses by sequence number.** A recorded
+  master may send a request before the answer to the previous one (the
+  unknown-origin SELECT/OPERATE connections send SELECT, OPERATE and the
+  next SELECT, reusing sequence numbers 7 and 8): every request stays open
+  until its response ends, and a first response fragment goes to the oldest
+  open request with its sequence number. A secure authentication RESPONSE
+  after a challenge answers the challenged request (IEEE 1815-2012 clause
+  7), not the AUTHENTICATE_REQ that carries the same sequence number.
 
 ## Results
 

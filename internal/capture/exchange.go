@@ -3,6 +3,9 @@
 package capture
 
 import (
+	"bytes"
+	"slices"
+
 	"github.com/otfabric/go-dnp3/app"
 	"github.com/otfabric/go-dnp3/link"
 )
@@ -24,9 +27,24 @@ type Exchange struct {
 // answers it with an IIN2 error); a response it refused is left out, as
 // are CONFIRM requests (they have no response). The master is the side
 // that sends requests; a fragment that is not a response is a request.
+//
+// A master may send a request before the response to the previous one
+// (some recorded masters pipeline a SELECT, an OPERATE and the next
+// SELECT): every request stays open until its response ends, and a first
+// response fragment goes to the oldest open request with its sequence
+// number. A request that repeats an unanswered open one octet for octet
+// closes it: the response goes to the repeat, as for a retransmission.
 func Exchanges(s Stream) []Exchange {
 	var out []Exchange
-	var cur *Exchange
+	var open []int // indexes into out of the exchanges without a final fragment
+	drop := func(i int) {
+		for k, j := range open {
+			if j == i {
+				open = append(open[:k], open[k+1:]...)
+				return
+			}
+		}
+	}
 	for _, f := range s.Fragments {
 		if f.Frag == nil || (f.Err != nil && f.Frag.Function.IsResponse()) {
 			continue
@@ -37,20 +55,35 @@ func Exchanges(s Stream) []Exchange {
 			if fc == app.FuncConfirm {
 				continue
 			}
+			for _, j := range slices.Clone(open) {
+				if r := out[j].Request; r.FromClient == f.FromClient && bytes.Equal(r.Raw, f.Raw) && len(out[j].Responses) == 0 {
+					drop(j)
+				}
+			}
 			out = append(out, Exchange{Request: f})
-			cur = &out[len(out)-1]
-		case fc == app.FuncResponse && cur != nil && !cur.Complete && f.FromClient != cur.Request.FromClient:
+			open = append(open, len(out)-1)
+		case fc == app.FuncResponse:
 			// The first fragment echoes the request's sequence number,
 			// each further one the next (IEEE 1815-2012 clause 4.3.3).
-			want := cur.Request.Frag.Control.Seq
-			if n := len(cur.Responses); n > 0 {
-				want = app.NextSeq(cur.Responses[n-1].Frag.Control.Seq)
+			for _, j := range open {
+				cur := &out[j]
+				if f.FromClient == cur.Request.FromClient {
+					continue
+				}
+				want := cur.Request.Frag.Control.Seq
+				if n := len(cur.Responses); n > 0 {
+					want = app.NextSeq(cur.Responses[n-1].Frag.Control.Seq)
+				}
+				if f.Frag.Control.Seq != want || f.Frag.Control.FIR != (len(cur.Responses) == 0) {
+					continue
+				}
+				cur.Responses = append(cur.Responses, f)
+				cur.Complete = f.Frag.Control.FIN
+				if cur.Complete {
+					drop(j)
+				}
+				break
 			}
-			if f.Frag.Control.Seq != want || f.Frag.Control.FIR != (len(cur.Responses) == 0) {
-				continue
-			}
-			cur.Responses = append(cur.Responses, f)
-			cur.Complete = f.Frag.Control.FIN
 		}
 	}
 	return out

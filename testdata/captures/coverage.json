@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "totals": {
-    "files": 182,
-    "packets": 30048,
-    "link_frames": 13690,
+    "files": 183,
+    "packets": 30882,
+    "link_frames": 14524,
     "framing_errors": 31,
-    "fragments": 12470,
-    "fragments_decoded": 12456,
+    "fragments": 13202,
+    "fragments_decoded": 13188,
     "anomalies": 45
   },
   "files": [
@@ -5420,6 +5420,44 @@
           "error": "link: framing error: link: invalid start octets: 3 octets skipped"
         }
       ]
+    },
+    {
+      "id": "unknown-origin-poll-select-operate",
+      "packets": 834,
+      "conversations": 11,
+      "link_frames": {
+        "PRI UNCONFIRMED_USER_DATA": 834
+      },
+      "framing_errors": 0,
+      "cut": 0,
+      "fragments": {
+        "OPERATE": 133,
+        "READ": 97,
+        "RESPONSE": 364,
+        "SELECT": 134,
+        "UNSOLICITED_RESPONSE": 4
+      },
+      "fragments_decoded": 732,
+      "multi_segment": 100,
+      "multi_fragment": 0,
+      "objects": [
+        "OPERATE g12v1 q=0x17",
+        "READ g60v1 q=0x06",
+        "READ g60v2 q=0x06",
+        "READ g60v3 q=0x06",
+        "READ g60v4 q=0x06",
+        "RESPONSE g10v2 q=0x00",
+        "RESPONSE g12v1 q=0x17",
+        "RESPONSE g1v2 q=0x00",
+        "RESPONSE g30v2 q=0x00",
+        "RESPONSE g40v2 q=0x00",
+        "SELECT g12v1 q=0x17",
+        "UNSOLICITED_RESPONSE g2v2 q=0x17"
+      ],
+      "iin": [
+        "CLASS_1_EVENTS"
+      ],
+      "anomalies": []
     }
   ]
 }
