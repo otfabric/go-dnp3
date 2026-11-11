@@ -56,6 +56,7 @@ type Client struct {
 	// the current channel and csq the challenge sequence number aggressive
 	// mode requests continue from.
 	lastChallenge []byte
+	lastMAC       app.MACAlgorithm
 	csq           uint32
 	// rekey asks the key change loop for a key change now.
 	rekey chan struct{}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -133,6 +134,7 @@ type options struct {
 	auth             *secauth.User
 	keyChange        time.Duration
 	aggressive       []app.FunctionCode
+	challengeMACs    []app.MACAlgorithm
 }
 
 func defaultOptions() options {
@@ -397,6 +399,29 @@ func WithAggressiveMode(fcs ...app.FunctionCode) Option {
 			fcs = secauth.DefaultCritical
 		}
 		o.aggressive = fcs
+		return nil
+	}
+}
+
+// WithChallengeMACs limits the MAC algorithms an outstation's challenge
+// may ask for. The challenge (g120v1, IEEE 1815-2012 clause 7) names the
+// algorithm of the reply and of aggressive mode requests; a challenge asking for another one fails
+// the request with dnp3.ErrAuthentication. By default every algorithm
+// package secauth computes is accepted except the obsolete HMAC-SHA-1
+// truncated to 4 octets. The algorithm of secauth.User is the one the
+// session key change and the outstation's key status use; it need not be
+// in the list.
+func WithChallengeMACs(algs ...app.MACAlgorithm) Option {
+	return func(o *options) error {
+		if len(algs) == 0 {
+			return invalidOption("no challenge MAC algorithm")
+		}
+		for _, a := range algs {
+			if _, err := secauth.MAC(a, []byte{0}, nil); err != nil {
+				return invalidOption("challenge MAC algorithm %s: %v", a, err)
+			}
+		}
+		o.challengeMACs = slices.Clone(algs)
 		return nil
 	}
 }

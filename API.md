@@ -98,6 +98,7 @@ The master for one outstation.
 | `WithQueueLimit(n)` | 64 | Requests that may wait for their turn |
 | `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key (on connect, at the interval, and again soon after an authentication failure, with a backoff from 1 s while there are no keys), challenge replies |
 | `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed |
+| `WithChallengeMACs(algs...)` | all but HMAC-SHA-1/4 | The MAC algorithms an outstation's challenge may ask for; the reply and the aggressive mode requests use the challenge's algorithm |
 | `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, after the first challenge; `New` refuses it without `WithSecureAuthentication` |
 
 Constant: `DefaultPort` (20000), the port `Dial` uses when the address has none.

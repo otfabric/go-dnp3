@@ -171,7 +171,7 @@ a pre-shared session key is used directly (outside the standard, see
 |------|---------|
 | Challenge of critical requests (g120v1), reply (g120v2) | ✅ both roles: 32 octets of challenge data; the reply and the response keep the sequence number of the critical request |
 | Critical function codes | `secauth.DefaultCritical` (`server.DefaultCritical` is the same slice), configurable; also the default set of `client.WithAggressiveMode` |
-| MAC algorithms | HMAC-SHA-256 truncated to 8 and 16, HMAC-SHA-1 truncated to 4, 8 and 10 |
+| MAC algorithms | HMAC-SHA-256 truncated to 8 and 16, HMAC-SHA-1 truncated to 4, 8 and 10. The outstation challenges with the algorithm of its `secauth.User`; the master answers with the algorithm the challenge names and uses it for aggressive mode, among those `client.WithChallengeMACs` allows (by default all but the obsolete HMAC-SHA-1/4) |
 | Authentication error (g120v7) | ✅ sent on a wrong MAC, reported as `*dnp3.AuthError` |
 | Session key status request and status (g120v4, v5) | ✅ both roles: fresh challenge data per status, MAC over the last key change with the monitoring key |
 | Session key change (g120v6), AES-128 and AES-256 key wrap (RFC 3394) | ✅ both roles: at every connection and at the key change interval (`client.WithKeyChangeInterval`, default 15 minutes); keys invalid after the connection ends |

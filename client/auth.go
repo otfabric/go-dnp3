@@ -31,8 +31,11 @@ func (c *Client) onAuthResponse(ctx context.Context, sess *channel.Session, f *a
 				if u == nil {
 					return 0, fmt.Errorf("%w: challenged without secure authentication configured", dnp3.ErrAuthentication)
 				}
-				if v.MAC != u.Algorithm() {
-					return 0, fmt.Errorf("%w: challenge asks for %s, configured %s", dnp3.ErrAuthentication, v.MAC, u.Algorithm())
+				// The challenge (g120v1, IEEE 1815-2012 clause 7) names
+				// the MAC algorithm of the reply: the outstation's choice,
+				// within the algorithms this client accepts.
+				if !c.acceptsMAC(v.MAC) {
+					return 0, fmt.Errorf("%w: challenge asks for %s, not among the accepted MAC algorithms", dnp3.ErrAuthentication, v.MAC)
 				}
 				key := c.controlKey()
 				if key == nil {
@@ -43,7 +46,7 @@ func (c *Client) onAuthResponse(ctx context.Context, sess *channel.Session, f *a
 					return 0, fmt.Errorf("%w: %w", dnp3.ErrAuthentication, err)
 				}
 				c.mu.Lock()
-				c.lastChallenge, c.csq = append([]byte(nil), raw...), v.CSQ
+				c.lastChallenge, c.lastMAC, c.csq = append([]byte(nil), raw...), v.MAC, v.CSQ
 				c.mu.Unlock()
 				seq := f.Control.Seq
 				reply := &app.Fragment{Control: app.SingleControl(seq), Function: app.FuncAuthRequest,
@@ -76,7 +79,7 @@ func (c *Client) aggressive(req *app.Fragment) error {
 		return nil
 	}
 	c.mu.Lock()
-	last, csq := c.lastChallenge, c.csq
+	last, alg, csq := c.lastChallenge, c.lastMAC, c.csq
 	c.mu.Unlock()
 	key := c.controlKey()
 	if last == nil || key == nil {
@@ -87,11 +90,26 @@ func (c *Client) aggressive(req *app.Fragment) error {
 	if err != nil {
 		return err
 	}
-	// WithSecureAuthentication validated the algorithm: MAC cannot fail.
-	mac, _ := secauth.MAC(u.Algorithm(), key, secauth.AuthData(last, b))
+	// The MAC covers the last challenge and uses its algorithm, which
+	// onAuthResponse accepted: MAC cannot fail.
+	mac, _ := secauth.MAC(alg, key, secauth.AuthData(last, b))
 	req.Headers = append(req.Headers, app.FreeFormat(app.G120V9, app.AuthMAC{MAC: mac}))
 	c.mu.Lock()
 	c.csq = csq + 1
 	c.mu.Unlock()
 	return nil
+}
+
+// acceptsMAC reports whether a challenge may ask for the MAC algorithm alg:
+// one of WithChallengeMACs, or by default any algorithm secauth computes
+// except the obsolete HMAC-SHA-1 truncated to 4 octets.
+func (c *Client) acceptsMAC(alg app.MACAlgorithm) bool {
+	if c.opts.challengeMACs != nil {
+		return slices.Contains(c.opts.challengeMACs, alg)
+	}
+	if alg == app.MACHMACSHA1Trunc4 {
+		return false
+	}
+	_, err := secauth.MAC(alg, []byte{0}, nil)
+	return err == nil
 }

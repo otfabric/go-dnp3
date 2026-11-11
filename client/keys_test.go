@@ -368,3 +368,61 @@ func TestRekeyOnAuthError(t *testing.T) {
 		t.Fatal("no key change asked for after the authentication error")
 	}
 }
+
+// TestChallengeMACOfOutstation: the reply to a challenge, and the aggressive
+// mode requests after it, use the MAC algorithm the challenge names, not
+// the one the client is configured with; WithChallengeMACs limits which.
+func TestChallengeMACOfOutstation(t *testing.T) {
+	accept := server.HandlerFunc(func(context.Context, server.Command, server.OperateType) app.CommandStatus { return app.StatusSuccess })
+	_, addr := outstation(t, server.WithHandler(accept),
+		server.WithSecureAuthentication(server.SecureAuth{User: secauth.User{Number: 1, UpdateKey: testUpdateKey, MAC: app.MACHMACSHA1Trunc10}}))
+	user := secauth.User{Number: 1, UpdateKey: testUpdateKey} // HMAC-SHA-256/16 by default
+	c, err := Dial(testCtx(t), addr, WithSecureAuthentication(user), WithAggressiveMode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	for i := range 2 { // challenged, then in aggressive mode over that challenge
+		if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
+			t.Fatalf("control %d with the outstation's HMAC-SHA-1/10: %v", i, err)
+		}
+	}
+
+	strict, err := Dial(testCtx(t), addr, WithSecureAuthentication(user), WithChallengeMACs(app.MACHMACSHA256Trunc16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = strict.Close() }()
+	if _, err := strict.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); !errors.Is(err, dnp3.ErrAuthentication) {
+		t.Fatalf("challenge outside WithChallengeMACs: %v", err)
+	}
+}
+
+func TestChallengeMACOptions(t *testing.T) {
+	for _, algs := range [][]app.MACAlgorithm{nil, {app.MACAESGMAC}, {app.MACNone}} {
+		if _, err := New("127.0.0.1", WithChallengeMACs(algs...)); !errors.Is(err, dnp3.ErrInvalidOption) {
+			t.Errorf("WithChallengeMACs(%v) accepted", algs)
+		}
+	}
+	c, err := New("127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	for alg, want := range map[app.MACAlgorithm]bool{
+		app.MACHMACSHA1Trunc4: false, app.MACHMACSHA1Trunc8: true, app.MACHMACSHA1Trunc10: true,
+		app.MACHMACSHA256Trunc8: true, app.MACHMACSHA256Trunc16: true, app.MACAESGMAC: false, app.MACNone: false,
+	} {
+		if got := c.acceptsMAC(alg); got != want {
+			t.Errorf("default acceptsMAC(%s) = %v", alg, got)
+		}
+	}
+	c, err = New("127.0.0.1", WithChallengeMACs(app.MACHMACSHA1Trunc4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if !c.acceptsMAC(app.MACHMACSHA1Trunc4) || c.acceptsMAC(app.MACHMACSHA256Trunc16) {
+		t.Error("WithChallengeMACs list not applied")
+	}
+}
