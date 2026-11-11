@@ -9,7 +9,8 @@ import (
 )
 
 // AttrType is the data type code of a device attribute (IEEE 1815-2012
-// Table 11-11).
+// 5.5.4.3, Table 5-16). The codes are those of the object data type codes
+// of Table 11-4.
 type AttrType uint8
 
 // Attribute data types.
@@ -59,6 +60,11 @@ func (t AttrType) String() string {
 }
 
 // Standard device attribute variations of group 0 (set 0).
+//
+// IEEE 1815-2012 Annex A (A.1.1 to A.1.44) defines 209 to 243, 245 to 250,
+// 252, 254 and 255. The variations 196 to 208 and 244 are not defined in
+// IEEE 1815-2012; there, index 0 variations 1 to 253 are pre-assigned or
+// reserved for assignment by the DNP Users Group (5.5.2).
 const (
 	AttrConfigID                    uint8 = 196
 	AttrConfigVersion               uint8 = 197

@@ -5,7 +5,7 @@ package app
 import "fmt"
 
 // FunctionCode is the application layer function code (IEEE 1815-2012
-// clause 4.2.2.5, Table 4-1 and Table 4-2).
+// clause 4.2.2.5, Table 4-2).
 type FunctionCode uint8
 
 // Request function codes.

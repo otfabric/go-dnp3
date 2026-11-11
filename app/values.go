@@ -28,8 +28,8 @@ type Value interface {
 	isValue()
 }
 
-// Flags is the quality flags octet of a point (IEEE 1815-2012
-// clause 11.9.6.2).
+// Flags is the quality flags octet of a point (IEEE 1815-2012 11.6.1,
+// Table 11-5).
 //
 // The state bits that share the octet with the flags of binary and
 // double-bit points (bit 7, bits 6..7) are not part of Flags: they are the
@@ -57,7 +57,8 @@ const (
 	// FlagChatterFilter: binary and double-bit inputs; the input is
 	// changing too fast and is filtered.
 	FlagChatterFilter Flags = 0x20
-	// FlagRollover: counters; obsolete, sent as zero by current devices.
+	// FlagRollover: counters; obsolete. Outstations shall not set it and
+	// masters shall ignore it (IEEE 1815-2012 Table 11-5).
 	FlagRollover Flags = 0x20
 	// FlagOverRange: analog inputs and outputs; the value exceeds the
 	// range of the variation or of the device.
@@ -65,7 +66,9 @@ const (
 	// FlagDiscontinuity: counters; the value cannot be compared with the
 	// previous one.
 	FlagDiscontinuity Flags = 0x40
-	// FlagReferenceErr: analog inputs; the reference signal is in error.
+	// FlagReferenceErr: analog inputs, analog output status and analog
+	// output events; the value might not have the expected accuracy, for
+	// example because the reference signal is in error.
 	FlagReferenceErr Flags = 0x40
 )
 
@@ -109,10 +112,11 @@ func (d DoubleBit) String() string {
 }
 
 // CommandStatus is the status code of a control (IEEE 1815-2012
-// Table 11-4), returned by the outstation in the echo of a command.
+// Table 11-7), returned by the outstation in the echo of a command.
 type CommandStatus uint8
 
-// Command status codes.
+// Command status codes. IEEE 1815-2012 Table 11-7 defines 0..12, 126 and
+// 127, and reserves 13..125: the codes 13..18 are not defined by it.
 const (
 	StatusSuccess            CommandStatus = 0
 	StatusTimeout            CommandStatus = 1
@@ -218,7 +222,9 @@ func (t TripClose) String() string {
 type Binary struct {
 	Value bool
 	// Flags are not sent in the packed variations (g1v1, g10v1, g12v3,
-	// g80v1) and are zero when decoded from them.
+	// g80v1) and are zero when decoded from them. A master reads a
+	// variation without flags as ONLINE with every exception flag clear
+	// (IEEE 1815-2012 11.6.1.1 NOTE 2).
 	Flags Flags
 	// Time is the time of the event in the variations with time.
 	Time Timestamp
@@ -340,7 +346,7 @@ type AnalogCommandEvent struct {
 // IntervalUnit is the unit of the interval of g50v4.
 type IntervalUnit uint8
 
-// Interval units (IEEE 1815-2012 Table 11-23).
+// Interval units of g50v4 (IEEE 1815-2012 A.23.4.2.2).
 const (
 	UnitNone         IntervalUnit = 0
 	UnitMilliseconds IntervalUnit = 1

@@ -5,7 +5,8 @@ package app
 import "time"
 
 // Timestamp is DNP3 absolute time: milliseconds since 1970-01-01 00:00 UTC,
-// 48 bits on the wire (IEEE 1815-2012 clause 11.9.6.1).
+// 48 bits on the wire (DNP3TIME, IEEE 1815-2012 clause 3 and 10.3.2; a
+// UINT48 by Table 11-4).
 //
 // It is carried as the integer the standard defines rather than as a
 // time.Time so that values round-trip exactly; [Timestamp.Time] and
