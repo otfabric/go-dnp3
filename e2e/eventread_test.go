@@ -116,21 +116,24 @@ func TestAssignedClassReportsCurrentChange(t *testing.T) {
 
 // TestAnalogOutputStatusOutOfClass0: analog output status (g40) configured
 // out of class 0 is left out of the integrity poll and read by group, and an
-// update of it reports a g42 event.
+// update of it reports no g42 event: an output event is generated only for
+// a point a class 0 response returns (IEEE 1815-2012 A.21.1.1, p. 620). The
+// same point in class 0 reports one.
 func TestAnalogOutputStatusOutOfClass0(t *testing.T) {
 	p := newPair(t, func(db *server.Database) {
 		_ = db.AddAnalogInput(0, server.PointConfig{Class: 2}, app.Analog{Value: 1, Flags: app.FlagOnline})
 		_ = db.AddAnalogOutput(0, server.PointConfig{Class: 2, ExcludeFromClass0: true, StaticVariation: 3}, app.Analog{Value: 2.5, Flags: app.FlagOnline})
+		_ = db.AddAnalogOutput(1, server.PointConfig{Class: 2, StaticVariation: 3}, app.Analog{Value: 2.5, Flags: app.FlagOnline})
 	}, nil)
 	c := ctx(t)
 	res, err := p.c.IntegrityPoll(c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := gvs(res.Measurements()); len(got) != 1 || got[0] != "g30v1" {
+	if got := gvs(res.Measurements()); len(got) != 2 || got[0] != "g30v1" || got[1] != "g40v3" {
 		t.Fatalf("integrity poll: %v", got)
 	}
-	res, err = p.c.Read(c, app.AllObjects(app.G40V0))
+	res, err = p.c.Read(c, app.IndexRange(app.G40V0, 0, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,12 +141,13 @@ func TestAnalogOutputStatusOutOfClass0(t *testing.T) {
 		t.Fatalf("g40 read: %v", ms)
 	}
 	_ = p.db.UpdateAnalogOutput(0, app.Analog{Value: 4, Flags: app.FlagOnline})
+	_ = p.db.UpdateAnalogOutput(1, app.Analog{Value: 5, Flags: app.FlagOnline})
 	res, err = p.c.EventPoll(c, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ms := res.Measurements(); len(ms) != 1 || ms[0].GV != app.G42V3 || ms[0].Value.(app.Analog).Value != 4 {
-		t.Fatalf("g42 event: %v", gvs(ms))
+	if ms := res.Measurements(); len(ms) != 1 || ms[0].GV != app.G42V3 || ms[0].Index != 1 || ms[0].Value.(app.Analog).Value != 5 {
+		t.Fatalf("g42 events: %v", gvs(ms))
 	}
 }
 

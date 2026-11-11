@@ -631,7 +631,8 @@ func (as *attributeSet) isWritable(h Handler, v uint8) bool {
 }
 
 // attributeSets returns the sets a READ or WRITE of group 0 names: the
-// range of the header, set 0 for any other qualifier.
+// range of the header, set 0 for any other qualifier. An index-prefixed
+// header names its sets by its indexes instead (attributeIndexes).
 func attributeSets(h *app.Header) (start, stop uint32) {
 	if h.Qualifier.IsRange() {
 		return h.Start, h.Stop
@@ -640,27 +641,40 @@ func attributeSets(h *app.Header) (start, stop uint32) {
 }
 
 func (s *Server) attributeItems(h *app.Header, p *readPlan) []item {
-	if h.GV.Variation() == 0 {
+	if h.GV.Variation() == 0 || len(s.opts.attributes) == 0 {
 		// Group 0 has no variation 0 (IEEE 1815-2012 Annex A, device
 		// attributes are variations 1..255): an unknown object, whatever
 		// sets the outstation has. The DNP3 IED certification procedure
 		// (8.6.3.2) expects IIN2.1; recorded in
-		// conformance-runner_opendnp3-3_8-6-3-2.pcap.
+		// conformance-runner_opendnp3-3_8-6-3-2.pcap. An outstation
+		// without device attributes supports no group 0 object at all
+		// (Table 4-14, p. 85).
 		p.iin |= app.IINObjectUnknown
 		return nil
 	}
-	start, stop := attributeSets(h)
-	// The configured sets in the range, in order: a range is not walked
-	// set by set, it may span four billion of them.
 	var sets []uint16
-	for set := range s.opts.attributes {
-		if uint32(set) >= start && uint32(set) <= stop {
-			sets = append(sets, set)
+	if h.Qualifier.IsIndexed() {
+		// The set is the index of each object (5.5.6, pp. 151-152).
+		for _, o := range h.Objects {
+			if o.Index > 0xFFFF || s.opts.attributes[uint16(o.Index)] == nil {
+				p.iin |= app.IINParameterError
+				continue
+			}
+			sets = append(sets, uint16(o.Index))
 		}
-	}
-	slices.Sort(sets)
-	if uint64(stop)-uint64(start)+1 != uint64(len(sets)) {
-		p.iin |= app.IINParameterError // the range names sets that do not exist
+	} else {
+		start, stop := attributeSets(h)
+		// The configured sets in the range, in order: a range is not
+		// walked set by set, it may span four billion of them.
+		for set := range s.opts.attributes {
+			if uint32(set) >= start && uint32(set) <= stop {
+				sets = append(sets, set)
+			}
+		}
+		slices.Sort(sets)
+		if uint64(stop)-uint64(start)+1 != uint64(len(sets)) {
+			p.iin |= app.IINParameterError // the range names sets that do not exist
+		}
 	}
 	var out []item
 	for _, set := range sets {
@@ -687,7 +701,9 @@ func (s *Server) attributeSetItems(set uint32, as *attributeSet, v uint8, p *rea
 		for _, v := range sortedVariations(as.attrs) {
 			entries = append(entries, app.AttributeListEntry{Variation: v, Writable: as.isWritable(s.opts.handler, v)})
 		}
-		return []item{one(v, app.ListAttribute(entries...))}
+		// The list of variations has the set as the index of qualifier
+		// 0x17 (5.5.6.2 b, p. 151; EX 5-11).
+		return []item{{h: app.Indexed(app.GV(0, v), app.Object{Index: set, Value: app.ListAttribute(entries...)})}}
 	default:
 		at, ok := as.attrs[v]
 		if !ok {
@@ -723,7 +739,14 @@ func (a *association) writeAttributes(ctx context.Context, h app.Header) app.IIN
 			wh, ok := a.srv.opts.handler.(WriteHandler)
 			if !ok || wh.WriteAttribute(ctx, v, val) != nil {
 				iin |= app.IINParameterError
+				continue
 			}
+			// An accepted write changes the attribute (5.5.8, p. 153).
+			as.mu.Lock()
+			if _, exists := as.attrs[v]; exists {
+				as.attrs[v] = val
+			}
+			as.mu.Unlock()
 			continue
 		}
 		as.mu.Lock()

@@ -82,6 +82,8 @@ type options struct {
 	fileTimeout    time.Duration
 	fileClass      Class
 	auth           *SecureAuth
+
+	deadbandIntegerOnly bool
 }
 
 func defaultOptions() options {
@@ -291,6 +293,16 @@ func WithTimeSync(interval time.Duration) Option {
 		o.needTime = interval
 		return nil
 	}
+}
+
+// WithDeadbandIntegerOnly reports analog input deadbands (group 34) in
+// variations 1 and 2 only, for masters without floating point, as IEEE
+// 1815-2012 A.18.3.2.3 (p. 609) requires a device that reports variation
+// 3 to be configurable: a deadband is rounded to the nearest integer and
+// limited to 4294967295, and a READ of g34v3 is answered with IIN2.1.
+// Masters can still write any variation.
+func WithDeadbandIntegerOnly(enabled bool) Option {
+	return func(o *options) error { o.deadbandIntegerOnly = enabled; return nil }
 }
 
 // WithAttributes sets the device attributes of set 0 (group 0) the
