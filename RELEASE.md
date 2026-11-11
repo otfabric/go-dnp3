@@ -16,6 +16,8 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - **Aggressive mode MAC follows Table A-9**: it does not interoperate with go-dnp3 releases before this one. Upgrade both ends.
 - **Secure Authentication timing**: the outstation's reply timeout is 2 s (was 10 s), session keys expire after 30 minutes or 2000 messages without a change, and more function codes are challenged by default.
 - **TLS uses port 19999 by default** (7.8.8): `ListenAndServe("")` with `WithTLS`, and a client with `WithTLS` given an address without a port. Plain TCP stays on 20000.
+- **SAVE_CONFIG is answered with a Delay Time object** (g52v2, 4.4.12): a master that expects a response without objects, such as opendnp3's, reports a bad response.
+- **Security statistics carry Association ID 0** (A.46.1.2.2: measured on the association that reads them), not the master's address.
 - **Frozen counter and frozen analog input events are raised at every freeze**, also for an unchanged value (11.9.5.2, 11.9.1.2): a master that polls events sees one per freeze and point.
 - **Responses with qualifier 0x06, group 60 or variation 0 are refused** by the codec: these headers are for requests only.
 
@@ -43,7 +45,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - **Controls**: a request status of NON_PARTICIPATING (126) is echoed (Table 11-7 note a); a CROB with the queue bit is answered NOT_SUPPORTED (A.8.1.2.2); a request with an unknown header executes nothing; a request between SELECT and OPERATE, or a failed SELECT, ends the selection; a SELECT with the same sequence number and other octets is discarded; the echo of a control request is held to the transmit limit.
 - **Files**: an open file no request names for `WithFileTimeout` (default 5 minutes) is closed and reported with a g70v6 HANDLE_EXPIRED event (4.4.17.1.1, 5.3.8 Rule 12); handles are unique to the outstation; a block beyond the declared size or larger than negotiated is BUFFER_OVERRUN; an unknown mode INVALID_MODE; deleting an open file FILE_LOCKED; a failed abort CANNOT_ABORT; CLOSE_FILE and ABORT_FILE echo the request; GET_FILE_INFO answers with the requested name; `FSFileServer` reports permissions as read only and a directory's size as its number of entries (Table 11-8).
 - **FREEZE_AT_TIME** follows Table 4-11: time 0 with an interval freezes every interval from the start of the current hour; the time all ones cancels. FREEZE_CLEAR of analog inputs is answered IIN2.1 (Table 12-14).
-- **Application functions**: SAVE_CONFIG through `ApplicationHandler` is answered with g52v2 (delay 0), ACTIVATE_CONFIG with g91v1. INITIALIZE_DATA is obsolete (4.4.10): without a handler it is answered IIN2.0.
+- **Application functions**: SAVE_CONFIG through `ApplicationHandler` is answered with g52v2 (delay 0), as 4.4.12 requires; opendnp3's master refuses a response with objects to it and reports a bad response, although the function was executed. ACTIVATE_CONFIG is answered with g91v1. INITIALIZE_DATA is obsolete (4.4.10): without a handler it is answered IIN2.0.
 - **ASSIGN_CLASS** accepts g12v0 and g41v0 (command events); security statistics to class 0 are answered IIN2.0; `Server.Restart` reverts class assignments.
 - **Reads**: g50v1 with qualifier 0x07, count 1, returns the time (other qualifiers IIN2.2); packed variations can be read by index; an octet string asked in another length is answered in its own length; g0v255 uses qualifier 0x17; an index or count qualifier on group 0 selects the set; a READ of group 0 without attribute sets is IIN2.1; a virtual range qualifier (0x03–0x05) in a request is answered with the same qualifier.
 - **Point data**: ROLLOVER and reserved flag bits are cleared; a +Inf deadband is accepted and suppresses events; output events are not raised for points left out of class 0; the g13 commanded state of PULSE_ON is 1. `WithDeadbandIntegerOnly` reports analog input deadbands in g34v1 and v2 only (A.18.3.2.3).
@@ -97,6 +99,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 
 - 286 spec test functions named after the clause they check, in `spec_*_test.go` files of `app`, `link`, `transport`, `internal/channel`, `secauth`, `client`, `server` and `e2e`.
 - `TestSubsetLevelTables` (outstation) and `TestSubsetLevelResponses` (master) walk the request and response rows of Tables 14-2 to 14-4 at subset levels 1 to 3.
+- `make interop`: the suite expects Association ID 0 in the security statistics and opendnp3's refusal of the SAVE_CONFIG delay object; the in-network UDP master (`interop/testdata/udpmaster`) opts out of the startup sequence, since it retries its poll itself.
 - Four defects found by the link spec tests are fixed: an unanswered REQUEST_LINK_STATUS left the link reset; TEST_LINK_STATES with an unexpected FCB always answered ACK; `WithSelfAddress(true)` never answered 0xFFFC; `ServeUDPFixed` accepted a TCP peer.
 
 ### Documentation

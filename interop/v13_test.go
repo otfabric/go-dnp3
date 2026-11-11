@@ -611,7 +611,18 @@ func TestServerManagement(t *testing.T) {
 			a.need(t, "manageClient")
 			st, port := serveFixture(t, a)
 			for _, m := range managed {
-				if r := runClient(t, a, port, "manage", "--function", m.op); !r.OK {
+				r := runClient(t, a, port, "manage", "--function", m.op)
+				if a.name == "opendnp3" && m.fc == app.FuncSaveConfiguration {
+					// go-dnp3 answers SAVE_CONFIG with the Delay Time object
+					// IEEE 1815-2012 4.4.12 (p. 60) requires; opendnp3's
+					// PerformFunction takes only a response without objects.
+					// The function is still executed (the count below).
+					if r.OK || r.errorCode() != "failed" {
+						t.Errorf("%s: ok=%v %s, want opendnp3 to refuse the g52 delay object", m.op, r.OK, r.errorCode())
+					}
+					continue
+				}
+				if !r.OK {
 					t.Errorf("%s: %s", m.op, r.errorCode())
 				}
 			}

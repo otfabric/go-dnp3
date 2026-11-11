@@ -397,6 +397,12 @@ unsolicited response before the confirm of the first arrives and then leave
 a READ unanswered until its unsolicited confirm timeout (5 s) has passed;
 the tests allow for it.
 
+opendnp3's master refuses go-dnp3's answer to SAVE_CONFIG: the Delay Time
+object (g52v2) that IEEE 1815-2012 4.4.12 requires. Its `PerformFunction`
+takes only a response without objects, so the operation reports a bad
+response although go-dnp3 executed the function; `TestServerManagement`
+checks both. The other masters accept the answer.
+
 nfm-dnp3 1.0.1 is a master only. go-dnp3's outstation serves it the
 baseline without unsolicited responses, since it sends the application
 confirm as CONFIRMED_USER_DATA and cannot confirm the null unsolicited
