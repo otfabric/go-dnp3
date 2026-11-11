@@ -83,6 +83,7 @@ type Session struct {
 	// Secondary side and reassembly: reader goroutine only.
 	secReset  bool
 	expectFCB bool
+	lastAck   link.Function // the most recent ACK or NACK sent
 	reasm     *transport.Reassembler
 
 	lastRx  atomic.Int64
@@ -301,6 +302,10 @@ func (s *Session) Probe() error {
 	f := link.Frame{Dir: s.cfg.Master, Function: link.PrimaryRequestLinkStatus, Dest: s.cfg.Remote, Src: s.cfg.Local}
 	r, err := s.transact(context.Background(), &f)
 	if err != nil {
+		// No answer: the secondary is taken as unreset (Table 9-6 rows 20
+		// and 34), so confirmed user data starts with a reset again. It
+		// matters on a datagram channel, which outlives the failure.
+		s.linkReset = false
 		return err
 	}
 	if r.Function != link.SecondaryLinkStatus {
@@ -406,9 +411,13 @@ func (s *Session) handleFrame(f link.Frame) {
 			log.Debug("test link states while not reset ignored")
 			return
 		}
-		if f.FCB == s.expectFCB {
-			s.expectFCB = !s.expectFCB
+		if f.FCB != s.expectFCB {
+			// A repeat: the most recent ACK or NACK is sent again, and the
+			// expected FCB stays (clause 9.2.6.2, Table 9-7 row 17).
+			s.reply(s.lastAck)
+			return
 		}
+		s.expectFCB = !s.expectFCB
 		s.reply(link.SecondaryAck)
 	case link.PrimaryConfirmedUserData:
 		if !s.secReset {
@@ -445,6 +454,9 @@ func (s *Session) handleFrame(f link.Frame) {
 // reply sends a secondary frame. Its DFC bit reports whether the receive
 // queue is full (clause 9.2.4.1.3.5).
 func (s *Session) reply(fn link.Function) {
+	if fn == link.SecondaryAck || fn == link.SecondaryNack {
+		s.lastAck = fn
+	}
 	f := link.Frame{Dir: s.cfg.Master, Function: fn, Dest: s.cfg.Remote, Src: s.cfg.Local, DFC: s.queueFull()}
 	if err := s.ch.writeFrame(&f); err != nil {
 		s.ch.cfg.Log.Debug("link reply not sent", "error", err)
