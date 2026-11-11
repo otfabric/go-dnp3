@@ -265,12 +265,14 @@ func TestSpec4_5_12_AutoIntegrityOnOverflow(t *testing.T) {
 	for i := range 10 {
 		_ = p.db.UpdateBinaryInput(0, app.Binary{Value: i%2 == 0, Flags: app.FlagOnline})
 	}
+	// The integrity poll can go out before EventPoll returns, so count
+	// from before the event poll: its READ, then the integrity poll's.
+	n := len(log.requests())
 	res, err := p.c.EventPoll(ctx(t))
 	if err != nil || !res.IIN.Has(app.IINEventBufferOverflow) {
 		t.Fatalf("event poll: %v %v", res, err)
 	}
-	n := len(log.requests())
-	log.waitAfter(t, n, app.FuncRead)
+	log.waitAfter(t, n, app.FuncRead, app.FuncRead)
 	waitUntil(t, "the integrity poll's static data", func() bool {
 		p.rec.mu.Lock()
 		defer p.rec.mu.Unlock()
