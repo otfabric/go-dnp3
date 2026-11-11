@@ -19,6 +19,11 @@ Fixes from a review against two vendor DNP3 documents (an Emerson flow computer 
 
 - **Secure authentication user number 0 is taken as 1.** IEEE 1815-2012 reserves user number 0 for an unknown user; a `secauth.User` left without a `Number` sent 0, which an outstation refuses. `client.WithSecureAuthentication` and `server.WithSecureAuthentication` now take 0 as 1, the default user. `secauth.User.Validate` is unchanged.
 
+### Documentation
+
+- LIMITATIONS.md: the session key lifetime (a time, not a message count; the outstation does not expire keys), frames for another address (unsolicited responses sent to a destination other than the master's), and file reads (answered at once, one block per READ).
+- INTEROPERABILITY.md: link function codes the standard does not define are ignored, as the certification procedure 6.6.2.2 accepts; the security statistics that stay 0.
+
 ---
 
 ## v1.9.1
