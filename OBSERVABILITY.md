@@ -62,8 +62,8 @@ identifiers.
 | info | `unsolicited response given up` | `seq`, `events` |
 | info | `session keys changed` | `user` |
 | info | `connection to the master lost, reconnecting` (`DialAndServe`, also after a failed dial) | `address`, `error`, `delay` |
-| warn | `connection lost`, `reconnect failed` | `error`, `retry_in` |
-| warn | `request failed, retrying` | `function`, `attempt`, `retry_in`, `error` |
+| warn | `connection lost`, `reconnect failed` | `error`, `retry_in` (the delay before the next attempt, with `Reconnect.Jitter` applied) |
+| warn | `request failed, retrying` | `function`, `attempt`, `retry_in` (the pause, with `Retry.Jitter` applied), `error` |
 | warn | `automatic task failed` | `task`, `error` |
 | warn | `startup sequence failed` | `error` |
 | warn | `startup step rejected` (the outstation answered a startup step with an error IIN; the sequence goes on) | `step`, `error` |

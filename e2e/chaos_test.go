@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -227,6 +229,23 @@ func expectedUnderChaos(err error) bool {
 	return false
 }
 
+// chaosSeed returns the seed of a chaos run and logs it: the value of
+// DNP3_CHAOS_SEED when it is set, to replay the faults of a logged run,
+// else def.
+func chaosSeed(t *testing.T, def int64) int64 {
+	t.Helper()
+	seed := def
+	if s := os.Getenv("DNP3_CHAOS_SEED"); s != "" {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			t.Fatalf("DNP3_CHAOS_SEED %q: %v", s, err)
+		}
+		seed = n
+	}
+	t.Logf("seed %d (replay with DNP3_CHAOS_SEED=%d)", seed, seed)
+	return seed
+}
+
 // TestChaos runs every kind of request at once through the chaos proxy,
 // with and without secure authentication, and checks what must hold
 // whatever the faults: no data that was not sent, no control executed
@@ -238,8 +257,7 @@ func TestChaos(t *testing.T) {
 	}
 	for _, sa := range []bool{false, true} {
 		t.Run(fmt.Sprintf("secureAuth=%v", sa), func(t *testing.T) {
-			seed := time.Now().UnixNano()
-			t.Logf("seed %d", seed)
+			seed := chaosSeed(t, time.Now().UnixNano())
 			baseline := runtime.NumGoroutine()
 
 			files := newMemFS()

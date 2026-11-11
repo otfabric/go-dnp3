@@ -38,6 +38,11 @@ type Reconnect struct {
 	MinDelay time.Duration
 	// MaxDelay caps the delay. Zero means 1 minute.
 	MaxDelay time.Duration
+	// Jitter randomizes each delay, so that masters that lost their
+	// channels together do not reconnect together: a fraction from 0 to 1,
+	// each delay is drawn uniformly from [(1-Jitter)·d, d] of the delay d
+	// that doubles. Zero, the default, waits d exactly.
+	Jitter float64
 }
 
 // Retry configures automatic retries of the requests that are safe to
@@ -55,6 +60,10 @@ type Retry struct {
 	Backoff time.Duration
 	// MaxBackoff caps the pause. Zero means 10 seconds.
 	MaxBackoff time.Duration
+	// Jitter randomizes each pause: a fraction from 0 to 1, each pause is
+	// drawn uniformly from [(1-Jitter)·d, d] of the pause d that doubles.
+	// Zero, the default, pauses d exactly.
+	Jitter float64
 }
 
 // Link configures the data link layer.
@@ -269,6 +278,9 @@ func WithReconnect(r Reconnect) Option {
 		if r.MaxDelay < r.MinDelay {
 			return invalidOption("reconnect max delay %v below min delay %v", r.MaxDelay, r.MinDelay)
 		}
+		if !validJitter(r.Jitter) {
+			return invalidOption("reconnect jitter %v not within [0, 1]", r.Jitter)
+		}
 		o.reconnect = &r
 		return nil
 	}
@@ -285,6 +297,9 @@ func WithRetry(r Retry) Option {
 		}
 		if r.MaxBackoff <= 0 {
 			r.MaxBackoff = 10 * time.Second
+		}
+		if !validJitter(r.Jitter) {
+			return invalidOption("retry jitter %v not within [0, 1]", r.Jitter)
 		}
 		o.retry = &r
 		return nil

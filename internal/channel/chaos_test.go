@@ -118,7 +118,7 @@ func TestReaderSurvivesNoisyLink(t *testing.T) {
 	}
 }
 
-// TestSessionSurvivesReorderedDuplicates drives confirmed user data
+// TestSessionConfirmedOverDuplicatingLink drives confirmed user data
 // through a pipe that duplicates octets (hence whole frames can repeat),
 // and checks the reassembled fragments arrive intact and in order.
 func TestSessionConfirmedOverDuplicatingLink(t *testing.T) {

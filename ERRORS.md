@@ -167,7 +167,9 @@ master with a wrong key then gets `dnp3.ErrTimeout` instead of
 
 `WithRetry` repeats a request that failed with `ErrTimeout`,
 `ErrConnectionLost` or `ErrNotConnected`, while its context lives, with
-exponential backoff. Only requests that are safe to repeat are retried:
+exponential backoff, randomized by `Retry.Jitter` when it is set (a jitter
+outside 0 to 1 fails the option with `ErrInvalidOption`; `Reconnect.Jitter`
+likewise). Only requests that are safe to repeat are retried:
 READ, time synchronization, delay measurement, unsolicited control, assign
 class, the session key change, file info and the block reads of a file
 transfer (not OPEN_FILE or CLOSE_FILE). Controls, freezes, restarts and writes are

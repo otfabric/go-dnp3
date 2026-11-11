@@ -368,13 +368,14 @@ func (c *Client) do(ctx context.Context, fc app.FunctionCode, idempotent bool, f
 		if err == nil || i >= attempts || !retryable(ctx, err) {
 			break
 		}
+		wait := jittered(backoff, c.opts.retry.Jitter)
 		c.log.WarnContext(ctx, "request failed, retrying", "function", fc.String(), "attempt", i,
-			"retry_in", backoff.String(), "error", err)
+			"retry_in", wait.String(), "error", err)
 		if c.rm != nil {
 			c.rm.OnRetry(remote, out, fc, i, err)
 		}
 		select {
-		case <-time.After(backoff):
+		case <-time.After(wait):
 		case <-ctx.Done():
 			err = ctx.Err()
 		case <-c.closeCh:

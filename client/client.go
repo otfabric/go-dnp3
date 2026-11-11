@@ -406,7 +406,7 @@ func (c *Client) watch(ch *channel.Channel) {
 
 func (c *Client) reconnectLoop() {
 	delay := c.opts.reconnect.MinDelay
-	timer := time.NewTimer(delay)
+	timer := time.NewTimer(jittered(delay, c.opts.reconnect.Jitter))
 	defer timer.Stop()
 	for {
 		select {
@@ -445,9 +445,10 @@ func (c *Client) reconnectLoop() {
 		c.dialing = true
 		c.mu.Unlock()
 		c.setState(dnp3.StateConnecting, err)
-		c.log.Warn("reconnect failed", "retry_in", delay.String(), "error", err)
 		delay = min(delay*2, c.opts.reconnect.MaxDelay)
-		timer.Reset(delay)
+		wait := jittered(delay, c.opts.reconnect.Jitter)
+		c.log.Warn("reconnect failed", "retry_in", wait.String(), "error", err)
+		timer.Reset(wait)
 	}
 }
 
