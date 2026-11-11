@@ -120,8 +120,11 @@ func TestTimeAndInterval(t *testing.T) {
 			t.Fatal("time and interval in class 0")
 		}
 	}
+	// g50v1 is read with qualifier 0x07, count 1 (A.23.1.2.3, p. 648):
+	// all objects is a qualifier the outstation does not support for it,
+	// IIN2.2 (4.5.11, p. 85).
 	m.send(req(2, app.FuncRead, app.AllObjects(app.G50V1)))
-	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINObjectUnknown) {
+	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
 		t.Fatalf("read of g50v1: %v", f)
 	}
 	m.send(req(3, app.FuncAssignClass, app.AllObjects(app.G60V2), app.AllObjects(app.G50V4)))

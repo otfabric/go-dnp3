@@ -337,6 +337,8 @@ const MaxScheduledFreezes = 16
 // scheduledFreeze is a FREEZE_AT_TIME schedule waiting for its time.
 type scheduledFreeze struct {
 	timer *time.Timer
+	// first is when it freezes first, by the outstation's clock.
+	first time.Time
 }
 
 // freezeSchedule is one schedule of a FREEZE_AT_TIME request: a time and
@@ -462,7 +464,7 @@ func (s *Server) scheduleFreeze(key string, when time.Time, interval time.Durati
 		// The next occurrence after now.
 		when = when.Add((now.Sub(when)/interval + 1) * interval)
 	}
-	f := &scheduledFreeze{}
+	f := &scheduledFreeze{first: when}
 	current := func() bool {
 		s.mu.Lock()
 		defer s.mu.Unlock()

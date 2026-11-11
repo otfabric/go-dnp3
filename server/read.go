@@ -127,10 +127,12 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				continue
 			}
 			statics = append(statics, db.deadbandItems(sel, v, &p)...)
-		case g == 50 && v == 1 && h.Qualifier.IsCount():
-			// A read of the current time and date, count 1 (A.23.1.2.3,
-			// p. 648; Table 14-4, p. 409).
-			if h.Count != 1 {
+		case g == 50 && v == 1:
+			// A read of the current time and date, qualifier 0x07 count 1
+			// (A.23.1.2.3, p. 648; Table 14-4, p. 409). Another qualifier
+			// or count is one the outstation does not support: IIN2.2
+			// (4.5.11, p. 85).
+			if !h.Qualifier.IsCount() || h.Count != 1 {
 				p.iin |= app.IINParameterError
 				continue
 			}
