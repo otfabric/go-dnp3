@@ -109,7 +109,7 @@ func wrapSessionKeys(u secauth.User, st app.AuthSessionKeyStatus, withMAC bool) 
 		return nil, nil, nil, err
 	}
 	keys := make([]byte, 2*u.SessionKeyLen())
-	rand.Read(keys) // never fails (crypto/rand, Go 1.24)
+	_, _ = rand.Read(keys) // never fails (crypto/rand, Go 1.24)
 	control, monitoring = keys[:u.SessionKeyLen()], keys[u.SessionKeyLen():]
 	plain, err := secauth.KeyChangeData(control, monitoring, msg)
 	if err == nil {

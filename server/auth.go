@@ -246,7 +246,7 @@ func (a *association) sendChallenge(req *app.Fragment, in inbound) {
 	// 32 octets: the standard asks for at least 4, and DSC go-dnp3's
 	// master answers only challenges of 32.
 	data := make([]byte, 32)
-	rand.Read(data) // never fails (crypto/rand, Go 1.24)
+	_, _ = rand.Read(data) // never fails (crypto/rand, Go 1.24)
 	a.csq++
 	// The user is 0, unknown: the master names it in the reply (Table
 	// 7-11, A.45.1).
@@ -466,7 +466,7 @@ func (a *association) keyStatusRequest(req *app.Fragment, v app.AuthSessionKeySt
 		a.log.Warn("session key status request for an unknown user", "user", v.User)
 		a.count(secauth.StatUnexpectedMessages)
 		challenge := make([]byte, 32)
-		rand.Read(challenge) // never fails (crypto/rand, Go 1.24)
+		_, _ = rand.Read(challenge) // never fails (crypto/rand, Go 1.24)
 		st := app.AuthSessionKeyStatus{KSQ: a.keys.ksq, User: v.User, KeyWrap: sa.User.KeyWrapAlgorithm(),
 			Status: app.KeyStatusAuthFail, Challenge: challenge}
 		a.sendAuth(req.Control.Seq, app.FreeFormat(app.G120V5, st))
@@ -504,7 +504,7 @@ func (a *association) countKeyStatusRequest(user uint16) {
 func (a *association) sendKeyStatus(seq uint8) {
 	u := a.srv.opts.auth.User
 	challenge := make([]byte, 32)
-	rand.Read(challenge) // never fails (crypto/rand, Go 1.24)
+	_, _ = rand.Read(challenge) // never fails (crypto/rand, Go 1.24)
 	a.expireKeys()
 	k := &a.keys
 	st := app.AuthSessionKeyStatus{KSQ: k.ksq, User: u.Number, KeyWrap: u.KeyWrapAlgorithm(), Status: a.keyStatus(), Challenge: challenge}
