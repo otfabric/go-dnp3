@@ -228,3 +228,21 @@ func TestSpec5_1_1_1_2_Rule2_RestartProcedure(t *testing.T) {
 		})
 	}
 }
+
+// TestSpec5_1_1_2_Rule1_ClearRestartUnanswered: clause 5.1.1.2 Rule 1
+// (pp. 102-103) with clause 5.1.1.1.2 Rule 2 (p. 102): a restart the
+// outstation reports during the startup sequence is cleared before the
+// other steps; a clear-restart WRITE without a response ends the startup,
+// and Connect fails.
+func TestSpec5_1_1_2_Rule1_ClearRestartUnanswered(t *testing.T) {
+	s := &station{restart: true, silent: map[string]bool{"WRITE g80v1": true}}
+	o := newSpecOutstation(t, s.answer)
+	_, err := Dial(testCtx(t), o.addr, WithStartup(Startup{DisableUnsolicited: true, Integrity: true}),
+		WithResponseTimeout(200*time.Millisecond))
+	if !errors.Is(err, dnp3.ErrTimeout) {
+		t.Fatalf("Connect: %v, want ErrTimeout", err)
+	}
+	if got := described(o.sent()); len(got) != 2 || got[0] != "DISABLE_UNSOLICITED" || got[1] != "WRITE g80v1" {
+		t.Fatalf("startup %v, want [DISABLE_UNSOLICITED WRITE g80v1]", got)
+	}
+}

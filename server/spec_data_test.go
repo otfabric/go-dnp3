@@ -392,3 +392,72 @@ func TestSpec5_5_8_AcceptedWriteChangesAttribute(t *testing.T) {
 		t.Fatalf("after a refused write: %q", got)
 	}
 }
+
+// TestSpecA_8_3_PatternMaskWithoutBlock: A.8.2.1 (p. 511) and A.8.3.1 (p.
+// 513): pattern masks (g12v3) follow the pattern control block (g12v2) they
+// apply to. A mask without one, first in the request or after another
+// control block, is a parameter error (IIN2.2), and nothing is executed.
+// With DIRECT_OPERATE_NR such a request is not executed and, as 4.4.5 (p.
+// 55) has it for that function, not answered.
+func TestSpecA_8_3_PatternMaskWithoutBlock(t *testing.T) {
+	h := &countingHandler{}
+	m := newMaster(t, WithHandler(h))
+	mask := app.Ranged(app.G12V3, 0, app.Binary{Value: true})
+	ctl := app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}})
+	for i, hs := range [][]app.Header{{mask}, {ctl, mask}} {
+		seq := uint8(1 + i)
+		m.send(req(seq, app.FuncDirectOperate, hs...))
+		if f := m.recvFunc(app.FuncResponse); f.Control.Seq != seq || !f.IIN.Has(app.IINParameterError) {
+			t.Fatalf("headers %d: %v", i, f)
+		}
+	}
+	m.send(req(3, app.FuncDirectOperateNoAck, ctl, mask))
+	m.send(readIIN(4))
+	if f := m.recv(); f.Function != app.FuncResponse || f.Control.Seq != 4 {
+		t.Fatalf("after DIRECT_OPERATE_NR: %v, want the response to the READ", f)
+	}
+	if h.count() != 0 {
+		t.Fatalf("%d controls executed", h.count())
+	}
+}
+
+// TestSpec4_4_8_FreezeAtTimeStructure: 4.4.8 (pp. 56-57): a FREEZE_AT_TIME
+// request holds time-and-interval objects (g50v2), each followed by the
+// headers of the points it freezes. One without any header, or whose g50v2
+// no point header follows, is a parameter error. Points named by index
+// (qualifier 0x17) are frozen as points named by range are (Table 4-11,
+// time and interval zero: at once), and schedules for different indexes
+// are different schedules: one does not replace the other.
+func TestSpec4_4_8_FreezeAtTimeStructure(t *testing.T) {
+	m := newMaster(t)
+	db := m.srv.Database()
+	for i, v := range []uint32{4, 9} {
+		_ = db.AddCounter(uint32(1+i), PointConfig{}, app.Counter{Value: v, Flags: app.FlagOnline})
+		_ = db.AddFrozenCounter(uint32(1+i), PointConfig{}, app.Counter{Flags: app.FlagOnline})
+	}
+	for i, f := range []*app.Fragment{req(1, app.FuncFreezeAtTime), freezeReq(2, app.AbsoluteTime{})} {
+		m.send(f)
+		if r := m.recvFunc(app.FuncResponse); !r.IIN.Has(app.IINParameterError) {
+			t.Fatalf("request %d: %v", i, r)
+		}
+	}
+	m.send(freezeReq(3, app.AbsoluteTime{}, app.IndexList(app.G20V0, 1)))
+	if r := m.recvFunc(app.FuncResponse); r.IIN&app.IINRequestErrors != 0 {
+		t.Fatalf("freeze by index: %v", r)
+	}
+	one, _ := db.Get(FrozenCounter, 1)
+	two, _ := db.Get(FrozenCounter, 2)
+	if one.(app.Counter).Value != 4 || two.(app.Counter).Value != 0 {
+		t.Fatalf("frozen counters %v and %v, want 4 and 0", one, two)
+	}
+	inAnHour := app.TimestampOf(m.srv.Now().Add(time.Hour))
+	for i, idx := range []uint32{1, 2} {
+		m.send(freezeReq(uint8(4+i), app.AbsoluteTime{Time: inAnHour}, app.IndexList(app.G20V0, idx)))
+		if r := m.recvFunc(app.FuncResponse); r.IIN&app.IINRequestErrors != 0 {
+			t.Fatalf("schedule of index %d: %v", idx, r)
+		}
+	}
+	if n := len(schedules(m.srv)); n != 2 {
+		t.Fatalf("%d schedules for two indexes", n)
+	}
+}

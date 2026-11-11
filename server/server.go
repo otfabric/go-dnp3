@@ -178,10 +178,7 @@ func (s *Server) publish(evs []event) {
 // was given, and serves until Close. An empty addr is ":20000", or
 // ":19999" ([DefaultTLSPort]) with TLS.
 func (s *Server) ListenAndServe(addr string) error {
-	if addr == "" {
-		addr = fmt.Sprintf(":%d", defaultPort(s.opts.tls != nil))
-	}
-	l, err := net.Listen("tcp", addr)
+	l, err := net.Listen("tcp", listenAddr(addr, s.opts.tls != nil))
 	if err != nil {
 		return err
 	}
@@ -236,14 +233,33 @@ func (s *Server) Serve(l net.Listener) error {
 			_ = c.Close()
 			continue
 		}
-		s.wg.Go(func() {
+		if !s.spawn(func() {
 			if err := handshake(c); err != nil {
 				s.log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
 				return
 			}
 			_ = s.ServeConn(c, c.RemoteAddr())
-		})
+		}) {
+			// Accepted as Close closed the listener.
+			_ = c.Close()
+			return nil
+		}
 	}
+}
+
+// spawn runs f in a goroutine that Close waits for, and reports false,
+// without running it, once the server is closed. The check and the Add
+// are under s.mu, which Close holds as it marks the server closed: every
+// Add from zero happens before Close's Wait, as sync.WaitGroup requires,
+// and no goroutine starts after Close returned.
+func (s *Server) spawn(f func()) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	s.wg.Go(f)
+	return true
 }
 
 // acceptDelay is the pause after an Accept error: doubling from 5 ms up to
@@ -278,6 +294,15 @@ func defaultPort(tls bool) int {
 		return DefaultTLSPort
 	}
 	return DefaultPort
+}
+
+// listenAddr is the address ListenAndServe listens on: addr, or every
+// interface at defaultPort when addr is empty.
+func listenAddr(addr string, tls bool) string {
+	if addr == "" {
+		return fmt.Sprintf(":%d", defaultPort(tls))
+	}
+	return addr
 }
 
 // streamConnected reports whether a master is connected over a stream
