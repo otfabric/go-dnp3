@@ -30,6 +30,18 @@ comparison with other stacks are in
 - Aggressive mode is verified between go-dnp3's ends only: no reference
   stack in the interop suite has it.
 - The master does not challenge critical responses from an outstation.
+- **Session key lifetime is a time, not a count.** The master changes the
+  session keys at the key change interval (`client.WithKeyChangeInterval`)
+  and after a refused authentication; it does not count the messages sent
+  with them. The outstation keeps session keys until the connection ends
+  or the master changes them, answers every session key status request,
+  and does not invalidate keys after repeated authentication failures.
+  The statistics of those procedures (rekeys due to authentication
+  failure, rekeys due to restarts), of authorization (user roles) and of
+  critical messages sent by the outstation stay 0. An outstation that
+  expires keys by a message count refuses one critical request of a
+  go-dnp3 master each time; the master changes the keys and the next one
+  is accepted.
 - Without an update key, `secauth.User.Key` is used as the session key with
   no session key change. This is outside SAv5, works only between go-dnp3
   ends or a peer configured the same way, and is meant for testing (see
@@ -49,6 +61,16 @@ methods. Group 91 is decoded for ACTIVATE_CONFIG (`Client.ActivateConfig`,
   behind another address takes it over when it sends.
 - **Multi-fragment requests** are not reassembled by the outstation: a
   request is one fragment.
+- **Frames for another address are dropped**: a master hears only frames
+  sent to its own address (`client.WithAddresses`). An outstation whose
+  unsolicited responses go to a configured destination address (some
+  devices default it to 0) is not heard unless that is the master's
+  address; the dropped frames are logged at debug level.
+- **File reads are answered at once, one block per READ**: `ReadFile`
+  expects the answer to OPEN_FILE, READ and CLOSE_FILE in the immediate
+  response, with one g70v5 block in it. A file object reported later in an
+  event or unsolicited response, or a response with several blocks, fails
+  the transfer. The references in the interop suite answer this way.
 - **Associations are per master address**: a master that reconnects while
   its old connection stands takes over, and the old connection is closed.
 - **Event headers with a range or index qualifier**: the outstation selects

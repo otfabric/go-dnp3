@@ -43,6 +43,7 @@ of a device profile, and how it has been verified.
 | REQUEST_LINK_STATUS / LINK_STATUS | ✅ answered; sent as keep-alive (`Link.KeepAlive`, default 60 s) |
 | Primary frame timeout and retries | ✅ `Link.Timeout`, `Link.Retries` |
 | DFC (data flow control) | sent as 0; ignored on receipt |
+| Function codes the standard does not define (such as the obsolete 1, reset of user process) | ignored, no answer: frames are dropped as framing errors. The DNP3 IED certification procedure 6.6.2.2 accepts no answer or a NACK; the recorded run of that procedure against the opendnp3 outstation (testdata/captures) is replayed against go-dnp3's with the same result |
 | FCV checked against the function | ✅ frames with an invalid FCV are ignored |
 | Multi-drop: several outstations on one channel | ✅ master: one `Client` per outstation, each with its own connection (TCP, UDP); the client has no channel shared by several outstations on one serial line. Outstation: `server.Group`, several `Server`s, each at its own address, on the same connections, serial lines and UDP sockets; broadcasts reach all of them |
 
@@ -178,7 +179,7 @@ a pre-shared session key is used directly (outside the standard, see
 | Key status message in the key change data | the master sends the g120v5 object without its MAC value, the form DSC go-dnp3 requires; the outstation accepts it with or without, as implementations differ |
 | Aggressive mode (g120v3 + g120v9) | ✅ both roles: the master (`client.WithAggressiveMode`) puts a MAC over the last challenge and the request into the request; the outstation executes it without a challenge when the CSQ follows the last one. Verified between go-dnp3's ends only: no reference in dnp3-interop implements it |
 | Reply timeout | ✅ `SecureAuth.ReplyTimeout`, default 10 s: a later reply is refused and counted |
-| Security statistics (g121, g122) | ✅ outstation: the 18 statistics of clause 7.6 per association, read as g121v1, reported as g122v2 events every `StatisticsThreshold` increments in `StatisticsClass`; master: read like any object |
+| Security statistics (g121, g122) | ✅ outstation: the 18 statistics of clause 7.6 per association (the six of procedures go-dnp3 does not implement stay 0: authorization failures, rekeys due to authentication failure, critical messages sent, update key changes and their failures, rekeys due to restarts), read as g121v1, reported as g122v2 events every `StatisticsThreshold` increments in `StatisticsClass`; master: read like any object |
 | Update key change (g120v11..v15), user status change (g120v10), certificates (g120v8) | — objects only, procedures not implemented (see [the gaps](#feature-completeness-and-the-remaining-gaps)) |
 | AES-GMAC | — (see [the gaps](#feature-completeness-and-the-remaining-gaps)) |
 | Challenges of critical responses (master challenging the outstation) | — |
