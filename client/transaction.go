@@ -124,8 +124,9 @@ func (c *Client) release() { <-c.turn }
 // the turn.
 //
 // The request takes the next sequence number only once it is about to be
-// sent: one refused before (WithMaxRequestFragment) leaves no gap (IEEE
-// 1815-2012 clause 4.3 Rule 14). The response is received as Table 6-2 of
+// sent: one refused before (WithMaxRequestFragment, or a critical request
+// without session keys, keysFor) leaves no gap (IEEE 1815-2012 clause 4.3
+// Rule 14). The response is received as Table 6-2 of
 // clause 6.3 says: awaiting its first fragment, a fragment that is not
 // the first (FIR) or has another sequence number is discarded (rows 3 and
 // 5); during a multi-fragment response, a repeat of the last fragment is
@@ -139,6 +140,9 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	c.mu.Unlock()
 	if sess == nil {
 		return nil, dnp3.ErrNotConnected
+	}
+	if err := c.keysFor(fc); err != nil {
+		return nil, err
 	}
 	req := &app.Fragment{Control: app.SingleControl(seq), Function: fc, Headers: hs}
 	if err := c.fits(req); err != nil {

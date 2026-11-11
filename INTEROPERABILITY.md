@@ -253,6 +253,14 @@ request row of Tables 14-2 to 14-4 is answered without an error IIN:
   SAv5, which always sets session keys by the key change, and works only
   between go-dnp3 ends or a peer configured the same way; it is meant for
   testing (see [SECURITY.md](SECURITY.md)).
+- **No critical request without session keys.** A master with an update
+  key does not send a function Table 7-7 marks MANDATORY, or one
+  `WithAggressiveMode` names, while its session keys are not valid: the
+  request fails with `dnp3.ErrAuthentication`, unsent, and the keys are
+  changed. Sent, it could only fail, since the master discards a challenge
+  it has no valid keys for (Table 7-13 row 7), and it would keep the
+  outstation waiting for the reply, which discards the key status request
+  meanwhile (Table 7-8 row 16). Non-critical requests go on (7.3.6).
 - **A read of an index that does not exist** is answered with the indexes
   that do and PARAMETER_ERROR.
 - **Associations are per master address.** A master that connects again

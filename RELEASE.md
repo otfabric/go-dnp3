@@ -20,6 +20,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - **Security statistics carry Association ID 0** (A.46.1.2.2: measured on the association that reads them), not the master's address.
 - **Frozen counter and frozen analog input events are raised at every freeze**, also for an unchanged value (11.9.5.2, 11.9.1.2): a master that polls events sees one per freeze and point.
 - **Responses with qualifier 0x06, group 60 or variation 0 are refused** by the codec: these headers are for requests only.
+- **A master with an update key does not send a critical request without valid session keys**: a function Table 7-7 marks MANDATORY, or one `WithAggressiveMode` names, fails at once with `dnp3.ErrAuthentication`, unsent, and the session keys are changed. Before, it was sent, and failed on the challenge.
 
 ## Changes
 
@@ -75,6 +76,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - **Master, key changes**: after `WithKeyChangeCount` authentication messages (default 1000, 7.6.1.4.4) as well as at the interval (`WithKeyChangeInterval(0)` turns the interval off); when the outstation reports a restart, up to 3 times in a row (7.5.4.2); after an authentication error, up to 3 times until a key change succeeds, and past that, over TCP, the connection is closed (Table 7-8 row 11). Key change retries back off at most 3 times, then wait for the interval.
 - **Master, aggressive mode** is used only after a challenge was answered since the last session key change. After a refused aggressive mode request the next one is challenged; an outstation that answers error 4 is not sent aggressive mode again on that connection.
 - **Master, no-ack requests** (DIRECT_OPERATE_NR, …) sent without aggressive mode wait up to the response timeout for the outstation's challenge and answer it; before, they reported success while the outstation discarded the request. Without a challenge they still return nil, after the wait; a g120v7 fails them with `*dnp3.AuthError`.
+- **Master, no critical request without session keys**: with an update key and no valid session keys, a critical request (Table 7-7 MANDATORY, or a `WithAggressiveMode` function) fails with `dnp3.ErrAuthentication` without being sent, and asks for a session key change. Sent, it could only fail, as the master discards the challenge (Table 7-13 row 7), and the outstation, waiting for the reply, discards the key status request (Table 7-8 row 16): a master that repeated such requests at once never got its keys back. `TestChaos` found this; `TestSpecTable7_13_CriticalNotSentWithoutKeys` covers it.
 - **Master, other**: CONFIRMs to a response that ends with a challenge are sent in aggressive mode, and a challenge of a CONFIRM is answered. The session key status is authenticated: an OK status needs a MAC by the last monitoring key, its user and its key wrap algorithm must match, and a key change confirmation whose status is not OK fails the change. 8-octet MACs are refused by default over TCP and UDP (7.6.1.1); `WithChallengeMACs` can allow them.
 
 ### Codec (`app`)
@@ -100,6 +102,7 @@ A review of the whole library against IEEE 1815-2012, clause by clause, with the
 - 286 spec test functions named after the clause they check, in `spec_*_test.go` files of `app`, `link`, `transport`, `internal/channel`, `secauth`, `client`, `server` and `e2e`.
 - `TestSubsetLevelTables` (outstation) and `TestSubsetLevelResponses` (master) walk the request and response rows of Tables 14-2 to 14-4 at subset levels 1 to 3.
 - `make interop`: the suite expects Association ID 0 in the security statistics and opendnp3's refusal of the SAVE_CONFIG delay object; the in-network UDP master (`interop/testdata/udpmaster`) opts out of the startup sequence, since it retries its poll itself.
+- `TestChaos` keeps the last 3000 lines the master and the outstation logged and prints them when a run fails, with the attempts each recovery check needed.
 - Four defects found by the link spec tests are fixed: an unanswered REQUEST_LINK_STATUS left the link reset; TEST_LINK_STATES with an unexpected FCB always answered ACK; `WithSelfAddress(true)` never answered 0xFFFC; `ServeUDPFixed` accepted a TCP peer.
 
 ### Documentation

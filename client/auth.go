@@ -260,6 +260,29 @@ func (c *Client) challenged(seq, reqSeq uint8, request []byte, begun bool) (crit
 	return request, true
 }
 
+// keysFor refuses a request of function fc that the outstation will
+// challenge while the session keys are not valid yet (IEEE 1815-2012 Table
+// 7-13: the master is changing them): a function Table 7-7 marks MANDATORY
+// (clause 7.5.2.3.2 a), or one WithAggressiveMode names. Sent, it could
+// only fail: the master discards a challenge it has no valid keys for
+// (Table 7-13 row 7), and the outstation, waiting for the reply up to its
+// reply timeout, discards the key status request that would change them
+// (Table 7-8 row 16). Requests sent again at once then keep the keys from
+// ever being changed. The request fails at once, unsent, and a session key
+// change is asked for; non-critical requests go on (clause 7.3.6).
+func (c *Client) keysFor(fc app.FunctionCode) error {
+	u := c.opts.auth
+	if u == nil || len(u.UpdateKey) == 0 ||
+		!slices.Contains(secauth.MandatoryCritical, fc) && !slices.Contains(c.opts.aggressive, fc) {
+		return nil
+	}
+	if c.controlKey() != nil {
+		return nil
+	}
+	c.rekeySoon()
+	return fmt.Errorf("%w: %s not sent: no valid session keys yet, a session key change is pending", dnp3.ErrAuthentication, fc)
+}
+
 // aggressive turns req into an aggressive mode request when its function
 // is configured for it, a challenge was answered successfully since the
 // last session key change (IEEE 1815-2012 clause 7.5.3.3) and the

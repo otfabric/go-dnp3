@@ -53,6 +53,10 @@ comparison with other stacks are in
 - A master with secure authentication and an update key fails `Connect`
   when the outstation does not take part in the session key change
   (clause 7.3.6 suggests carrying on with non-critical requests).
+- With an update key, the master knows which requests are critical only
+  from Table 7-7 (MANDATORY) and `WithAggressiveMode`: those it does not
+  send while its session keys are not valid. Another function the
+  outstation challenges is sent, and fails on the challenge.
 - Without an update key, `secauth.User.Key` is used as the session key with
   no session key change. This is outside SAv5, works only between go-dnp3
   ends or a peer configured the same way, and is meant for testing (see
