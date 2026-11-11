@@ -127,6 +127,19 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				continue
 			}
 			statics = append(statics, db.deadbandItems(sel, v, &p)...)
+		case g == 50 && v == 1:
+			// A read of the current time and date, qualifier 0x07 count 1
+			// (A.23.1.2.3, p. 648; Table 14-4, p. 409). Another qualifier
+			// or count is one the outstation does not support: IIN2.2
+			// (4.5.11, p. 85).
+			if !h.Qualifier.IsCount() || h.Count != 1 {
+				p.iin |= app.IINParameterError
+				continue
+			}
+			statics = append(statics, item{h: app.Counted(app.G50V1, app.AbsoluteTime{Time: a.srv.clock.now()})})
+		case g == 70 && v == 6 && a.srv.opts.files != nil:
+			// The file transport status events (A.27.6.1, p. 679).
+			sels = append(sels, &eventSelector{typ: fileStatusEvent, limit: limit})
 		case g == 80 && v == 1:
 			sel, ok := selectorOf(h)
 			if !ok {
@@ -261,11 +274,13 @@ func (db *Database) statics(t PointType, s selector, requested uint8, class0 boo
 		if class0 && p.cfg.ExcludeFromClass0 {
 			continue
 		}
-		if t == OctetString && requested != 0 && int(requested) != len(p.value.(app.OctetString).Data) {
-			continue
-		}
+		// An octet string is reported in the variation of its length,
+		// whichever length the master named (A.41.1, p. 715).
 		gv := staticGV(t, p, requested)
-		if f, ok := withFlags[gv]; ok && (!onlineOnly(p.value) || !fits(gv, p.value)) {
+		if f, ok := withFlags[gv]; ok && (!onlineOnly(p.value) || !fits(gv, p.value) || (indexed && packed[gv])) {
+			// A packed variation has no index form either: by index it
+			// is reported with flags, as 11.6.5 permits (4.2.2.7.2.2,
+			// p. 31).
 			gv = f
 		}
 		if cur == nil || cur.h.GV != gv || (!indexed && idx != last+1) {
@@ -342,6 +357,12 @@ func (a *association) eventItems(sels []*eventSelector) []item {
 	var cto app.Timestamp
 	ctoGV := app.G51V1
 	for i, e := range picked {
+		if e.typ == fileStatusEvent {
+			// A free-format object, one per header.
+			out = append(out, item{h: app.FreeFormat(app.G70V6, e.value), events: []*bufEvent{e}})
+			cur = nil
+			continue
+		}
 		gv := eventGV(e, vars[i])
 		unsync := a.unsynchronizedAt(e.at)
 		// A binary or double-bit event recorded while the time was
@@ -392,6 +413,10 @@ var withFlags = map[app.GroupVariation]app.GroupVariation{
 	app.G31V6:  app.G31V2,
 }
 
+// packed are the static variations whose objects are bits packed in a
+// range, which no index qualifier carries.
+var packed = map[app.GroupVariation]bool{app.G1V1: true, app.G3V1: true, app.G10V1: true}
+
 // onlineOnly reports whether a point's flags are ONLINE alone.
 func onlineOnly(v app.Value) bool {
 	var f app.Flags
@@ -431,9 +456,12 @@ func fits(gv app.GroupVariation, v app.Value) bool {
 
 // deadbandItems returns the deadbands of the analog inputs a READ of g34
 // names: in the requested variation, or the smallest that holds the value
-// (v1 16-bit, v2 32-bit, v3 floating point). The caller holds mu.
+// (v1 16-bit, v2 32-bit, v3 floating point). With WithDeadbandIntegerOnly
+// they are reported in v1 and v2 only, rounded and limited to the range of
+// v2 (A.18.3.2.3, p. 609). The caller holds mu.
 func (db *Database) deadbandItems(sel selector, requested uint8, p *readPlan) []item {
-	if requested > 3 {
+	intOnly := db.srv != nil && db.srv.opts.deadbandIntegerOnly
+	if requested > 3 || (intOnly && requested == 3) {
 		p.iin |= app.IINObjectUnknown
 		return nil
 	}
@@ -449,6 +477,9 @@ func (db *Database) deadbandItems(sel selector, requested uint8, p *readPlan) []
 			continue
 		}
 		d := db.points[AnalogInput][idx].cfg.Deadband
+		if intOnly {
+			d = min(math.Round(d), math.MaxUint32)
+		}
 		v := requested
 		if v == 0 {
 			switch {

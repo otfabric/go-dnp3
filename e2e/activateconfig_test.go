@@ -125,14 +125,17 @@ func TestActivateConfig(t *testing.T) {
 }
 
 func TestActivateConfigWithoutStatus(t *testing.T) {
-	// An ApplicationHandler alone answers with IIN bits only, as before.
+	// An ApplicationHandler alone that accepts the request: the response
+	// still carries a g91v1 (IEEE 1815-2012 4.4.20, p. 78), success for
+	// each object of the request, without a delay.
 	p := newPair(t, fullDatabase, []server.Option{server.WithHandler(applicationOnly{})})
 	res, err := p.c.Request(ctx(t), app.FuncActivateConfig, specs("a.xml"))
-	if err != nil || len(res.Headers()) != 0 {
-		t.Fatalf("ApplicationHandler: %v, %d headers", err, len(res.Headers()))
+	if err != nil || len(res.Headers()) != 1 || res.Headers()[0].GV != app.G91V1 {
+		t.Fatalf("ApplicationHandler: %v, headers %v", err, res.Headers())
 	}
-	if _, err := p.c.ActivateConfig(ctx(t), specs("a.xml")); !errors.Is(err, dnp3.ErrProtocol) {
-		t.Fatalf("response without g91v1: %v", err)
+	sts, err := p.c.ActivateConfig(ctx(t), specs("a.xml", "b.xml"))
+	if err != nil || len(sts) != 1 || sts[0].Delay != 0 || len(sts[0].Results) != 2 || sts[0].Results[0].Code != 0 || sts[0].Results[1].Code != 0 {
+		t.Fatalf("status from an ApplicationHandler: %+v, %v", sts, err)
 	}
 	// Without either, the function is not supported.
 	q := newPair(t, fullDatabase, nil)
@@ -224,11 +227,13 @@ func TestWithoutUnsolicitedConfirm(t *testing.T) {
 		server.WithConfirmTimeout(100 * time.Millisecond), server.WithMetrics(sm),
 	}, client.WithUnsolicitedConfirm(false), client.WithMetrics(cm))
 	_ = p.db.UpdateBinaryInput(4, app.Binary{Value: false, Flags: app.FlagOnline})
-	// Unconfirmed, the null unsolicited response of the connection is sent
-	// three times (Retries 2) and given up; the event waits behind it.
-	waitUntil(t, "unsolicited response given up", func() bool { return sm.get(&sm.unsolicited) >= 1 })
-	if n := cm.get(); n != 3 {
-		t.Fatalf("%d unsolicited fragments, want 3", n)
+	// Unconfirmed, the null unsolicited response of the connection is
+	// repeated past Retries (2) and never given up: it is retried until it
+	// is confirmed (IEEE 1815-2012 5.1.1.1.1 Rule 2). The event waits
+	// behind it.
+	waitUntil(t, "null unsolicited response repeated past Retries", func() bool { return cm.get() > 3 })
+	if n := sm.get(&sm.unsolicited); n != 0 {
+		t.Fatalf("the null unsolicited response was given up %d times", n)
 	}
 	// Requests are still answered, and solicited responses confirmed.
 	res, err := p.c.EventPoll(ctx(t))

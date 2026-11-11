@@ -271,7 +271,7 @@ func eventually(t *testing.T, what string, cond func() bool) {
 func readIIN(seq uint8) *app.Fragment { return req(seq, app.FuncRead, app.AllObjects(app.G80V1)) }
 
 // latchOn is a DIRECT_OPERATE_NO_ACK of control 0, as a broadcast carries.
-func latchOn(seq uint8) *app.Fragment {
+func linkLatchOn(seq uint8) *app.Fragment {
 	return req(seq, app.FuncDirectOperateNoAck, app.Indexed(app.G12V1, app.Object{Index: 0, Value: app.CROB{Op: app.OpLatchOn, Count: 1}}))
 }
 
@@ -428,7 +428,7 @@ func TestSpec13_2_3_2_4_UDPBroadcast(t *testing.T) {
 		h := &countingHandler{}
 		addr, _ := serveUDP(t, newServer(t, WithHandler(h)))
 		p := dialRaw(t, "udp", addr)
-		p.request(link.BroadcastNoConfirm, latchOn(1))
+		p.request(link.BroadcastNoConfirm, linkLatchOn(1))
 		eventually(t, "the broadcast control", func() bool { return h.count() == 1 })
 		p.request(10, readIIN(2))
 		if f := p.response(10); !f.IIN.Has(app.IINBroadcast) {
@@ -443,7 +443,7 @@ func TestSpec13_2_3_2_4_UDPBroadcast(t *testing.T) {
 		}
 		go func() { _ = g.ServeUDP(pc) }()
 		p := dialRaw(t, "udp", pc.LocalAddr().String())
-		p.request(link.BroadcastNoConfirm, latchOn(1))
+		p.request(link.BroadcastNoConfirm, linkLatchOn(1))
 		eventually(t, "the broadcast control", func() bool { return hs[0].count() == 1 && hs[1].count() == 1 })
 		for i, o := range []link.Address{10, 11} {
 			p.request(o, readIIN(uint8(2+i)))
@@ -469,7 +469,7 @@ func TestSpecTable13_1_BroadcastOverUDPBesideTCP(t *testing.T) {
 	m.recvFunc(app.FuncResponse)
 	for i := range 2 {
 		p := dialRaw(t, "udp", udpAddr) // a socket, and a source port, of its own
-		p.request(link.BroadcastNoConfirm, latchOn(uint8(2+i)))
+		p.request(link.BroadcastNoConfirm, linkLatchOn(uint8(2+i)))
 		eventually(t, "the broadcast control", func() bool { return h.count() == i+1 })
 	}
 	m.send(readIIN(4))

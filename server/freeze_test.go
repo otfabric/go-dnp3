@@ -55,16 +55,22 @@ func TestFreezeAtTime(t *testing.T) {
 	_ = db.UpdateCounter(0, app.Counter{Value: 2, Flags: app.FlagOnline})
 	waitFrozen(2)
 
-	// At most MaxScheduledFreezes wait; Close stops them.
+	// At most MaxScheduledFreezes point sets have a schedule; a new one
+	// for a point set replaces its old one (Table 4-11), and Close stops
+	// them.
 	for i := range MaxScheduledFreezes - 1 {
-		m.send(freezeAt(uint8(2+i), time.Now().Add(time.Hour), 0, counters))
+		m.send(freezeAt(uint8(2+i), time.Now().Add(time.Hour), 0, app.IndexRange(app.G20V0, uint32(i), uint32(i))))
 		if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINParameterError) {
 			t.Fatalf("schedule %d refused", i+2)
 		}
 	}
-	m.send(freezeAt(20, time.Now().Add(time.Hour), 0, counters))
+	m.send(freezeAt(20, time.Now().Add(time.Hour), 0, app.IndexRange(app.G20V0, 100, 100)))
 	if f := m.recvFunc(app.FuncResponse); !f.IIN.Has(app.IINParameterError) {
 		t.Fatal("a schedule past the limit was accepted")
+	}
+	m.send(freezeAt(19, time.Now().Add(time.Hour), 0, counters))
+	if f := m.recvFunc(app.FuncResponse); f.IIN.Has(app.IINParameterError) {
+		t.Fatal("a schedule replacing one at the limit was refused")
 	}
 	// Headers that cannot be frozen, and a request without the time.
 	m.send(freezeAt(21, time.Now().Add(time.Hour), 0, app.AllObjects(app.G1V0)))
@@ -83,7 +89,8 @@ func TestFreezeAtTime(t *testing.T) {
 	if n := len(m.srv.freezes); n != 0 {
 		t.Fatalf("%d scheduled freezes after Close", n)
 	}
-	if m.srv.scheduleFreeze(time.Now().Add(time.Hour), 0, nil) {
+	m.srv.scheduleFreeze("k", time.Now().Add(time.Hour), 0, nil)
+	if n := len(m.srv.freezes); n != 0 {
 		t.Fatal("a freeze scheduled on a closed server")
 	}
 }
@@ -396,11 +403,12 @@ func frozenEvents(m *master, seq uint8) (map[uint32]app.Counter, []app.Header) {
 	return got, f.Headers
 }
 
-// TestFrozenCounterEventsOnChange: a freeze raises a frozen counter event for
-// a frozen value (or flags) that changed, and none for one that stayed as it
-// was. That is go-dnp3's policy, not a statement of the standard: see
-// INTEROPERABILITY.md.
-func TestFrozenCounterEventsOnChange(t *testing.T) {
+// TestFrozenCounterEventsAtEveryFreeze: every freeze raises a frozen counter
+// event for each frozen counter with a class, also when its value and flags
+// did not change (IEEE 1815-2012 11.9.5.2, p. 341; 11.9.1.2, p. 333 for
+// frozen analog inputs), with the time of the freeze. A change of a counter
+// raises no frozen counter event until the next freeze.
+func TestFrozenCounterEventsAtEveryFreeze(t *testing.T) {
 	m := newMaster(t)
 	db := m.srv.Database()
 	on := app.FlagOnline
@@ -436,17 +444,19 @@ func TestFrozenCounterEventsOnChange(t *testing.T) {
 	}
 	stamped := frozen(0).Time
 
-	// Nothing changed: the point is frozen again, at a new time, but no event.
+	// Nothing changed: the points are frozen again, at a new time, and
+	// each raises its event.
 	time.Sleep(5 * time.Millisecond)
 	freeze(3, app.FuncImmediateFreeze)
-	if got, hs := frozenEvents(m, 4); len(got) != 0 {
-		t.Fatalf("a freeze of unchanged counters raised events: %v", hs)
+	if got, hs := frozenEvents(m, 4); len(got) != 2 || got[0].Value != 1 || got[1].Value != 7 || got[0].Time <= stamped {
+		t.Fatalf("a freeze of unchanged counters: %v", hs)
 	}
 	if f := frozen(0); f.Value != 1 || f.Time <= stamped {
 		t.Fatalf("a second freeze left %+v, frozen before at %d", f, stamped)
 	}
 
-	// One counter changed: its event, with the time of the freeze, and no other.
+	// A counter changed: no frozen counter event before the freeze; then
+	// both, with the time of the freeze.
 	if err := db.UpdateCounter(0, app.Counter{Value: 6, Flags: on}); err != nil {
 		t.Fatal(err)
 	}
@@ -460,28 +470,28 @@ func TestFrozenCounterEventsOnChange(t *testing.T) {
 	freeze(6, app.FuncImmediateFreeze)
 	after := app.Now()
 	got, hs = frozenEvents(m, 7)
-	if len(got) != 1 || got[0].Value != 6 {
+	if len(got) != 2 || got[0].Value != 6 || got[1].Value != 7 {
 		t.Fatalf("a freeze with one change: %v", hs)
 	}
 	if at := got[0].Time; at < before || at > after {
 		t.Fatalf("frozen counter event at %d, freeze between %d and %d", at, before, after)
 	}
 
-	// Flags count as a change, as for any point.
+	// The flags are frozen with the value.
 	if err := db.UpdateCounter(1, app.Counter{Value: 7, Flags: on | app.FlagRestart}); err != nil {
 		t.Fatal(err)
 	}
 	freeze(8, app.FuncImmediateFreeze)
-	if got, hs := frozenEvents(m, 9); len(got) != 1 || got[1].Value != 7 || got[1].Flags != on|app.FlagRestart {
+	if got, hs := frozenEvents(m, 9); len(got) != 2 || got[1].Value != 7 || got[1].Flags != on|app.FlagRestart {
 		t.Fatalf("a freeze of new flags: %v", hs)
 	}
 
-	// FREEZE AND CLEAR of unchanged frozen values: no frozen counter event,
-	// the counters' own clear events. The next freeze carries the clear over.
+	// FREEZE AND CLEAR: the frozen counter events and the counters' own
+	// clear events. The next freeze carries the clear over.
 	freeze(10, app.FuncFreezeClear)
 	got, hs = frozenEvents(m, 11)
-	if len(got) != 0 {
-		t.Fatalf("freeze and clear of unchanged frozen values: %v", hs)
+	if len(got) != 2 || got[0].Value != 6 || got[1].Value != 7 {
+		t.Fatalf("freeze and clear: %v", hs)
 	}
 	if !slices.ContainsFunc(hs, func(h app.Header) bool { return h.GV.Group() == 22 }) {
 		t.Fatalf("no counter event of the clear: %v", hs)
@@ -569,7 +579,8 @@ func TestFrozenCounterEventConfirm(t *testing.T) {
 
 // TestFrozenCounterTimes: each variation with a time carries the time of the
 // freeze, in the event and in the static object; the variations without one
-// carry none. A freeze that raises no event still moves the static time.
+// carry none. A freeze of an unchanged value raises an event and moves
+// the static time.
 func TestFrozenCounterTimes(t *testing.T) {
 	for _, tc := range []struct {
 		evar     uint8
@@ -601,10 +612,17 @@ func TestFrozenCounterTimes(t *testing.T) {
 			m.send(req(3, app.FuncImmediateFreeze, app.AllObjects(app.G20V0)))
 			m.recvFunc(app.FuncResponse)
 			after = app.Now()
+			// An unchanged freeze raises its event too (11.9.5.2), with
+			// the new time.
 			m.send(req(4, app.FuncRead, app.AllObjects(app.G23V0)))
-			if f := m.recvFunc(app.FuncResponse); len(f.Headers) != 0 {
+			f = m.recvFunc(app.FuncResponse)
+			if len(f.Headers) != 1 || f.Headers[0].GV != tc.gv {
 				t.Fatalf("an unchanged freeze raised %v", f.Headers)
 			}
+			if at := f.Headers[0].Objects[0].Value.(app.Counter).Time; tc.withTime && (at < before || at > after) {
+				t.Fatalf("second event at %d, freeze between %d and %d", at, before, after)
+			}
+			m.send(confirm(4, false))
 			m.send(req(5, app.FuncRead, app.AllObjects(app.G21V5)))
 			f = m.recvFunc(app.FuncResponse)
 			if len(f.Headers) != 1 || f.Headers[0].GV != app.G21V5 {
