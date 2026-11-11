@@ -375,7 +375,7 @@ func TestConformanceLog(t *testing.T) {
 					}
 					var iin app.IIN
 					if m[7] != "" {
-						for _, name := range strings.Split(m[7], ", ") {
+						for name := range strings.SplitSeq(m[7], ", ") {
 							bit, ok := logIIN[name]
 							if !ok {
 								t.Fatalf("IIN name %q", name)
