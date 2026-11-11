@@ -310,3 +310,44 @@ func TestSpec4_4_17_2_1_WriteFileWithRequestLimit(t *testing.T) {
 		t.Fatalf("ReadFile: %d octets, %v", back.Len(), err)
 	}
 }
+
+// TestSpec11_6_5_WithoutFlagsOnline: clause 11.6.5 (p. 329) and NOTE 2 of
+// Table 11-5 (p. 326): a master reads a point sent in a variation without
+// flags as online, with no exception condition (OBJECTS1-2). Points the
+// outstation reports in g1v1, g20v5 and g30v3 read ONLINE; one in g1v2
+// keeps the flags it was sent with.
+func TestSpec11_6_5_WithoutFlagsOnline(t *testing.T) {
+	on := app.FlagOnline
+	p := newPair(t, func(db *server.Database) {
+		_ = db.AddBinaryInput(0, server.PointConfig{StaticVariation: 1}, app.Binary{Value: true, Flags: on})
+		_ = db.AddBinaryInput(1, server.PointConfig{StaticVariation: 2}, app.Binary{Value: true})
+		_ = db.AddCounter(0, server.PointConfig{StaticVariation: 5}, app.Counter{Value: 7, Flags: on})
+		_ = db.AddAnalogInput(0, server.PointConfig{StaticVariation: 3}, app.Analog{Value: 42, Flags: on})
+	}, nil)
+	res, err := p.c.IntegrityPoll(ctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[app.GroupVariation]app.Flags{app.G1V1: on, app.G1V2: 0, app.G20V5: on, app.G30V3: on}
+	for _, m := range res.Measurements() {
+		var flags app.Flags
+		switch v := m.Value.(type) {
+		case app.Binary:
+			flags = v.Flags
+		case app.Counter:
+			flags = v.Flags
+		case app.Analog:
+			flags = v.Flags
+		default:
+			t.Fatalf("unexpected measurement %+v", m)
+		}
+		w, ok := want[m.GV]
+		if !ok || flags != w {
+			t.Fatalf("%s index %d: flags %v, want %v", m.GV, m.Index, flags, w)
+		}
+		delete(want, m.GV)
+	}
+	if len(want) != 0 {
+		t.Fatalf("variations not reported: %v", want)
+	}
+}
