@@ -25,9 +25,12 @@ type Unsolicited struct {
 	Enabled bool
 	// Classes are the classes (1..3) the outstation reports unsolicited
 	// before any ENABLE_UNSOLICITED, once the master has confirmed the
-	// null unsolicited response. IEEE 1815-2012 leaves the classes
-	// enabled at startup to configuration (5.1.1.1.1 Rule 3, p. 101):
-	// leave it empty for a master that enables the classes it wants.
+	// null unsolicited response. This departs from IEEE 1815-2012, under
+	// which an outstation sends no data unsolicited until the master
+	// enables it with ENABLE_UNSOLICITED (5.1.1.1.1 Rule 3, p. 101;
+	// 4.4.13, p. 60). It is meant for masters that never send
+	// ENABLE_UNSOLICITED; leave it empty, the default, for a master that
+	// enables the classes it wants.
 	Classes []Class
 	// HoldTime is how long new events are collected before they are sent
 	// unsolicited. Zero sends at once.

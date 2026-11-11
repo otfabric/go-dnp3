@@ -458,7 +458,7 @@ func (h specApp) Application(context.Context, app.FunctionCode, []app.Header) ap
 
 // TestSpec4_4_12_SaveConfigTimeDelay: 4.4.12 (p. 60): an outstation shall
 // answer SAVE_CONFIG at once with a time delay object (g52v1 or g52v2).
-// IIN2.4, already executing (4.5.13, p. 86), is the handler's to report.
+// IIN2.4, already executing (4.5.13, p. 87), is the handler's to report.
 func TestSpec4_4_12_SaveConfigTimeDelay(t *testing.T) {
 	m := newMaster(t, WithHandler(specApp{}))
 	m.send(req(1, app.FuncSaveConfiguration))

@@ -28,7 +28,11 @@ func (db *Database) AddCounter(index uint32, cfg PointConfig, v app.Counter) err
 }
 
 // AddFrozenCounter adds a frozen counter (groups 21 and 23). A freeze
-// request copies the counter of the same index into it.
+// request copies the counter of the same index into it and, with an event
+// class, raises a frozen counter event at every freeze (IEEE 1815-2012
+// 11.9.5.2, p. 341). A frozen counter is the frozen value of the counter of
+// its index: add that counter too, as the database does not check it; one
+// without it is never frozen.
 func (db *Database) AddFrozenCounter(index uint32, cfg PointConfig, v app.Counter) error {
 	return db.Add(FrozenCounter, index, cfg, v)
 }
@@ -38,7 +42,11 @@ func (db *Database) AddAnalogInput(index uint32, cfg PointConfig, v app.Analog) 
 	return db.Add(AnalogInput, index, cfg, v)
 }
 
-// AddFrozenAnalogInput adds a frozen analog input (groups 31 and 33).
+// AddFrozenAnalogInput adds a frozen analog input (groups 31 and 33). A
+// freeze request copies the analog input of the same index into it and,
+// with an event class, raises a frozen analog input event at every freeze
+// (IEEE 1815-2012 11.9.1.2, p. 333). Add that analog input too, as the
+// database does not check it; one without it is never frozen.
 func (db *Database) AddFrozenAnalogInput(index uint32, cfg PointConfig, v app.Analog) error {
 	return db.Add(FrozenAnalogInput, index, cfg, v)
 }
