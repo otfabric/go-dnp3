@@ -30,10 +30,21 @@ func TestManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	sources := map[string]bool{}
+	unknown := map[string]bool{}
 	for _, s := range m.Sources {
 		sources[s.ID] = true
-		if s.Licence == "" || s.Redistribution == "" || s.URL == "" || len(s.Revision) != 40 {
-			t.Errorf("source %s: licence, redistribution, URL or revision missing", s.ID)
+		switch {
+		case s.Licence == "" || s.Redistribution == "":
+			t.Errorf("source %s: licence or redistribution missing", s.ID)
+		case s.UnknownOrigin:
+			// No URL or revision to give; the files must say where they
+			// were found as far as known (limitations) and stay C or D.
+			unknown[s.ID] = true
+			if s.URL != "" || s.Revision != "" {
+				t.Errorf("source %s: unknown origin with a URL or revision", s.ID)
+			}
+		case s.URL == "" || len(s.Revision) != 40:
+			t.Errorf("source %s: URL or revision missing", s.ID)
 		}
 	}
 	sums := readSums(t)
@@ -51,7 +62,7 @@ func TestManifest(t *testing.T) {
 		delete(sums, local)
 	}
 	for _, f := range m.Files {
-		if seen[f.ID] || !sources[f.Source] || m.Classes[f.Class] == "" || f.URL == "" || len(f.Operations) == 0 ||
+		if seen[f.ID] || !sources[f.Source] || m.Classes[f.Class] == "" || (f.URL == "") != unknown[f.Source] || len(f.Operations) == 0 ||
 			!cleanName.MatchString(f.Name) || f.OriginalName != filepath.Base(f.Path) || filepath.Ext(f.Name) != filepath.Ext(f.OriginalName) ||
 			f.Storage != "raw" || f.Limitations == "" {
 			t.Errorf("file %s: duplicate, or source %q, class %q, URL, operations, name or limitations wrong", f.ID, f.Source, f.Class)
@@ -62,6 +73,9 @@ func TestManifest(t *testing.T) {
 		}
 		if f.Class == "A" || f.Class == "B" {
 			t.Errorf("%s: class %s needs identified hardware; none of the sources documents it", f.ID, f.Class)
+		}
+		if unknown[f.Source] && f.Class != "C" && f.Class != "D" {
+			t.Errorf("%s: a file of unknown origin is of class C or D, not %s", f.ID, f.Class)
 		}
 		check(f.Local, f.SHA256, f.Size)
 		if f.Log != "" {

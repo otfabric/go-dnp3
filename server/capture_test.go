@@ -409,7 +409,6 @@ func headerText(hs []app.Header) []string {
 var serverReplayExpected = map[string]string{
 	"auth-change-session-keys:4":                 whyRestart,
 	"auth-change-session-keys:6":                 whyRestart,
-	"auth-control-challenge-response:1":          whyRestart,
 	"auth-control-challenge-response:3":          whySa,
 	"cold-restart-and-response:4":                whyRestart,
 	"conformance-6-1-2:8":                        whyRestart,

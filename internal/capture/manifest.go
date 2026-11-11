@@ -42,6 +42,11 @@ type Source struct {
 	Revision       string `json:"revision"`
 	Licence        string `json:"licence"`
 	Redistribution string `json:"redistribution"`
+	// UnknownOrigin marks a source whose origin is not known: a file
+	// handed over without its provenance. It has no URL or revision, its
+	// Licence says that the terms are unknown, and its files are of class
+	// C or D only.
+	UnknownOrigin bool `json:"unknown_origin,omitempty"`
 }
 
 // File is one capture file.
