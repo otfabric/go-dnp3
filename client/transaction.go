@@ -156,9 +156,6 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	if err != nil {
 		return nil, err
 	}
-	if lim := c.opts.maxTxFragment; lim > 0 && len(data) > lim {
-		return nil, invalidOption("%s request of %d octets exceeds the request fragment limit of %d (WithMaxRequestFragment)", fc, len(data), lim)
-	}
 	t := newTransaction()
 	c.mu.Lock()
 	c.seq = app.NextSeq(seq)
@@ -305,7 +302,8 @@ func (c *Client) confirmSolicited(sess *channel.Session, f *app.Fragment, raw []
 // fits checks, with WithMaxRequestFragment, that a request fits the
 // request fragment limit before secure authentication adds its aggressive
 // mode objects, so that a request refused for its size does not use up a
-// challenge sequence number.
+// challenge sequence number. aggressive adds them only when the request
+// still fits with them.
 func (c *Client) fits(req *app.Fragment) error {
 	lim := c.opts.maxTxFragment
 	if lim == 0 {

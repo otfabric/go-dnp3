@@ -714,7 +714,7 @@ WithMaxFragment sets the largest fragment the client reassembles. The default is
 func WithMaxRequestFragment(n int) Option
 ```
 
-WithMaxRequestFragment limits the request fragments the client sends to n octets, at least 249: IEEE 1815-2012 clause 4.3 Rule 4 requires a master to be configurable to restrict its requests to 249 octets, Rule 1 to 2048, and NOTE 2 of the clause asks for no request larger than the outstation can receive. A request that does not fit fails with dnp3.ErrInvalidOption before anything is sent; WriteFile sizes its blocks to fit. By default the size of requests is not limited.
+WithMaxRequestFragment limits the request fragments the client sends to n octets, at least 249: IEEE 1815-2012 clause 4.3 Rule 4 requires a master to be configurable to restrict its requests to 249 octets, Rule 1 to 2048, and NOTE 2 of the clause asks for no request larger than the outstation can receive. A request that does not fit fails with dnp3.ErrInvalidOption before anything is sent; a critical request that fits only without the objects of aggressive mode is sent without them, to be challenged (clause 7.4.1.6). WriteFile sizes its blocks to fit. By default the size of requests is not limited.
 
 #### func WithMetrics
 

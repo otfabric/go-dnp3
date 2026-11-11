@@ -189,6 +189,14 @@ func TestSpec5_1_1_1_2_Rule2_RestartProcedure(t *testing.T) {
 			[]string{"WRITE g80v1", "READ", "ENABLE_UNSOLICITED"}},
 		{"clear restart unanswered", false, true, nil, "WRITE g80v1",
 			[]string{"WRITE g80v1"}},
+		// The procedure ends; the automatic time synchronization that
+		// NEED_TIME queued runs once on its own.
+		{"time sync unanswered", true, true, nil, "RECORD_CURRENT_TIME",
+			[]string{"WRITE g80v1", "RECORD_CURRENT_TIME", "RECORD_CURRENT_TIME"}},
+		{"integrity poll unanswered", false, true, nil, "READ",
+			[]string{"WRITE g80v1", "READ"}},
+		{"enable unsolicited unanswered", false, true, nil, "ENABLE_UNSOLICITED",
+			[]string{"WRITE g80v1", "READ", "ENABLE_UNSOLICITED"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &station{}

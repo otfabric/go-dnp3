@@ -64,6 +64,9 @@ func TestSpecA_29_1_BufferFillStatus(t *testing.T) {
 	if _, err := f.Encode(); !errors.Is(err, ErrInvalidValue) {
 		t.Fatalf("fill 128: %v", err)
 	}
+	if _, err := AppendObjectValue(nil, G81V1, Binary{}); err == nil {
+		t.Fatal("g81v1 encoded a binary input")
+	}
 	if _, err := Decode(unhex(t, "C0 81 00 00 51 01 00 00 00 B2 02")); !errors.Is(err, ErrMalformed) {
 		t.Fatalf("short g81v1: %v", err)
 	}

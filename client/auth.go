@@ -289,6 +289,11 @@ func (c *Client) keysFor(fc app.FunctionCode) error {
 // outstation did not refuse aggressive mode: a g120v3 object first and a
 // g120v9 MAC last, over the last challenge and every octet of the request
 // up to the MAC value (Table A-9). It reports whether it did.
+//
+// A request that fits WithMaxRequestFragment only without those objects
+// (clause 4.3 Rule 4) is left as it is, to be challenged: the master may
+// anticipate the challenge (clause 7.4.1.6), it need not. Only a request
+// made aggressive takes a CSQ (clause 7.5.2.3.3 d).
 func (c *Client) aggressive(req *app.Fragment) (bool, error) {
 	u := c.opts.auth
 	if u == nil || !slices.Contains(c.opts.aggressive, req.Function) {
@@ -303,9 +308,17 @@ func (c *Client) aggressive(req *app.Fragment) (bool, error) {
 	}
 	// The CSQ is the last challenge's plus the replies and aggressive mode
 	// requests sent since (clause 7.5.2.3.3 d).
-	if _, err := aggressiveFragment(req, alg, key, last, csq+1, u.Number); err != nil {
+	g := *req
+	b, err := aggressiveFragment(&g, alg, key, last, csq+1, u.Number)
+	if err != nil {
 		return false, err
 	}
+	if lim := c.opts.maxTxFragment; lim > 0 && len(b) > lim {
+		c.log.Debug("request sent without aggressive mode: over the request fragment limit with it",
+			"function", req.Function.String(), "octets", len(b), "limit", lim)
+		return false, nil
+	}
+	req.Headers = g.Headers
 	c.mu.Lock()
 	c.auth.csq = csq + 1
 	c.countLocked(secauth.StatCriticalMessagesSent) // clause 7.5.3.3

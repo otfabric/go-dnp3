@@ -88,7 +88,7 @@ The master for one outstation.
 | `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`); each repeat is a new request with the next SEQ, and a time synchronization starts again with fresh times |
 | `WithResponseTimeout(d)` | 5 s | Per response fragment |
 | `WithMaxFragment(n)` | 2048 | Largest fragment reassembled; below 2048 is outside 4.3 Rule 3 |
-| `WithMaxRequestFragment(n)` | unlimited | Largest request sent, at least 249 (4.3 Rule 4); a larger one fails with `ErrInvalidOption`; `WriteFile` sizes blocks to fit |
+| `WithMaxRequestFragment(n)` | unlimited | Largest request sent, at least 249 (4.3 Rule 4); a larger one fails with `ErrInvalidOption`; a critical request that fits only without the aggressive mode objects is sent challenged; `WriteFile` sizes blocks to fit |
 | `WithLink(Link)` | unconfirmed | `Confirmed` (serial only: 13.2.1.1 forbids it over IP), `Timeout` (2 s), `Retries`, `KeepAlive` (60 s, any positive duration; negative disables it, for testing only); time synchronization messages always unconfirmed (10.3.4.1) |
 | `WithStartup(Startup)` | `Integrity` | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect; `EnableUnsolicited` also sets the other two (5.1.1.2 Rule 1); `Startup{}` runs nothing; `EnableUnsolicited` is sent again after an outstation restart |
 | `WithTimeSync(TimeSync)` | LAN over a `net.Conn`, non-LAN otherwise, with a fallback to non-LAN | What NEED_TIME triggers: `TimeSyncLAN`, `TimeSyncNonLAN`, `TimeSyncClearNeedTime` (WRITE g80v1 index 4), `TimeSyncNone` (nothing) |

@@ -781,3 +781,66 @@ func TestSpecTable7_13_ChallengeWithoutKeys(t *testing.T) {
 		t.Fatalf("statistics %v", s)
 	}
 }
+
+// TestSpec7_4_1_6_AggressiveOverRequestLimit: clause 7.4.1.6 (p. 175): a
+// master may optionally anticipate the challenge (aggressive mode); clause
+// 4.3 Rule 4 (p. 39) bounds the request fragment (WithMaxRequestFragment).
+// A critical request that fits the limit, but not with the objects of
+// aggressive mode, goes without them and is challenged. It takes no CSQ
+// (clause 7.5.2.3.3 d), so the next aggressive mode request is accepted.
+func TestSpec7_4_1_6_AggressiveOverRequestLimit(t *testing.T) {
+	const lim = 249
+	var executed atomic.Int32
+	accept := server.HandlerFunc(func(context.Context, server.Command, server.OperateType) app.CommandStatus {
+		executed.Add(1)
+		return app.StatusSuccess
+	})
+	_, addr := outstation(t, server.WithHandler(accept), server.WithMaxControls(lim),
+		server.WithSecureAuthentication(server.SecureAuth{User: secauth.User{Number: 1, Key: specKey}}))
+	rec := &sentRecorder{}
+	c, err := Dial(testCtx(t), addr, quiet(WithMetrics(rec), WithAggressiveMode(), WithMaxRequestFragment(lim),
+		WithSecureAuthentication(secauth.User{Number: 1, Key: specKey}))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	// The largest control request that fits the limit without aggressive
+	// mode.
+	var big []Command
+	for n := 1; ; n++ {
+		cmds := make([]Command, n)
+		for i := range cmds {
+			cmds[i] = CROB(uint32(i), app.OpLatchOn, 0, 0)
+		}
+		hs, err := commandHeaders(cmds)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := (&app.Fragment{Function: app.FuncDirectOperate, Headers: hs}).Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b) > lim {
+			if prev := len(b) - 13; prev+secauth.AggressiveOverhead <= lim {
+				t.Fatalf("a request of %d octets fits in aggressive mode", prev)
+			}
+			break
+		}
+		big = cmds
+	}
+	one := CROB(0, app.OpLatchOn, 0, 0)
+	for i, cmds := range [][]Command{{one}, big, {one}} {
+		if _, err := c.Operate(testCtx(t), DirectOperate, cmds...); err != nil {
+			t.Fatalf("control request %d: %v", i, err)
+		}
+	}
+	if got := rec.aggressive(app.FuncDirectOperate); len(got) != 3 || got[0] || got[1] || !got[2] {
+		t.Fatalf("aggressive mode per request: %v, want [false false true]", got)
+	}
+	if n := executed.Load(); n != int32(len(big)+2) {
+		t.Fatalf("%d controls executed, want %d", n, len(big)+2)
+	}
+	if s := c.SecurityStatistics(); s[secauth.StatAuthenticationFailures] != 0 {
+		t.Fatalf("authentication failures %d", s[secauth.StatAuthenticationFailures])
+	}
+}

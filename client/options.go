@@ -323,8 +323,10 @@ func WithMaxFragment(n int) Option {
 // master to be configurable to restrict its requests to 249 octets, Rule
 // 1 to 2048, and NOTE 2 of the clause asks for no request larger than the
 // outstation can receive. A request that does not fit fails with
-// dnp3.ErrInvalidOption before anything is sent; WriteFile sizes its
-// blocks to fit. By default the size of requests is not limited.
+// dnp3.ErrInvalidOption before anything is sent; a critical request that
+// fits only without the objects of aggressive mode is sent without them,
+// to be challenged (clause 7.4.1.6). WriteFile sizes its blocks to fit. By
+// default the size of requests is not limited.
 func WithMaxRequestFragment(n int) Option {
 	return func(o *options) error {
 		if n < 249 {
