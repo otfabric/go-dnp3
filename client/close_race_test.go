@@ -60,3 +60,26 @@ func TestCloseDuringConnectLeavesNoGoroutine(t *testing.T) {
 		}
 	}
 }
+
+// TestDualEndpointNoAcceptAfterClose: the dual end point of a closed
+// client starts no accept loop, also when a Connect that began before
+// Close reaches it only after: Close would not wait for that loop.
+func TestDualEndpointNoAcceptAfterClose(t *testing.T) {
+	c, err := New(deadAddr(t), quiet(WithDualEndpoint(listenTCP(t), nil))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// What a Connect checked before Close does next.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if s, _, err := c.dual.open(ctx); err == nil {
+		_ = s.Close()
+		t.Fatal("a closed client opened a connection")
+	}
+	if left := clientGoroutines(); len(left) > 0 {
+		t.Fatalf("accept runs on a closed client:\n%s", strings.Join(left, "\n\n"))
+	}
+}
