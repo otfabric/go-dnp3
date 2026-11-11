@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -83,19 +84,28 @@ func (c *Client) Broadcast(ctx context.Context, dest link.Address, fc app.Functi
 	return c.do(ctx, fc, false, func(ctx context.Context) error {
 		c.mu.Lock()
 		sess := c.sess
+		seq := c.seq
+		c.mu.Unlock()
 		if sess == nil {
-			c.mu.Unlock()
 			return dnp3.ErrNotConnected
 		}
-		seq := c.seq
-		c.seq = app.NextSeq(seq)
-		c.mu.Unlock()
 		req := &app.Fragment{Control: app.SingleControl(seq), Function: fc, Headers: headers}
 		data, err := req.Encode()
 		if err != nil {
 			return err
 		}
-		if err := sess.SendBroadcast(ctx, data, dest); err != nil {
+		if lim := c.opts.maxTxFragment; lim > 0 && len(data) > lim {
+			return invalidOption("%s broadcast of %d octets exceeds the request fragment limit of %d (WithMaxRequestFragment)", fc, len(data), lim)
+		}
+		// The sequence number is taken only for a request that is sent
+		// (IEEE 1815-2012 clause 4.3 Rule 14).
+		c.mu.Lock()
+		c.seq = app.NextSeq(seq)
+		c.mu.Unlock()
+		c.proc.sendMu.Lock()
+		err = sess.SendBroadcast(ctx, data, dest)
+		c.proc.sendMu.Unlock()
+		if err != nil {
 			return sendError(err)
 		}
 		if m := c.opts.metrics; m != nil {
@@ -135,7 +145,16 @@ type Command struct {
 	Value app.Value
 	// GV is the object to send it as. Zero picks app.G12V1 for a CROB and,
 	// for a set-point, app.G41V1 when the value is an integer that fits 32
-	// bits and app.G41V3 otherwise.
+	// bits and app.G41V3 otherwise. Subset levels 1 and 2 define only
+	// app.G41V2 for set-points (IEEE 1815-2012 Tables 14-2 and 14-3), and
+	// app.G41V1 is of level 3, app.G41V3 of level 4: set GV for an
+	// outstation of a lower level.
+	//
+	// A command is sent as given, except that IEEE 1815-2012 requires the
+	// queue bit of a CROB to be 0 (Annex A.8.1.2.2) and the status of a
+	// request to be 0 (Annex A.8.1.2.2 and A.20.1.2.2) or 126,
+	// NON_PARTICIPATING (Table 11-7): Operate refuses other values with
+	// dnp3.ErrInvalidOption.
 	GV app.GroupVariation
 }
 
@@ -166,6 +185,28 @@ func (cmd Command) gv() (app.GroupVariation, error) {
 	}
 }
 
+// valid checks the fields IEEE 1815-2012 fixes in a request: the queue
+// bit of a CROB is 0 (Annex A.8.1.2.2, printed page 506: "The master shall
+// always set this bit to 0"), and the status is 0 in a request (A.8.1.2.2,
+// p. 507, and A.20.1.2.2, p. 615) or NON_PARTICIPATING, which Table 11-7
+// (p. 330) defines for requests.
+func (cmd Command) valid() error {
+	var st app.CommandStatus
+	switch v := cmd.Value.(type) {
+	case app.CROB:
+		if v.Queue {
+			return fmt.Errorf("%w: CROB for index %d with the obsolete queue bit set", dnp3.ErrInvalidOption, cmd.Index)
+		}
+		st = v.Status
+	case app.AnalogOutput:
+		st = v.Status
+	}
+	if st != app.StatusSuccess && st != app.StatusNonParticipating {
+		return fmt.Errorf("%w: command for index %d with status %s in a request", dnp3.ErrInvalidOption, cmd.Index, st)
+	}
+	return nil
+}
+
 // commandHeaders groups consecutive commands of one object into
 // index-prefixed headers.
 func commandHeaders(cmds []Command) ([]app.Header, error) {
@@ -186,6 +227,9 @@ func commandHeaders(cmds []Command) ([]app.Header, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := cmd.valid(); err != nil {
+			return nil, err
+		}
 		if gv != cur {
 			flush()
 			cur = gv
@@ -201,8 +245,16 @@ func commandHeaders(cmds []Command) ([]app.Header, error) {
 // all app.StatusSuccess: nothing is reported.
 //
 // A status other than success fails with a *dnp3.CommandError for the
-// first such control; the statuses are returned as well. Controls are
-// never repeated by WithRetry.
+// first such control; the statuses are returned as well. A truncated
+// response, which holds the controls up to the first that failed (IEEE
+// 1815-2012 clause 4.4.4.3 Rule 6), returns the statuses of those only.
+// Controls are never repeated by WithRetry.
+//
+// With SelectBeforeOperate the OPERATE is sent only when the response to
+// the SELECT repeats, octet for octet, everything that followed the
+// function code in the request, with every status 0 and none of IIN2.0,
+// 2.1, 2.2 and 2.4 set (clause 4.4.4.3 Rule 8); a response that differs
+// otherwise than in its statuses fails with dnp3.ErrProtocol.
 func (c *Client) Operate(ctx context.Context, mode CommandMode, cmds ...Command) ([]app.CommandStatus, error) {
 	hs, err := commandHeaders(cmds)
 	if err != nil {
@@ -228,12 +280,12 @@ func (c *Client) Operate(ctx context.Context, mode CommandMode, cmds ...Command)
 			// SELECT and OPERATE in one turn: the OPERATE must carry the
 			// next sequence number.
 			res, err := c.exchange(ctx, app.FuncSelect, hs)
-			if statuses, err = controlResult(hs, res, err); err != nil {
+			if statuses, err = controlResult(hs, res, err, true); err != nil {
 				return err
 			}
 		}
 		res, err := c.exchange(ctx, fc, hs)
-		statuses, err = controlResult(hs, res, err)
+		statuses, err = controlResult(hs, res, err, false)
 		return err
 	})
 	return statuses, err
@@ -243,13 +295,15 @@ func (c *Client) Operate(ctx context.Context, mode CommandMode, cmds ...Command)
 // of the first control that failed. A response that sets an error IIN but
 // echoes the request, as an outstation does for a control it does not
 // support (NOT_SUPPORTED with IIN2.2), reports its statuses: a
-// CommandError, rather than the IINError.
-func controlResult(req []app.Header, res *Result, err error) ([]app.CommandStatus, error) {
+// CommandError, rather than the IINError. With exact, the response to a
+// SELECT, the echo must repeat the request octet for octet but for the
+// statuses (IEEE 1815-2012 clause 4.4.4.3 Rule 8).
+func controlResult(req []app.Header, res *Result, err error, exact bool) ([]app.CommandStatus, error) {
 	var ie *dnp3.IINError
 	if err != nil && (!errors.As(err, &ie) || res == nil || len(res.Fragments) == 0) {
 		return nil, err
 	}
-	statuses, echoErr := echoStatuses(req, res)
+	statuses, echoErr := echoStatuses(req, res, exact)
 	if echoErr != nil {
 		if err != nil {
 			return nil, err
@@ -263,45 +317,99 @@ func controlResult(req []app.Header, res *Result, err error) ([]app.CommandStatu
 }
 
 // echoStatuses checks that the response echoes the request and returns
-// the status of each control.
-func echoStatuses(req []app.Header, res *Result) ([]app.CommandStatus, error) {
+// the status of each control it holds. A response may end after the first
+// control that failed: a truncated response (IEEE 1815-2012 clause 4.4.4.3
+// Rule 6, item 3) holds the controls up to and including it, every one
+// before it with status 0. With exact, the octets of the response after
+// its IIN must be those of the request after its function code, with the
+// statuses of the response (clause 4.4.4.3 Rule 8).
+func echoStatuses(req []app.Header, res *Result, exact bool) ([]app.CommandStatus, error) {
 	got := res.Headers()
-	if len(got) != len(req) {
+	if len(got) == 0 || len(got) > len(req) {
 		return nil, fmt.Errorf("%w: control echo has %d headers, the request %d", dnp3.ErrProtocol, len(got), len(req))
 	}
 	var out []app.CommandStatus
-	for i, h := range req {
-		e := got[i]
-		if e.GV != h.GV || len(e.Objects) != len(h.Objects) {
+	echo := make([]app.Header, len(got)) // the request as the response should repeat it
+	for i, e := range got {
+		h := req[i]
+		lastHeader := i == len(got)-1
+		if e.GV != h.GV || len(e.Objects) > len(h.Objects) || (!lastHeader && len(e.Objects) != len(h.Objects)) || len(e.Objects) == 0 {
 			return nil, fmt.Errorf("%w: control echo header %d is %s n=%d, the request %s n=%d",
 				dnp3.ErrProtocol, i, e.GV, len(e.Objects), h.GV, len(h.Objects))
 		}
+		echo[i] = h
+		echo[i].Objects = make([]app.Object, len(e.Objects))
 		for j, o := range e.Objects {
-			if o.Index != h.Objects[j].Index {
-				return nil, fmt.Errorf("%w: control echo index %d, the request %d", dnp3.ErrProtocol, o.Index, h.Objects[j].Index)
+			r := h.Objects[j]
+			if o.Index != r.Index {
+				return nil, fmt.Errorf("%w: control echo index %d, the request %d", dnp3.ErrProtocol, o.Index, r.Index)
 			}
 			switch v := o.Value.(type) {
 			case app.CROB:
-				r := h.Objects[j].Value.(app.CROB)
-				r.Status = v.Status
-				if r != v {
+				want, ok := r.Value.(app.CROB)
+				want.Status = v.Status
+				if !ok || want != v {
 					return nil, fmt.Errorf("%w: control echo %s differs from the request", dnp3.ErrProtocol, v)
 				}
+				r.Value = want
 				out = append(out, v.Status)
 			case app.AnalogOutput:
+				want, ok := r.Value.(app.AnalogOutput)
+				if !ok {
+					return nil, fmt.Errorf("%w: control echo %v differs from the request", dnp3.ErrProtocol, v)
+				}
+				want.Status = v.Status
+				r.Value = want
 				out = append(out, v.Status)
 			default:
 				return nil, fmt.Errorf("%w: control echo carries %T", dnp3.ErrProtocol, o.Value)
 			}
+			echo[i].Objects[j] = r
+		}
+	}
+	if n := countObjects(req); len(out) < n {
+		// A truncated response: only the last control it holds failed.
+		for i, s := range out {
+			if (s != app.StatusSuccess) != (i == len(out)-1) {
+				return nil, fmt.Errorf("%w: control echo of %d of %d controls is not a truncated response (statuses %v)",
+					dnp3.ErrProtocol, len(out), n, out)
+			}
+		}
+	}
+	if exact {
+		want, err := (&app.Fragment{Headers: echo}).Encode()
+		if err != nil {
+			return nil, fmt.Errorf("%w: control echo: %w", dnp3.ErrProtocol, err)
+		}
+		var have []byte
+		for _, raw := range res.raw {
+			have = append(have, raw[4:]...)
+		}
+		if !bytes.Equal(have, want[2:]) {
+			return nil, fmt.Errorf("%w: the SELECT response does not repeat the request octet for octet:\n response % x\n request  % x",
+				dnp3.ErrProtocol, have, want[2:])
 		}
 	}
 	return out, nil
 }
 
+func countObjects(hs []app.Header) int {
+	n := 0
+	for _, h := range hs {
+		n += len(h.Objects)
+	}
+	return n
+}
+
+// firstFailure returns the CommandError of the first control whose status
+// is not success; statuses may end early (a truncated response).
 func firstFailure(hs []app.Header, statuses []app.CommandStatus) error {
 	i := 0
 	for _, h := range hs {
 		for _, o := range h.Objects {
+			if i == len(statuses) {
+				return nil
+			}
 			if statuses[i] != app.StatusSuccess {
 				return &dnp3.CommandError{GV: h.GV, Index: o.Index, Status: statuses[i]}
 			}
@@ -318,35 +426,45 @@ func (c *Client) WriteTime(ctx context.Context, t time.Time) error {
 	return err
 }
 
-// SyncTime synchronizes the outstation's time with the given procedure:
-// TimeSyncLAN (RECORD_CURRENT_TIME and g50v3) or TimeSyncNonLAN
-// (DELAY_MEASURE and g50v1 corrected by half the round trip minus the
-// outstation's processing delay).
+// SyncTime synchronizes the outstation's time with the given procedure of
+// IEEE 1815-2012 clause 10.3.3: TimeSyncLAN (RECORD_CURRENT_TIME, then a
+// WRITE of g50v3 with the time the request was handed to the link layer)
+// or TimeSyncNonLAN (DELAY_MEASURE, then a WRITE of g50v1 with the current
+// time corrected by half the round trip minus the outstation's processing
+// delay). TimeSyncClearNeedTime runs ClearNeedTime instead.
+//
+// The requests go as UNCONFIRMED_USER_DATA, never repeated by the link
+// layer (clause 10.3.4.1). With WithRetry a failed procedure is run again
+// from its first request, with new sequence numbers and fresh times, as
+// that clause requires.
+//
+// The times are taken in the client, not at the line: the round trip of
+// the non-LAN procedure ends when the response has been received whole,
+// and so includes the transmission time of the response, which clause
+// 10.3.3.1 d) excludes. Over a slow serial line the time written is late
+// by about half that time.
 func (c *Client) SyncTime(ctx context.Context, p TimeSync) error {
+	if p == TimeSyncClearNeedTime {
+		return c.ClearNeedTime(ctx)
+	}
 	return c.do(ctx, app.FuncWrite, true, func(ctx context.Context) error {
 		switch p {
 		case TimeSyncLAN:
-			sent := time.Now()
-			if _, err := c.exchange(ctx, app.FuncRecordCurrentTime, nil); err != nil {
+			// [A] of clause 10.3.3.2: when the last octet of the request
+			// left, here when the link layer had written it.
+			res, err := c.exchange(ctx, app.FuncRecordCurrentTime, nil)
+			if err != nil {
 				return err
 			}
-			_, err := c.exchange(ctx, app.FuncWrite, []app.Header{
-				app.Counted(app.G50V3, app.AbsoluteTime{Time: app.TimestampOf(sent)})})
+			_, err = c.exchange(ctx, app.FuncWrite, []app.Header{
+				app.Counted(app.G50V3, app.AbsoluteTime{Time: app.TimestampOf(res.sent)})})
 			return err
 		case TimeSyncNonLAN:
-			sent := time.Now()
 			res, err := c.exchange(ctx, app.FuncDelayMeasure, nil)
 			if err != nil {
 				return err
 			}
-			rtt := time.Since(sent)
-			var processing time.Duration
-			for _, h := range res.Headers() {
-				if d, ok := timeDelay(h); ok && h.GV == app.G52V2 {
-					processing = d
-				}
-			}
-			delay := max((rtt-processing)/2, 0)
+			delay := max((res.arrived.Sub(res.sending)-processingDelay(res))/2, 0)
 			_, err = c.exchange(ctx, app.FuncWrite, []app.Header{
 				app.Counted(app.G50V1, app.AbsoluteTime{Time: app.TimestampOf(time.Now().Add(delay))})})
 			return err
@@ -356,21 +474,31 @@ func (c *Client) SyncTime(ctx context.Context, p TimeSync) error {
 	})
 }
 
-// DelayMeasure sends DELAY_MEASURE and returns the outstation's
-// processing delay and the round trip time.
-func (c *Client) DelayMeasure(ctx context.Context) (processing, roundTrip time.Duration, err error) {
-	start := time.Now()
-	res, err := c.request(ctx, app.FuncDelayMeasure, true)
-	if err != nil {
-		return 0, 0, err
-	}
-	roundTrip = time.Since(start)
+// processingDelay returns the outstation's processing delay of a
+// DELAY_MEASURE response: its fine time delay object (g52v2, IEEE
+// 1815-2012 clause 4.4.15).
+func processingDelay(res *Result) time.Duration {
+	var processing time.Duration
 	for _, h := range res.Headers() {
 		if d, ok := timeDelay(h); ok && h.GV == app.G52V2 {
 			processing = d
 		}
 	}
-	return processing, roundTrip, nil
+	return processing
+}
+
+// DelayMeasure sends DELAY_MEASURE and returns the outstation's
+// processing delay and the round trip time: from the request to the
+// arrival of its response (To and Ti of IEEE 1815-2012 clause 4.4.15).
+// With WithRetry a DELAY_MEASURE that failed is sent again as a new
+// request (clause 10.3.4.1), and the round trip is that of the request
+// that was answered.
+func (c *Client) DelayMeasure(ctx context.Context) (processing, roundTrip time.Duration, err error) {
+	res, err := c.request(ctx, app.FuncDelayMeasure, true)
+	if err != nil {
+		return 0, 0, err
+	}
+	return processingDelay(res), res.arrived.Sub(res.sending), nil
 }
 
 // timeDelay returns the delay of a header with one time delay object (g52).
@@ -383,13 +511,15 @@ func timeDelay(h app.Header) (time.Duration, bool) {
 }
 
 // ColdRestart asks the outstation for a cold restart and returns the time
-// after which it can be polled again.
+// after which it can be polled again. The NOTE of IEEE 1815-2012 clause
+// 4.4.9 says a master should send no request before that time has passed;
+// the client does not hold requests back, so the application should wait.
 func (c *Client) ColdRestart(ctx context.Context) (time.Duration, error) {
 	return c.restart(ctx, app.FuncColdRestart)
 }
 
 // WarmRestart asks the outstation for a warm restart and returns the time
-// after which it can be polled again.
+// after which it can be polled again; see ColdRestart.
 func (c *Client) WarmRestart(ctx context.Context) (time.Duration, error) {
 	return c.restart(ctx, app.FuncWarmRestart)
 }
@@ -472,7 +602,10 @@ func (c *Client) unsolicited(ctx context.Context, fc app.FunctionCode, classes [
 }
 
 // AssignClass assigns the points the headers name to class (0..3), for
-// example AssignClass(ctx, 2, app.AllObjects(app.G30V0)).
+// example AssignClass(ctx, 2, app.AllObjects(app.G30V0)). The NOTE of IEEE
+// 1815-2012 clause 4.4.14 says a master should poll all three event
+// classes in one request right after, EventPoll(ctx), so that events are
+// reported in the order they were generated; AssignClass does not.
 func (c *Client) AssignClass(ctx context.Context, class int, headers ...app.Header) error {
 	if class < 0 || class > 3 || len(headers) == 0 {
 		return fmt.Errorf("%w: assign class %d with %d headers", dnp3.ErrInvalidOption, class, len(headers))
@@ -513,10 +646,24 @@ func (c *Client) FreezeAtTime(ctx context.Context, at time.Time, interval time.D
 	return err
 }
 
-// ClearRestart clears IIN1.7 (DEVICE_RESTART) by writing g80v1 index 7.
+// ClearRestart clears IIN1.7 (DEVICE_RESTART) by writing g80v1 index 7
+// (IEEE 1815-2012 clauses 4.5.8 and 5.1.1.1.1 Rule 1).
 func (c *Client) ClearRestart(ctx context.Context) error {
+	return c.clearIIN(ctx, app.IINDeviceRestart)
+}
+
+// ClearNeedTime clears IIN1.4 (NEED_TIME) by writing g80v1 index 4, as
+// IEEE 1815-2012 clause 4.5.5 recommends for a master that does not need
+// the outstation's time. The outstation then assumes no time
+// synchronization is coming.
+func (c *Client) ClearNeedTime(ctx context.Context) error {
+	return c.clearIIN(ctx, app.IINNeedTime)
+}
+
+// clearIIN writes 0 to one internal indication (g80v1, qualifier 0x00).
+func (c *Client) clearIIN(ctx context.Context, bit app.IIN) error {
 	_, err := c.Write(ctx, app.Header{GV: app.G80V1, Qualifier: app.Qual1ByteStartStop,
-		Objects: []app.Object{{Index: app.IINBit(app.IINDeviceRestart), Value: app.Binary{}}}})
+		Objects: []app.Object{{Index: app.IINBit(bit), Value: app.Binary{}}}})
 	return err
 }
 

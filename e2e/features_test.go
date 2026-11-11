@@ -368,7 +368,11 @@ func TestNotSupportedControl(t *testing.T) {
 func TestTimeSync(t *testing.T) {
 	r := &relay{}
 	for _, proc := range []client.TimeSync{client.TimeSyncLAN, client.TimeSyncNonLAN} {
-		p := newPair(t, fullDatabase, []server.Option{server.WithHandler(r), server.WithTimeSync(time.Hour)})
+		// The client's automatic time synchronization is off: the test
+		// counts the synchronizations SyncTime makes. TestAutomaticTimeSync
+		// and TestSpec5_1_1_2_Rule1_DefaultStartup cover the automatic one.
+		p := newPair(t, fullDatabase, []server.Option{server.WithHandler(r), server.WithTimeSync(time.Hour)},
+			client.WithTimeSync(client.TimeSyncNone))
 		res, err := p.c.IntegrityPoll(ctx(t))
 		if err != nil {
 			t.Fatal(err)

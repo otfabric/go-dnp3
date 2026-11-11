@@ -70,7 +70,7 @@ func apiReplay(t *testing.T, id string, keep func(capture.Exchange) bool) (*Clie
 			sent = append(sent, f)
 			seq := b[0] & 0x0F
 			for _, r := range ex.Responses {
-				if err := o.send(withSeq(r.Raw, seq)); err != nil {
+				if err := o.send(withSeq(echoed(ex, r.Raw, b), seq)); err != nil {
 					return
 				}
 				seq = app.NextSeq(seq)
@@ -83,6 +83,29 @@ func apiReplay(t *testing.T, id string, keep func(capture.Exchange) bool) (*Clie
 		closeAll()
 		return sent
 	}
+}
+
+// echoed returns the recorded response resp to a control request as the
+// recorded outstation would have sent it to the client's request req. The
+// select and operate responses of an outstation repeat the object headers
+// and objects of the request (IEEE 1815-2012 clause 4.4.4, p. 48), and the
+// master compares the select response with its request octet for octet
+// (clause 4.4.4.1, pp. 48-49; clause 4.4.4.3 Rule 8, p. 51): when the recorded
+// response repeats the recorded request exactly, the replay repeats the
+// client's request after the recorded response header and IIN, since the
+// client may encode the same objects differently (the recorded masters
+// of select-operate-and-responses send qualifier 0x28 for index 0, go-dnp3
+// 0x17). Other responses are returned as recorded.
+func echoed(ex capture.Exchange, resp, req []byte) []byte {
+	switch ex.Request.Frag.Function {
+	case app.FuncSelect, app.FuncOperate, app.FuncDirectOperate:
+	default:
+		return resp
+	}
+	if len(ex.Responses) != 1 || len(resp) < 4 || len(req) < 2 || !bytes.Equal(resp[4:], ex.Request.Raw[2:]) {
+		return resp
+	}
+	return append(bytes.Clone(resp[:4]), req[2:]...)
 }
 
 // normalized returns a copy of a request with its dynamic fields cleared

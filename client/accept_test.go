@@ -123,7 +123,11 @@ func TestBroadcast(t *testing.T) {
 		return app.StatusSuccess
 	})
 	_, addr := outstation(t, server.WithHandler(accept))
-	c, err := Dial(testCtx(t), addr, WithAutoIntegrity(false), WithMetrics(&authResponses{}))
+	// Without the startup integrity poll the client learns of the
+	// outstation's restart from the READ below, so that no automatic
+	// request (clearing IIN1.7) takes the first response after the
+	// broadcast, the one that reports it.
+	c, err := Dial(testCtx(t), addr, WithAutoIntegrity(false), WithStartup(Startup{}), WithMetrics(&authResponses{}))
 	if err != nil {
 		t.Fatal(err)
 	}

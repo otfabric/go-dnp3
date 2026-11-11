@@ -23,7 +23,9 @@ type Measurement struct {
 	// app.DoubleBitBinary, app.BinaryCommandEvent, app.Counter,
 	// app.Analog, app.AnalogDeadband, app.AnalogCommandEvent,
 	// app.AbsoluteTime (g50v4, a time and interval), app.BCD,
-	// app.UnsignedInteger, app.OctetString or app.SecurityStatistic.
+	// app.UnsignedInteger, app.OctetString or app.SecurityStatistic. A
+	// value of a variation without flags reads as ONLINE; see
+	// Measurements.
 	Value app.Value
 	// Event is set for objects of an event group.
 	Event bool
@@ -57,6 +59,12 @@ func (f HandlerFunc) HandleMeasurements(info ResponseInfo, ms []Measurement) { f
 
 // Measurements returns the measurements of a fragment, in the order of
 // its headers.
+//
+// A value sent in a variation without flags (g1v1, g3v1, g10v1, g20v5 to
+// v8, g21v9 to v12, g30v3, g30v4, g31v5 and g31v6) has the flags ONLINE
+// and nothing else: IEEE 1815-2012 clause 11.6.5 and NOTE 2 of Table 11-5
+// require the master to read such a value as online with no exception
+// condition.
 func Measurements(f *app.Fragment) []Measurement {
 	var out []Measurement
 	for _, h := range f.Headers {
@@ -64,14 +72,54 @@ func Measurements(f *app.Fragment) []Measurement {
 			continue
 		}
 		ev := h.GV.IsEvent()
+		online := withoutFlags(h.GV)
 		for _, o := range h.Objects {
 			if o.Value == nil {
 				continue
 			}
-			out = append(out, Measurement{GV: h.GV, Index: o.Index, Value: o.Value, Event: ev})
+			v := o.Value
+			if online {
+				v = withOnline(v)
+			}
+			out = append(out, Measurement{GV: h.GV, Index: o.Index, Value: v, Event: ev})
 		}
 	}
 	return out
+}
+
+// withoutFlags reports whether gv is a variation without flags of a group
+// that also has variations with flags (IEEE 1815-2012 clause 11.6.5):
+// app/catalog.json marks these point variations as without flags.
+func withoutFlags(gv app.GroupVariation) bool {
+	switch gv {
+	case app.G1V1, app.G3V1, app.G10V1,
+		app.G20V5, app.G20V6, app.G20V7, app.G20V8,
+		app.G21V9, app.G21V10, app.G21V11, app.G21V12,
+		app.G30V3, app.G30V4, app.G31V5, app.G31V6:
+		return true
+	default:
+		return false
+	}
+}
+
+// withOnline returns v with the flags ONLINE (IEEE 1815-2012 Table 11-5
+// NOTE 2).
+func withOnline(v app.Value) app.Value {
+	switch t := v.(type) {
+	case app.Binary:
+		t.Flags = app.FlagOnline
+		return t
+	case app.DoubleBitBinary:
+		t.Flags = app.FlagOnline
+		return t
+	case app.Counter:
+		t.Flags = app.FlagOnline
+		return t
+	case app.Analog:
+		t.Flags = app.FlagOnline
+		return t
+	}
+	return v
 }
 
 // dispatcher delivers responses to the Handler and state changes to the

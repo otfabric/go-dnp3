@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/internal/channel"
 )
 
 // Result is the answer of the outstation to a request.
@@ -23,6 +25,12 @@ type Result struct {
 	// request is the encoding of the request as sent; a session key
 	// change's confirmation is a MAC over it.
 	request []byte
+	// raw are the encodings of Fragments, as received.
+	raw [][]byte
+	// sending and sent are when the request was handed to the link layer
+	// and when that returned; arrived is when the first fragment of the
+	// response reached the client.
+	sending, sent, arrived time.Time
 }
 
 // Measurements returns the measurements of all fragments.
@@ -50,10 +58,12 @@ type transaction struct {
 }
 
 // received is a response fragment with its encoding, which secure
-// authentication needs exactly as it was sent.
+// authentication needs exactly as it was sent, and the time it reached the
+// client.
 type received struct {
 	f   *app.Fragment
 	raw []byte
+	at  time.Time
 }
 
 func newTransaction() *transaction {
@@ -61,9 +71,9 @@ func newTransaction() *transaction {
 }
 
 // accept takes a response fragment, on the session's goroutine.
-func (t *transaction) accept(f *app.Fragment, raw []byte) bool {
+func (t *transaction) accept(f *app.Fragment, raw []byte, at time.Time) bool {
 	select {
-	case t.frags <- received{f, raw}:
+	case t.frags <- received{f, raw, at}:
 		return true
 	default:
 		return false
@@ -112,16 +122,42 @@ func (c *Client) release() { <-c.turn }
 
 // exchange sends one request and collects its response. The caller holds
 // the turn.
+//
+// The request takes the next sequence number only once it is about to be
+// sent: one refused before (WithMaxRequestFragment) leaves no gap (IEEE
+// 1815-2012 clause 4.3 Rule 14). The response is received as Table 6-2 of
+// clause 6.3 says: awaiting its first fragment, a fragment that is not
+// the first (FIR) or has another sequence number is discarded (rows 3 and
+// 5); during a multi-fragment response, a repeat of the last fragment is
+// confirmed again (rows 8 and 14), and any other fragment but the next
+// abandons the response with dnp3.ErrProtocol, unconfirmed (rows 9, 11,
+// 13 and 15 to 17).
 func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Header) (*Result, error) {
 	c.mu.Lock()
 	sess := c.sess
+	seq := c.seq
+	c.mu.Unlock()
 	if sess == nil {
-		c.mu.Unlock()
 		return nil, dnp3.ErrNotConnected
 	}
-	seq := c.seq
-	c.seq = app.NextSeq(seq)
+	req := &app.Fragment{Control: app.SingleControl(seq), Function: fc, Headers: hs}
+	if err := c.fits(req); err != nil {
+		return nil, err
+	}
+	aggressive, err := c.aggressive(req)
+	if err != nil {
+		return nil, err
+	}
+	data, err := req.Encode()
+	if err != nil {
+		return nil, err
+	}
+	if lim := c.opts.maxTxFragment; lim > 0 && len(data) > lim {
+		return nil, invalidOption("%s request of %d octets exceeds the request fragment limit of %d (WithMaxRequestFragment)", fc, len(data), lim)
+	}
 	t := newTransaction()
+	c.mu.Lock()
+	c.seq = app.NextSeq(seq)
 	c.pending = t
 	c.mu.Unlock()
 	defer func() {
@@ -132,23 +168,25 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 		c.mu.Unlock()
 	}()
 
-	req := &app.Fragment{Control: app.SingleControl(seq), Function: fc, Headers: hs}
-	aggressive, err := c.aggressive(req)
-	if err != nil {
-		return nil, err
-	}
-	data, err := req.Encode()
-	if err != nil {
-		return nil, err
-	}
 	if c.log.DebugEnabled() {
 		c.log.DebugContext(ctx, "request sent", "fragment", req.String())
 	}
-	if err := sess.Send(ctx, data); err != nil {
+	res := &Result{request: data}
+	c.proc.sendMu.Lock()
+	res.sending = time.Now()
+	if isTimeSync(fc, hs) {
+		// IEEE 1815-2012 clause 10.3.4.1: as unconfirmed user data, with
+		// no link layer retries.
+		err = sess.SendUnconfirmed(ctx, data)
+	} else {
+		err = sess.Send(ctx, data)
+	}
+	res.sent = time.Now()
+	c.proc.sendMu.Unlock()
+	if err != nil {
 		return nil, sendError(err)
 	}
 	c.sent(req, len(data))
-	res := &Result{request: data}
 	if fc.NoAck() {
 		if aggressive {
 			return res, nil
@@ -159,6 +197,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	timer := time.NewTimer(c.opts.responseTimeout)
 	defer timer.Stop()
 	expect := seq
+	var last []byte // the last fragment accepted
 	challenged := false
 	for {
 		select {
@@ -186,13 +225,28 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 					continue
 				}
 			}
-			first := len(res.Fragments) == 0
-			if f.Control.Seq != expect || f.Control.FIR != first {
-				c.log.Debug("response fragment out of sequence ignored", "seq", f.Control.Seq, "want", expect)
-				continue
-			}
-			if first && challenged {
-				c.challengeAccepted()
+			if len(res.Fragments) == 0 {
+				// AwaitFirst.
+				if f.Control.Seq != expect || !f.Control.FIR {
+					c.log.Debug("response fragment out of sequence ignored", "seq", f.Control.Seq, "want", expect)
+					continue
+				}
+				res.arrived = rf.at
+				if challenged {
+					c.challengeAccepted()
+				}
+			} else {
+				// Assembly.
+				if bytes.Equal(rf.raw, last) {
+					c.log.Debug("repeated response fragment", "seq", f.Control.Seq)
+					c.confirmSolicited(sess, f, rf.raw)
+					timer.Reset(c.opts.responseTimeout)
+					continue
+				}
+				if f.Control.Seq != expect || f.Control.FIR {
+					return res, fmt.Errorf("%w: response fragment seq %d (FIR %t) where seq %d was due: %s response abandoned",
+						dnp3.ErrProtocol, f.Control.Seq, f.Control.FIR, expect, fc)
+				}
 			}
 			if f.Control.FIN {
 				// What follows the last fragment, such as a challenge of
@@ -204,14 +258,10 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 				}
 				c.mu.Unlock()
 			}
-			if f.Control.CON {
-				if c.opts.noSolConfirm {
-					c.log.Debug("response not confirmed (WithSolicitedConfirm)", "seq", f.Control.Seq)
-				} else {
-					c.confirmResponse(sess, f, rf.raw, false)
-				}
-			}
+			c.confirmSolicited(sess, f, rf.raw)
+			last = rf.raw
 			res.Fragments = append(res.Fragments, f)
+			res.raw = append(res.raw, rf.raw)
 			res.IIN = f.IIN
 			c.events.response(f, false)
 			if f.Control.FIN {
@@ -232,6 +282,57 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 		case <-c.closeCh:
 			return res, dnp3.ErrClosed
 		}
+	}
+}
+
+// confirmSolicited confirms a solicited response fragment that asks for it
+// (CON), raw as received, unless WithSolicitedConfirm turned that off.
+func (c *Client) confirmSolicited(sess *channel.Session, f *app.Fragment, raw []byte) {
+	if !f.Control.CON {
+		return
+	}
+	if c.opts.noSolConfirm {
+		c.log.Debug("response not confirmed (WithSolicitedConfirm)", "seq", f.Control.Seq)
+		return
+	}
+	c.confirmResponse(sess, f, raw, false)
+}
+
+// fits checks, with WithMaxRequestFragment, that a request fits the
+// request fragment limit before secure authentication adds its aggressive
+// mode objects, so that a request refused for its size does not use up a
+// challenge sequence number.
+func (c *Client) fits(req *app.Fragment) error {
+	lim := c.opts.maxTxFragment
+	if lim == 0 {
+		return nil
+	}
+	data, err := req.Encode()
+	if err != nil {
+		return err
+	}
+	if len(data) > lim {
+		return invalidOption("%s request of %d octets exceeds the request fragment limit of %d (WithMaxRequestFragment)", req.Function, len(data), lim)
+	}
+	return nil
+}
+
+// isTimeSync reports whether a request is a time synchronization message
+// of IEEE 1815-2012 clause 10.3.4.1: DELAY_MEASURE, RECORD_CURRENT_TIME or
+// a WRITE of g50v1 or g50v3.
+func isTimeSync(fc app.FunctionCode, hs []app.Header) bool {
+	switch fc {
+	case app.FuncDelayMeasure, app.FuncRecordCurrentTime:
+		return true
+	case app.FuncWrite:
+		for _, h := range hs {
+			if h.GV == app.G50V1 || h.GV == app.G50V3 {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
 	}
 }
 
