@@ -387,6 +387,9 @@ func TestChallengeMACOfOutstation(t *testing.T) {
 			t.Fatalf("control %d with the outstation's HMAC-SHA-1/10: %v", i, err)
 		}
 	}
+	// One connection per master: the outstation rejects a second one while
+	// the first stands (IEEE 1815-2012 clause 13.2.3.3).
+	_ = c.Close()
 
 	strict, err := Dial(testCtx(t), addr, WithSecureAuthentication(user), WithChallengeMACs(app.MACHMACSHA256Trunc16))
 	if err != nil {

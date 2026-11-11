@@ -36,6 +36,7 @@ type association struct {
 
 	// Owned by run.
 	sess       *channel.Session
+	probing    bool // a new connection waits for the probe of the current one
 	restartIIN bool
 	broadcast  bool
 	lastSync   time.Time
@@ -159,32 +160,92 @@ func (a *association) close() {
 
 // attach makes sess the session the association answers on.
 func (a *association) attach(sess *channel.Session) {
-	a.post(func() {
-		if a.sess == sess {
-			return
-		}
-		if old := a.sess; old != nil && old.Channel() != sess.Channel() {
-			// A master connected again while its old connection still
-			// stood: the old one is closed.
-			a.log.Info("master reconnected, closing its previous connection")
-			old.Channel().Close(nil)
-		}
-		a.detach()
-		a.sess = sess
-		// Every connection starts with a null unsolicited response; the
-		// classes the master enabled belong to the outstation and survive
-		// connections.
-		a.nullDone = false
-		go func() {
-			<-sess.Channel().Done()
-			a.post(func() {
-				if a.sess == sess {
-					a.detach()
-					a.sess = nil
-				}
-			})
-		}()
-	})
+	a.post(func() { a.take(sess) })
+}
+
+// take makes sess the session the association answers on, unless the
+// master is already connected on another live connection.
+//
+// IEEE 1815-2012 clause 13.2.3.3: an outstation rejects a new connection
+// from a master that is already connected, and NOTE 2 lets it send a
+// keep-alive on the current connection to learn whether that one still
+// stands. So the current connection is probed with REQUEST_LINK_STATUS:
+// answered, the new connection is rejected (closed; a datagram socket
+// is left open, only not used for this master); not answered, the current
+// connection is closed as broken (Table 13-2 row 4) and the new one taken.
+// A datagram socket has no connection to probe: a new connection takes
+// over from it, and the socket stays open.
+func (a *association) take(sess *channel.Session) {
+	if a.sess == sess || closing(sess.Channel()) {
+		return
+	}
+	old := a.sess
+	if old == nil || closing(old.Channel()) || old.Channel() == sess.Channel() || old.Channel().Datagram() {
+		a.use(sess)
+		return
+	}
+	if a.probing {
+		a.reject(sess)
+		return
+	}
+	a.probing = true
+	go func() {
+		err := old.Probe()
+		a.post(func() {
+			a.probing = false
+			switch {
+			case a.sess != old:
+				// The current connection went away during the probe.
+				a.take(sess)
+			case err == nil:
+				a.reject(sess)
+			default:
+				a.log.Info("connection of the master did not answer the keep-alive: closing it for the new one", "error", err)
+				old.Channel().Close(fmt.Errorf("%w: replaced by a new connection of the master: %w", dnp3.ErrConnectionLost, err))
+				a.use(sess)
+			}
+		})
+	}()
+}
+
+// reject refuses sess while the master's current connection stands.
+func (a *association) reject(sess *channel.Session) {
+	if sess.Channel().Datagram() {
+		a.log.Debug("datagram from a master connected elsewhere: not taken")
+		return
+	}
+	a.log.Warn("new connection of a master that is connected: rejected (IEEE 1815-2012 clause 13.2.3.3)",
+		"remote", addrString(sess.Channel().Remote()))
+	sess.Channel().Close(fmt.Errorf("%w: the master is connected on another connection", dnp3.ErrClosed))
+}
+
+// use makes sess the current session.
+func (a *association) use(sess *channel.Session) {
+	a.detach()
+	a.sess = sess
+	// Every connection starts with a null unsolicited response; the
+	// classes the master enabled belong to the outstation and survive
+	// connections.
+	a.nullDone = false
+	go func() {
+		<-sess.Channel().Done()
+		a.post(func() {
+			if a.sess == sess {
+				a.detach()
+				a.sess = nil
+			}
+		})
+	}()
+}
+
+// closing reports whether ch has been closed or failed.
+func closing(ch *channel.Channel) bool {
+	select {
+	case <-ch.Closing():
+		return true
+	default:
+		return false
+	}
 }
 
 // detach abandons what was in progress on the current session: its
@@ -207,10 +268,23 @@ func (a *association) detach() {
 // receive queues a fragment from sess. It goes through the same queue
 // as attach, so a session's fragments are never handled before it is
 // attached.
+//
+// A broadcast is carried out whichever of the master's end points it
+// came on: a master on TCP sends its broadcasts over UDP (IEEE 1815-2012
+// clause 13.2.3.2.4, Table 13-1), and they must neither be lost nor take
+// the association away from the TCP connection. A unicast fragment on a
+// session that is not the current one is dropped, unless the association
+// has no live connection: then the session becomes the current one.
 func (a *association) receive(sess *channel.Session, frag []byte, dest link.Address) {
 	in := inbound{sess: sess, frag: frag, dest: dest, at: time.Now()}
 	a.post(func() {
-		if in.sess == a.sess {
+		switch {
+		case in.sess == a.sess:
+			a.handle(in)
+		case dest.Broadcast():
+			a.handle(in)
+		case (a.sess == nil || closing(a.sess.Channel())) && !a.probing:
+			a.use(in.sess)
 			a.handle(in)
 		}
 	})
