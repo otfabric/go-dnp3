@@ -20,6 +20,19 @@ import (
 
 const capturesDir = "../../testdata/captures"
 
+// openRoot opens dir as an os.Root for the duration of the test: the
+// tests read and write the files of the corpus through it, so that a
+// name from the manifest cannot reach outside dir.
+func openRoot(t *testing.T, dir string) *os.Root {
+	t.Helper()
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	return r
+}
+
 // TestManifest: the manifest names every file of the corpus with its
 // source and class; the committed files have the manifest's SHA256 and
 // size; SHA256SUMS covers every committed file, the conformance runner's
@@ -146,13 +159,13 @@ func TestCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = append(got, '\n')
-	p := filepath.Join(capturesDir, "coverage.json")
+	captures := openRoot(t, capturesDir)
 	if os.Getenv("DNP3_CAPTURE_UPDATE") != "" {
-		if err := os.WriteFile(p, got, 0o600); err != nil {
+		if err := captures.WriteFile("coverage.json", got, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	want, err := os.ReadFile(p)
+	want, err := captures.ReadFile("coverage.json")
 	if err != nil {
 		t.Fatal(err)
 	}

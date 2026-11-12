@@ -5,11 +5,11 @@ package channel
 import (
 	"context"
 	"errors"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/otfabric/go-dnp3/internal/chaosrand"
 	"github.com/otfabric/go-dnp3/link"
 )
 
@@ -22,12 +22,12 @@ type faultPipe struct {
 	buf                []byte
 	closed             bool
 	cond               *sync.Cond
-	rng                *rand.Rand
+	rng                *chaosrand.Rand
 	corrupt, dup, drop float64
 }
 
 func newFaultPipe(seed int64, corrupt, dup, drop float64) *faultPipe {
-	p := &faultPipe{rng: rand.New(rand.NewSource(seed)), corrupt: corrupt, dup: dup, drop: drop}
+	p := &faultPipe{rng: chaosrand.New(seed), corrupt: corrupt, dup: dup, drop: drop}
 	p.cond = sync.NewCond(&p.mu)
 	return p
 }
@@ -43,7 +43,7 @@ func (p *faultPipe) Write(b []byte) (int, error) {
 			continue
 		}
 		if p.rng.Float64() < p.corrupt {
-			x ^= byte(1 << p.rng.Intn(8))
+			x ^= byte(1 << p.rng.IntN(8))
 		}
 		p.buf = append(p.buf, x)
 		if p.rng.Float64() < p.dup {

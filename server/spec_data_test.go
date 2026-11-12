@@ -50,7 +50,7 @@ func TestSpecTable4_11_FreezeAtTime(t *testing.T) {
 	// Time 0, interval 7 minutes: from the start of the hour.
 	const interval = 7 * time.Minute
 	before := m.srv.Now()
-	send(freezeReq(1, app.AbsoluteTime{Interval: uint32(interval.Milliseconds())}, app.IndexRange(app.G20V0, 0, 0)))
+	send(freezeReq(1, app.AbsoluteTime{Interval: ms32(interval)}, app.IndexRange(app.G20V0, 0, 0)))
 	after := m.srv.Now()
 	got := schedules(m.srv)
 	if len(got) != 1 {

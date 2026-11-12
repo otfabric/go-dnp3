@@ -113,7 +113,7 @@ func (s *fileStation) answer(req specFrag) [][]byte {
 	switch req.f.Function {
 	case app.FuncOpenFile:
 		s.opened = v.(app.FileCommand)
-		return [][]byte{respond(s.t, req, 0, app.FreeFormat(app.G70V4, app.FileCommandStatus{Handle: 7, Size: uint32(len(s.data)),
+		return [][]byte{respond(s.t, req, 0, app.FreeFormat(app.G70V4, app.FileCommandStatus{Handle: 7, Size: len32(len(s.data)),
 			MaxBlockSize: s.block, RequestID: s.opened.RequestID}))}
 	case app.FuncWrite:
 		ft := v.(app.FileTransport)

@@ -84,10 +84,11 @@ func TestFuzzSeeds(t *testing.T) {
 	}
 	update := os.Getenv("DNP3_CAPTURE_SEEDS") != ""
 	n := 0
+	repo := openRoot(t, filepath.Join("..", ".."))
 	for dir, files := range seeds {
-		full := filepath.Join("..", "..", filepath.FromSlash(dir))
+		full := filepath.FromSlash(dir)
 		if update {
-			if err := os.MkdirAll(full, 0o750); err != nil {
+			if err := repo.MkdirAll(full, 0o750); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -96,12 +97,12 @@ func TestFuzzSeeds(t *testing.T) {
 			p := filepath.Join(full, name)
 			want := fmt.Sprintf("go test fuzz v1\n[]byte(%q)\n", b)
 			if update {
-				if err := os.WriteFile(p, []byte(want), 0o600); err != nil {
+				if err := repo.WriteFile(p, []byte(want), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				continue
 			}
-			got, err := os.ReadFile(p)
+			got, err := repo.ReadFile(p)
 			if err != nil || string(got) != want {
 				t.Errorf("%s: missing or changed; DNP3_CAPTURE_SEEDS=1 go test -run TestFuzzSeeds ./internal/capture writes it", p)
 			}

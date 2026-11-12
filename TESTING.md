@@ -9,6 +9,7 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 | Tier | Command | Needs | Runs in CI |
 |---|---|---|---|
 | Unit and component tests, with the race detector | `make test` | Go | `CI`, Go 1.26 and 1.27, on every push and pull request |
+| Static analysis: staticcheck, and golangci-lint with gosec ([`.golangci.yml`](.golangci.yml)) | `make lint`, `make lint-ci` | Go, the linters | `CI` (golangci-lint) |
 | End-to-end: go-dnp3's master against its outstation over loopback, including chaos and stress (`e2e/`) | `make e2e` | Go | part of `make test` |
 | Coverage gate | `make coverage-check` | Go | `CI` (`coverage-min: "90"`) |
 | Per-package coverage floor | `make coverage-pkg-check` | Go | `CI` (`Per-package coverage`) |
@@ -79,7 +80,9 @@ Secure Authentication. It checks that no data appears that was not sent, that
 no control runs more often than it was sent, and that the session recovers
 once the faults stop. Each run logs its random seed (`seed <n>`);
 `DNP3_CHAOS_SEED=<n>` replays the faults of that seed (the timing of the two
-sides still varies), for example
+sides still varies): the draws come from `internal/chaosrand`, SHA-256 in
+counter mode over the seed, the same on every platform and Go release. For
+example
 `DNP3_CHAOS_SEED=42 go test -run '^TestChaos$' ./e2e`. `TestFrameChaos`
 (`e2e/framechaos_test.go`) drops, duplicates and reorders whole link frames
 between a master and an outstation, with the fixed seed 1815 unless
@@ -115,6 +118,14 @@ how the images are obtained; the peers and results are in
 | `DNP3_INTEROP_ADAPTERS` | Comma-separated subset of `opendnp3`, `dscsystems`, `dnp3py`, `cbsigma`, `nfmdnp3` |
 
 | `DNP3_REQUIRE_INTEROP=1` | Fail instead of skip when Docker is not available. `make interop` and the `Interop` workflow set it |
+
+The containers reach the outstations and masters of the suite as
+`host.docker.internal` (`--add-host=host.docker.internal:host-gateway`), and
+the suite's listeners bind the one address that name leads to, never all
+interfaces: 127.0.0.1 under Docker Desktop, which forwards it to the host's
+loopback, and the gateway of the default bridge network under Docker Engine
+on Linux. The TLS test PKI and the in-container UDP master reach the
+containers in a Docker volume made for the test, never as files on the host.
 
 Run with plain `go test -tags=interop` and without Docker, a test skips and
 says so. An image that cannot be run fails the test in either case. Otherwise a subtest skips

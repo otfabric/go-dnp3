@@ -108,7 +108,7 @@ func ParseKeyChangeData(plain []byte, keyStatus ...[]byte) (control, monitoring 
 	if n < 16 || n > 64 || end > len(plain) {
 		return nil, nil, fmt.Errorf("%w: session key length %d", ErrKeyWrap, n)
 	}
-	rest := plain[end:]
+	keys, rest := plain[2:end], plain[end:] // the two keys, len(keys) == 2*n
 	for _, ks := range keyStatus {
 		if len(rest) < len(ks) || len(rest)-len(ks) > 7 {
 			continue
@@ -124,7 +124,7 @@ func ParseKeyChangeData(plain []byte, keyStatus ...[]byte) (control, monitoring 
 		if !zero {
 			continue
 		}
-		return append([]byte(nil), plain[2:2+n]...), append([]byte(nil), plain[2+n:end]...), nil
+		return append([]byte(nil), keys[:n]...), append([]byte(nil), keys[n:]...), nil
 	}
 	return nil, nil, fmt.Errorf("%w: the key status message does not match the last one sent", ErrKeyWrap)
 }

@@ -54,7 +54,7 @@ func TestRoundTripDataLengths(t *testing.T) {
 	for n := 1; n <= MaxUserData; n++ {
 		data := make([]byte, n)
 		for i := range data {
-			data[i] = byte(i*7 + n)
+			data[i] = octet(i*7 + n)
 		}
 		f := Frame{Function: PrimaryUnconfirmedUserData, FCB: false, Dest: 0xFFEF, Src: 3, Data: data}
 		b, err := f.Encode()
@@ -318,3 +318,7 @@ func FuzzReader(f *testing.F) {
 		}
 	})
 }
+
+// octet is the low octet of v >= 0: test data that runs through every
+// octet value.
+func octet(v int) byte { return byte(max(v%256, 0)) }

@@ -4,10 +4,10 @@ package e2e
 
 import (
 	"bytes"
-	"math/rand/v2"
 	"testing"
 
 	"github.com/otfabric/go-dnp3/client"
+	"github.com/otfabric/go-dnp3/internal/chaosrand"
 	"github.com/otfabric/go-dnp3/server"
 )
 
@@ -19,9 +19,9 @@ import (
 func TestFileOverLargeFragments(t *testing.T) {
 	fs := newMemFS()
 	data := make([]byte, 300_000)
-	r := rand.New(rand.NewPCG(1, 2))
+	r := chaosrand.New(1)
 	for i := range data {
-		data[i] = byte(r.Uint32())
+		data[i] = byte(r.Uint32() >> 24)
 	}
 	fs.files["/big.bin"] = data
 	p := newPair(t, nil, []server.Option{server.WithMaxFragment(100_000, 100_000), server.WithFileServer(fs)},
@@ -34,7 +34,7 @@ func TestFileOverLargeFragments(t *testing.T) {
 			t.Fatalf("read with block size %d: %d octets, %v", block, n, err)
 		}
 		name := "/copy.bin"
-		if _, err := p.c.WriteFile(ctx(t), name, bytes.NewReader(data), uint32(len(data)), client.FileOptions{MaxBlockSize: block}); err != nil {
+		if _, err := p.c.WriteFile(ctx(t), name, bytes.NewReader(data), len32(len(data)), client.FileOptions{MaxBlockSize: block}); err != nil {
 			t.Fatalf("write with block size %d: %v", block, err)
 		}
 		fs.mu.Lock()

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 	"net"
 	"sort"
 	"sync"
@@ -160,15 +161,15 @@ func (m *memFS) Open(_ context.Context, req server.FileRequest) (server.File, ap
 			}
 			sort.Strings(names)
 			for _, n := range names {
-				b, _ = app.AppendFileDescriptor(b, app.FileDescriptor{Name: n, Type: app.FileTypeSimple, Size: uint32(len(m.files[n]))})
+				b, _ = app.AppendFileDescriptor(b, app.FileDescriptor{Name: n, Type: app.FileTypeSimple, Size: len32(len(m.files[n]))})
 			}
-			return &memFile{r: bytes.NewReader(b), size: uint32(len(b))}, app.FileSuccess
+			return &memFile{r: bytes.NewReader(b), size: len32(len(b))}, app.FileSuccess
 		}
 		data, ok := m.files[req.Name]
 		if !ok {
 			return nil, app.FileNotFound
 		}
-		return &memFile{r: bytes.NewReader(data), size: uint32(len(data))}, app.FileSuccess
+		return &memFile{r: bytes.NewReader(data), size: len32(len(data))}, app.FileSuccess
 	case app.FileModeWrite:
 		if req.AuthKey != 0 && req.AuthKey != 42 {
 			return nil, app.FilePermissionDenied
@@ -196,7 +197,7 @@ func (m *memFS) Info(_ context.Context, name string) (app.FileDescriptor, app.Fi
 	if !ok {
 		return app.FileDescriptor{}, app.FileNotFound
 	}
-	return app.FileDescriptor{Name: name, Type: app.FileTypeSimple, Size: uint32(len(data)), Permissions: 0o644}, app.FileSuccess
+	return app.FileDescriptor{Name: name, Type: app.FileTypeSimple, Size: len32(len(data)), Permissions: 0o644}, app.FileSuccess
 }
 
 func (m *memFS) Authenticate(_ context.Context, user, password string) (uint32, bool) {
@@ -301,3 +302,6 @@ func (m *countingMetrics) OnEventsDiscarded(int, int)                           
 func (m *countingMetrics) OnUnsolicited(net.Addr, int, error)                     { m.inc(&m.unsolicited) }
 
 func (m *countingMetrics) get(p *int) int { m.mu.Lock(); defer m.mu.Unlock(); return *p }
+
+// len32 is the length n as a uint32 field, at most math.MaxUint32.
+func len32(n int) uint32 { return uint32(min(uint64(max(n, 0)), math.MaxUint32)) }

@@ -1,0 +1,23 @@
+# Recorded exceptions to otfabric/engineering rules (docs/exceptions/).
+# Every field is required except that one of expires/reconsider suffices.
+exceptions:
+  - rule: GO-014
+    scope: .golangci.yml
+    justification: >-
+      golangci-lint runs Gosec (make lint-ci, CI) at the maintainer's request,
+      so that every finding is fixed in code before it merges rather than at
+      the next release scan. The findings of the first run were all fixed in
+      code; the repository reports none. The one excluded finding is
+      intended behaviour, not a vulnerability: G505 for the crypto/sha1
+      import of secauth/secauth.go, because IEEE 1815-2012 7.6.1.1.1 requires
+      every device to implement HMAC-SHA-1 and to provide a means to disable
+      it by configuration (secauth.User.MAC on the outstation,
+      client.WithChallengeMACs on the master). The exclusion is a single
+      golangci-lint rule scoped to that path and to G505. The cost GO-014
+      names stays: a new finding in a pull request shows in its public CI
+      log; a finding that may be a vulnerability goes through a private
+      advisory first (SECURITY.md).
+    owner: bartvanbos
+    reviewed: "2026-11-12"
+    reconsider: "a Gosec finding that must not be published before it is fixed, or a change of GO-014"
+    ref: .golangci.yml

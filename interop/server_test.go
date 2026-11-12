@@ -24,7 +24,7 @@ func serveFixture(t *testing.T, a adapter) (*station, int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err := net.Listen("tcp", "0.0.0.0:0")
+	l, err := net.Listen("tcp", hostListenAddr(t))
 	if err != nil {
 		t.Fatal(err)
 	}

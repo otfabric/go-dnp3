@@ -26,12 +26,18 @@ func TestTwosComplement(t *testing.T) {
 			t.Fatalf("uint16of(%d) = %#x", int16(u), got)
 		}
 	}
-	for _, u := range []uint32{0, 1, 0x7FFFFFFF, 0x80000000, 0x80000001, 0xFFFFFFFE, 0xFFFFFFFF, 0x12345678, 0xDEADBEEF} {
-		if got, want := int32of(u), int32(u); got != want {
-			t.Fatalf("int32of(%#x) = %d, want %d", u, got, want)
+	for _, c := range []struct {
+		u uint32
+		i int32
+	}{
+		{0, 0}, {1, 1}, {0x7FFFFFFF, math.MaxInt32}, {0x80000000, math.MinInt32}, {0x80000001, math.MinInt32 + 1},
+		{0xFFFFFFFE, -2}, {0xFFFFFFFF, -1}, {0x12345678, 0x12345678}, {0xDEADBEEF, -0x21524111},
+	} {
+		if got := int32of(c.u); got != c.i {
+			t.Fatalf("int32of(%#x) = %d, want %d", c.u, got, c.i)
 		}
-		if got := uint32of(int32(u)); got != u {
-			t.Fatalf("uint32of(%d) = %#x", int32(u), got)
+		if got := uint32of(c.i); got != c.u {
+			t.Fatalf("uint32of(%d) = %#x, want %#x", c.i, got, c.u)
 		}
 	}
 }

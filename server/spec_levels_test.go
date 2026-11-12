@@ -178,7 +178,7 @@ func levelMaster(t *testing.T) *master {
 	db := m.srv.Database()
 	for _, p := range levelPoints {
 		for i := range uint32(4) {
-			if err := db.Add(p.t, i, PointConfig{Class: p.class}, levelValue(p.t, int(i))); err != nil {
+			if err := db.Add(p.t, i, PointConfig{Class: p.class}, levelValue(p.t, i)); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -193,12 +193,12 @@ var levelPoints = []struct {
 	{BinaryInput, 1}, {BinaryOutput, 0}, {Counter, 3}, {FrozenCounter, 3}, {AnalogInput, 2}, {AnalogOutput, 0},
 }
 
-func levelValue(t PointType, x int) app.Value {
+func levelValue(t PointType, x uint32) app.Value {
 	switch t {
 	case BinaryInput, BinaryOutput:
 		return app.Binary{Value: x%2 == 1, Flags: app.FlagOnline}
 	case Counter, FrozenCounter:
-		return app.Counter{Value: uint32(x), Flags: app.FlagOnline}
+		return app.Counter{Value: x, Flags: app.FlagOnline}
 	default:
 		return app.Analog{Value: float64(x), Flags: app.FlagOnline}
 	}
@@ -221,7 +221,7 @@ func TestSubsetLevelTables(t *testing.T) {
 				db := m.srv.Database()
 				for _, p := range levelPoints {
 					for i := range uint32(4) {
-						_ = db.Update(p.t, i, levelValue(p.t, int(i)+7), EventForce)
+						_ = db.Update(p.t, i, levelValue(p.t, i+7), EventForce)
 					}
 				}
 			}

@@ -636,7 +636,7 @@ func TestFiles(t *testing.T) {
 		t.Fatalf("bad credentials: %v", err)
 	}
 	payload := []byte(strings.Repeat("payload ", 300))
-	n, err = p.c.WriteFile(c, "/up.bin", bytes.NewReader(payload), uint32(len(payload)), client.FileOptions{AuthKey: key, MaxBlockSize: 256})
+	n, err = p.c.WriteFile(c, "/up.bin", bytes.NewReader(payload), len32(len(payload)), client.FileOptions{AuthKey: key, MaxBlockSize: 256})
 	if err != nil || n != int64(len(payload)) || !bytes.Equal(fs.files["/up.bin"], payload) {
 		t.Fatalf("write: %d %v", n, err)
 	}
@@ -645,11 +645,11 @@ func TestFiles(t *testing.T) {
 	}
 
 	info, err := p.c.FileInfo(c, "/up.bin")
-	if err != nil || info.Size != uint32(len(payload)) || info.Name != "/up.bin" {
+	if err != nil || info.Size != len32(len(payload)) || info.Name != "/up.bin" {
 		t.Fatalf("info: %+v %v", info, err)
 	}
 	entries, err := p.c.ListDirectory(c, "/", client.FileOptions{})
-	if err != nil || len(entries) != 2 || entries[0].Name != "/logs/a.csv" || entries[1].Size != uint32(len(payload)) {
+	if err != nil || len(entries) != 2 || entries[0].Name != "/logs/a.csv" || entries[1].Size != len32(len(payload)) {
 		t.Fatalf("directory: %+v %v", entries, err)
 	}
 	if err := p.c.DeleteFile(c, "/up.bin", client.FileOptions{}); err != nil {

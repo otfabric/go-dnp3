@@ -101,7 +101,7 @@ func TestServerExtended(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			l, err := net.Listen("tcp", "0.0.0.0:0")
+			l, err := net.Listen("tcp", hostListenAddr(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,7 +166,7 @@ func TestClientDualEndPoint(t *testing.T) {
 		for _, withTLS := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/tls=%v", a.name, withTLS), func(t *testing.T) {
 				a.needServer(t, "dualEndpointServer")
-				l, err := net.Listen("tcp", "0.0.0.0:0")
+				l, err := net.Listen("tcp", hostListenAddr(t))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -179,7 +179,7 @@ func TestClientDualEndPoint(t *testing.T) {
 					ln = tls.NewListener(l, p.serverTLS())
 					// The dialling outstation is the TLS client.
 					args = append(args, "--tls-cert", "/pki/client.pem", "--tls-key", "/pki/client.key", "--tls-ca", "/pki/ca.pem")
-					docker = append(docker, p.mount()...)
+					docker = append(docker, p.mount(t, a.image)...)
 				}
 				startServerSpec(t, a, serverSpec{port: "-", docker: docker, args: args})
 				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -227,7 +227,7 @@ func TestServerDualEndPoint(t *testing.T) {
 					cfg.ServerName = ""
 					opts = append(opts, server.WithTLS(cfg))
 					argv = append(argv, "--tls", "--tls-cert", "/pki/server.pem", "--tls-key", "/pki/server.key", "--tls-ca", "/pki/ca.pem")
-					docker = append(docker, p.mount()...)
+					docker = append(docker, p.mount(t, a.image)...)
 				}
 				st, err := newStation(a.fixture(t), opts...)
 				if err != nil {
@@ -305,7 +305,7 @@ func TestServerSecurityStatistics(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			l, err := net.Listen("tcp", "0.0.0.0:0")
+			l, err := net.Listen("tcp", hostListenAddr(t))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -37,7 +37,7 @@ func serveNamed(t *testing.T, a adapter, name string, opts ...server.Option) (*s
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err := net.Listen("tcp", "0.0.0.0:0")
+	l, err := net.Listen("tcp", hostListenAddr(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestClientFileAppendAndAuth(t *testing.T) {
 			}
 			want := fixtureFiles(a.fixtureNamed(t, "files"))["/readme.txt"]
 			tail := []byte("appended by go-dnp3\n")
-			if _, err := c.WriteFile(ctx, "/readme.txt", bytes.NewReader(tail), uint32(len(tail)), client.FileOptions{AuthKey: key, Append: true}); err != nil {
+			if _, err := c.WriteFile(ctx, "/readme.txt", bytes.NewReader(tail), len32(len(tail)), client.FileOptions{AuthKey: key, Append: true}); err != nil {
 				t.Fatalf("append: %v", err)
 			}
 			key, _ = c.AuthenticateFile(ctx, "operator", "secret")
@@ -507,7 +507,7 @@ func TestServerLinkLayer(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			l, err := net.Listen("tcp", "0.0.0.0:0")
+			l, err := net.Listen("tcp", hostListenAddr(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -707,7 +707,7 @@ func TestServerSeveralOutstations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			l, err := net.Listen("tcp", "0.0.0.0:0")
+			l, err := net.Listen("tcp", hostListenAddr(t))
 			if err != nil {
 				t.Fatal(err)
 			}

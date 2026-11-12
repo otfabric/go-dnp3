@@ -463,12 +463,12 @@ func (f *fixture) expectedStatic() map[string]any {
 	out := map[string]any{}
 	put := func(g uint8, def uint8, ps []fixturePoint, value func(fixturePoint) any) {
 		for _, p := range ps {
-			v := p.StaticVariation
+			v := int(p.StaticVariation)
 			if v == 0 {
-				v = def
+				v = int(def)
 			}
 			if g == 110 {
-				v = uint8(len(p.octets()))
+				v = len(p.octets())
 			}
 			out[fmt.Sprintf("g%dv%d/%d", g, v, p.Index)] = value(p)
 		}
@@ -540,7 +540,7 @@ func (s *fileStore) descriptor(name string, full bool) app.FileDescriptor {
 	if s.dirs[name] {
 		return app.FileDescriptor{Name: shown, Type: app.FileTypeDirectory, Created: s.created, Permissions: 0o755}
 	}
-	return app.FileDescriptor{Name: shown, Type: app.FileTypeSimple, Size: uint32(len(s.files[name])), Created: s.created, Permissions: 0o644}
+	return app.FileDescriptor{Name: shown, Type: app.FileTypeSimple, Size: len32(len(s.files[name])), Created: s.created, Permissions: 0o644}
 }
 
 func (s *fileStore) Open(_ context.Context, req server.FileRequest) (server.File, app.FileStatus) {
@@ -651,7 +651,7 @@ func (f *storeFile) Write(p []byte) (int, error) {
 	return f.w.Write(p)
 }
 
-func (f *storeFile) Size() uint32 { return uint32(f.size) }
+func (f *storeFile) Size() uint32 { return len32(f.size) }
 
 func (f *storeFile) Close(abort bool) error {
 	if f.store != nil && !abort {

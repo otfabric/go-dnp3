@@ -55,6 +55,7 @@ The client (`client.WithDialer`, `client.UDPWithDialer`) and the outstation's di
 
 - **Use an update key.** With `secauth.User.UpdateKey` (16 or 32 random octets) the master generates fresh session keys on every connection and at the key change interval, and sends them wrapped with the update key (AES key wrap, RFC 3394); the outstation drops them when the connection ends. The pre-shared session key mode (`secauth.User.Key` without an update key) never changes its key and is meant for testing. A device whose manual speaks of a "pre-shared key", one per device, means the update key: configure it as `UpdateKey`, with the user number the device uses (1, the default user, unless it says otherwise; 0 is taken as 1)
 - **The outstation chooses the MAC algorithm** of a challenge's reply. The master accepts every algorithm it computes except the obsolete HMAC-SHA-1/4 and, over TCP and UDP, the 8-octet truncations (clause 7.6.1.1); `client.WithChallengeMACs` narrows the list, for example to the HMAC-SHA-256 variants where HMAC-SHA-1 is not allowed
+- **HMAC-SHA-1 can be turned off.** Every device must implement it and provide a means to disable it by configuration (clause 7.6.1.1.1), which is why `secauth` imports `crypto/sha1`. The outstation uses it only when `secauth.User.MAC` names it (the default is HMAC-SHA-256 truncated to 16); `client.WithChallengeMACs` without the SHA-1 variants makes the master refuse it
 - **Update keys are configured out of band.** The update key change procedures (symmetric and asymmetric) and user management are not implemented, nor is AES-GMAC: keep update keys out of source control and rotate them by reconfiguring both ends
 - **Aggressive mode** (`client.WithAggressiveMode`) saves the challenge round trip: the MAC is bound to the last challenge and the outstation checks that the challenge sequence numbers follow each other, so a request cannot be replayed. It still trusts one challenge for several requests; enable it only where the latency matters. An outstation turns it off with `SecureAuth.NoAggressiveMode`. The MAC follows IEEE 1815-2012 Table A-9; aggressive mode needs both ends at this release or later
 - **A critical broadcast is carried out only in aggressive mode.** A broadcast cannot be challenged: with secure authentication the outstation discards a critical one without a valid aggressive mode MAC, counts it as discarded and answers nothing
@@ -66,6 +67,10 @@ The client (`client.WithDialer`, `client.UDPWithDialer`) and the outstation's di
 - **Only the control direction is authenticated.** Responses and unsolicited data from the outstation are not authenticated; use TLS to protect them
 - **Non-critical requests (READ) are not challenged.** They disclose data without authentication; use TLS where that matters
 - Secure Authentication is verified against DSC go-dnp3 and cB-Sigma dnp3 in both roles (dnp3-interop v0.12.0; file authentication since contract 1.3); aggressive mode only between go-dnp3's ends, as no reference implements it (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
+
+### Static analysis
+
+golangci-lint runs gosec on every push and pull request (`make lint-ci`, [`.golangci.yml`](.golangci.yml)), and the findings are fixed in code: no `//nolint` or `#nosec`. One finding is excluded, by a rule scoped to its file and recorded in [`.otfabric/exceptions.yaml`](.otfabric/exceptions.yaml): G505, the `crypto/sha1` import above. Jitter of retries and redials draws from `crypto/rand`. A clean gosec run is not a proof that no weakness is left.
 
 ### Resource Limits
 

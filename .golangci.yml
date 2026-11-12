@@ -11,9 +11,21 @@ linters:
     - godot          # comment punctuation
     - nilerr         # return nil instead of err
     - exhaustive     # exhaustive switch on enums
+    - gosec          # security checks (integer conversions, file modes, subprocesses, crypto)
   settings:
     exhaustive:
       default-signifies-exhaustive: true  # a default: case satisfies exhaustiveness
+  exclusions:
+    rules:
+      # The one justified exception (.otfabric/exceptions.yaml, GO-014):
+      # IEEE 1815-2012 7.6.1.1.1 requires every device to implement
+      # HMAC-SHA-1 and to let configuration disable it, so secauth imports
+      # crypto/sha1 (disabled through secauth.User.MAC on the outstation and
+      # client.WithChallengeMACs on the master).
+      - path: secauth/secauth\.go
+        linters:
+          - gosec
+        text: "G505:"
 
 formatters:
   enable:

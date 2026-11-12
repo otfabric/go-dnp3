@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -17,6 +16,7 @@ import (
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
 	"github.com/otfabric/go-dnp3/client"
+	"github.com/otfabric/go-dnp3/internal/chaosrand"
 	"github.com/otfabric/go-dnp3/link"
 	"github.com/otfabric/go-dnp3/server"
 )
@@ -37,7 +37,7 @@ type frameProxy struct {
 	target  string
 	enabled atomic.Bool
 	mu      sync.Mutex
-	rng     *rand.Rand
+	rng     *chaosrand.Rand
 	conns   map[net.Conn]struct{}
 	wg      sync.WaitGroup
 
@@ -50,7 +50,7 @@ func newFrameProxy(t *testing.T, target string, seed int64) *frameProxy {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &frameProxy{l: l, target: target, rng: rand.New(rand.NewSource(seed)), conns: map[net.Conn]struct{}{}}
+	p := &frameProxy{l: l, target: target, rng: chaosrand.New(seed), conns: map[net.Conn]struct{}{}}
 	p.enabled.Store(true)
 	p.wg.Add(1)
 	go p.accept()

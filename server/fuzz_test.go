@@ -105,8 +105,8 @@ func FuzzOutstation(f *testing.F) {
 	f.Fuzz(func(t *testing.T, frag []byte) {
 		// New events for every input, of every size.
 		tick++
-		_ = sdb.UpdateBinaryInput(uint32(tick%200), app.Binary{Value: tick%2 == 0, Flags: app.FlagOnline})
-		_ = sdb.UpdateAnalogInput(uint32(tick%100), app.Analog{Value: float64(tick), Flags: app.FlagOnline})
+		_ = sdb.UpdateBinaryInput(uint32(max(tick%200, 0)), app.Binary{Value: tick%2 == 0, Flags: app.FlagOnline})
+		_ = sdb.UpdateAnalogInput(uint32(max(tick%100, 0)), app.Analog{Value: float64(tick), Flags: app.FlagOnline})
 		run(t, a, srv, frag)
 		run(t, sa, small, frag)
 	})

@@ -297,7 +297,7 @@ func TestSpec4_4_17_2_1_WriteFileWithRequestLimit(t *testing.T) {
 	p := newPair(t, fullDatabase, []server.Option{server.WithFileServer(fs)}, client.WithMaxRequestFragment(249))
 	payload := bytes.Repeat([]byte("0123456789abcdef"), 64) // 1024 octets
 	long := append(slices.Clone(payload), "beyond the size"...)
-	n, err := p.c.WriteFile(ctx(t), "/up.bin", bytes.NewReader(long), uint32(len(payload)), client.FileOptions{MaxBlockSize: 1024})
+	n, err := p.c.WriteFile(ctx(t), "/up.bin", bytes.NewReader(long), len32(len(payload)), client.FileOptions{MaxBlockSize: 1024})
 	if err != nil || n != int64(len(payload)) {
 		t.Fatalf("WriteFile: %d %v", n, err)
 	}

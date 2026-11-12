@@ -3,8 +3,9 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"math"
-	"math/rand/v2"
 	"time"
 )
 
@@ -15,12 +16,20 @@ func validJitter(f float64) bool {
 }
 
 // jittered returns the pause d with the jitter fraction f applied: drawn
-// uniformly from [(1-f)·d, d]. With f zero it is d. The draw needs no
-// cryptographic randomness: it only spreads the attempts of several
-// outstations apart.
+// uniformly from [(1-f)·d, d]. With f zero it is d. The draw only spreads
+// the attempts of several outstations apart; it comes from crypto/rand all the
+// same, so that the pauses of a device cannot be predicted.
 func jittered(d time.Duration, f float64) time.Duration {
 	if f <= 0 || d <= 0 {
 		return d
 	}
-	return d - time.Duration(f*rand.Float64()*float64(d))
+	return d - time.Duration(f*unitFloat()*float64(d))
+}
+
+// unitFloat is a uniform draw from [0, 1) with 53 random bits, from
+// crypto/rand. crypto/rand.Read does not fail (Go 1.24 and later).
+func unitFloat() float64 {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return float64(binary.LittleEndian.Uint64(b[:])>>11) / (1 << 53)
 }
