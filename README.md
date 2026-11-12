@@ -47,7 +47,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against opendnp3, DSC go-dnp3, dnp3py and cB-Sigma dnp3, and as
   outstation against nfm-dnp3, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.12.0,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.12.1,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -350,7 +350,7 @@ they are not evidence about any RTU or IED.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.12.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.12.0),
+of [otfabric/dnp3-interop v0.12.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.12.1),
 pinned by digest.
 
 | Reference | Version | Licence | Roles tested |
