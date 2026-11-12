@@ -47,6 +47,10 @@ func TestSpec13_2_3_3_SecondMasterRejected(t *testing.T) {
 	cx := ctx(t)
 	stop := make(chan struct{})
 	polled := make(chan error, 1)
+	// The second master dials once the outstation has served the first:
+	// until then the outstation has no connection of the master, and the
+	// one whose frame arrives first is the current one.
+	first := make(chan struct{})
 	go func() {
 		n := 0
 		for {
@@ -64,9 +68,17 @@ func TestSpec13_2_3_3_SecondMasterRejected(t *testing.T) {
 				polled <- err
 				return
 			}
+			if n == 0 {
+				close(first)
+			}
 			n++
 		}
 	}()
+	select {
+	case <-first:
+	case err := <-polled:
+		t.Fatalf("the first master's first poll: %v", err)
+	}
 	lost := make(chan error, 4)
 	second, err := client.Dial(cx, p.l.Addr().String(), client.WithAutoIntegrity(false),
 		client.WithStateHandler(func(s dnp3.State, err error) {

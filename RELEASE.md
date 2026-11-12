@@ -34,7 +34,7 @@ The 93 findings of a gosec scan are fixed in code, without suppressions; the one
 - The chaos tests (`e2e/chaos_test.go`, `e2e/framechaos_test.go`, `internal/channel/chaos_test.go`) and `TestFileOverLargeFragments` draw from `internal/chaosrand`, SHA-256 in counter mode over the seed, instead of `math/rand`: `DNP3_CHAOS_SEED` still replays a run, now the same on every platform and Go release. The faults of a given seed differ from v1.12.1's, including those of `TestFrameChaos`'s fixed seed 1815.
 - The interop suite listens on the one address the containers reach as `host.docker.internal`, never on all interfaces (G102): 127.0.0.1 under Docker Desktop, the default bridge's gateway under Docker Engine on Linux. The TLS test PKI and the in-container UDP master reach the containers through a Docker volume, filled from memory, instead of world-readable files on the host (G302, G306). Subprocesses run with a constant program name (G204).
 - The capture corpus tests read and write through `os.Root` (G304).
-
+- `TestSpec13_2_3_3_SecondMasterRejected` dials the second master only after the outstation served the first: under load both connections could wait in the accept queue, and the outstation, rightly, kept whichever master's frame came first (it failed about 1 run in 20 on two loaded CPUs).
 - `TestDialerNilKeepsDefault` and `TestDialerDialTimeout` (client).
 
 ---
