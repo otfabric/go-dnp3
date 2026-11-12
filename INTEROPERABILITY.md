@@ -313,8 +313,8 @@ request row of Tables 14-2 to 14-4 is answered without an error IIN:
 | DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against opendnp3 3.1.2, DSC go-dnp3 v0.8.2, dnp3py 0.6.0 and cB-Sigma dnp3 v0.3.0 outstations | ✅ `make interop`, dnp3-interop v0.11.2 |
-| As outstation against the same masters and nfm-dnp3 1.0.1 | ✅ `make interop`, dnp3-interop v0.11.2; nfm-dnp3 with the exceptions under [Interop coverage](#interop-coverage) |
+| As master against opendnp3 3.1.2, DSC go-dnp3 v0.8.2, dnp3py 0.6.0 and cB-Sigma dnp3 v0.3.1 outstations | ✅ `make interop`, dnp3-interop v0.12.0 |
+| As outstation against the same masters and nfm-dnp3 1.0.1 | ✅ `make interop`, dnp3-interop v0.12.0; nfm-dnp3 with the exceptions under [Interop coverage](#interop-coverage) |
 | TLS with mutual authentication, both roles | ✅ against opendnp3, DSC go-dnp3 and cB-Sigma dnp3, including a refused certificate of another CA |
 | UDP, both roles | ✅ against opendnp3, DSC go-dnp3 and cB-Sigma dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against opendnp3, DSC go-dnp3 and cB-Sigma dnp3 over a pseudo-terminal bridged to TCP |
@@ -351,7 +351,7 @@ the reference does not have or its dnp3-interop adapter does not expose
 (its capability document says which): the suite covers everything the
 images offer.
 
-| Feature | opendnp3 3.1.2 | DSC go-dnp3 v0.8.2 | dnp3py 0.6.0 | cB-Sigma dnp3 v0.3.0 | nfm-dnp3 1.0.1 |
+| Feature | opendnp3 3.1.2 | DSC go-dnp3 v0.8.2 | dnp3py 0.6.0 | cB-Sigma dnp3 v0.3.1 | nfm-dnp3 1.0.1 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Integrity poll: values and flags of every point type of the baseline fixture | M O | M O | O | M O |  |
 | Reads of ranges and variations | M O | M O | O | M O | O |
@@ -392,7 +392,11 @@ images offer.
 
 Known bugs of a reference that the fixture shows (dnp3-interop's
 `tests/known-bugs.tsv`) are logged, not failed: DSC go-dnp3 v0.8.2 leaves a
-counter without a frozen counter uncleared by FREEZE AND CLEAR. One more
+counter without a frozen counter uncleared by FREEZE AND CLEAR; the
+outstations of DSC go-dnp3 v0.8.2 and cB-Sigma dnp3 v0.3.1 answer
+GET_FILE_INFO with the last path element of the file, where IEEE 1815-2012
+4.4.18 (p. 75) has the answer carry the requested name, which go-dnp3's
+master checks and its outstation sends to every master. One more
 known bug touches the contract 1.3 tests, which avoid it: DSC go-dnp3
 refuses FREEZE AT TIME with time 0 (the tests use a time to come). Four
 findings about the references that the suite works with: opendnp3's UDP
@@ -420,8 +424,8 @@ record: integrity polls and all-objects reads (no decoder for g3v2 and g110,
 fxodell/dnp3py#10), controls (CROB codes swapped and a 1-octet 0x28 count,
 #7 and #5), and event polls (the 0x28 count, #5).
 
-cB-Sigma dnp3 v0.3.0 answers AUTHENTICATE_FILE with an empty user name and
-password at offset 0. Since v1.7.0 go-dnp3's master accepts empty g70v2
+cB-Sigma dnp3 (v0.3.0, and v0.3.1, which keeps it) answers AUTHENTICATE_FILE
+with an empty user name and password at offset 0. Since v1.7.0 go-dnp3's master accepts empty g70v2
 strings at any offset; it still sends them at offset 12.
 
 ## Feature completeness and the remaining gaps
