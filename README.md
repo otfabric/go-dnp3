@@ -47,7 +47,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against opendnp3, DSC go-dnp3, dnp3py and cB-Sigma dnp3, and as
   outstation against nfm-dnp3, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.11.2,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.12.0,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -350,7 +350,7 @@ they are not evidence about any RTU or IED.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.11.2](https://github.com/otfabric/dnp3-interop/releases/tag/v0.11.2),
+of [otfabric/dnp3-interop v0.12.0](https://github.com/otfabric/dnp3-interop/releases/tag/v0.12.0),
 pinned by digest.
 
 | Reference | Version | Licence | Roles tested |
@@ -358,7 +358,7 @@ pinned by digest.
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
 | DSC go-dnp3 | v0.8.2 | GPL-3.0-or-later | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
-| cB-Sigma dnp3 | v0.3.0 | Apache-2.0 | master and outstation |
+| cB-Sigma dnp3 | v0.3.1 | Apache-2.0 | master and outstation |
 | nfm-dnp3 | 1.0.1 | MIT | master (TCP; go-dnp3's outstation serves it without unsolicited responses, and three of its upstream defects skip tests: [INTEROPERABILITY.md](INTEROPERABILITY.md#interop-coverage)) |
 
 The Self-interop workflow, run by hand, runs a commit against the latest

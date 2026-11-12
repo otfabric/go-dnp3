@@ -1,5 +1,28 @@
 # go-dnp3 Releases
 
+## v1.12.1
+
+**Date:** 2026-11-12
+**Previous release:** v1.12.0
+
+## Summary
+
+A change of test evidence only: `make interop` and `make conformance` move from otfabric/dnp3-interop v0.11.2 to v0.12.0 (contract 1.5, unchanged). The library is the same as v1.12.0: no code outside the interop suite changes, no exported API, no protocol behaviour.
+
+## Changes
+
+### Testing
+
+- **dnp3-interop v0.12.0**: the five reference images are pinned by their v0.12.0 digests in `interop/harness.go`, the Makefile and the Interop workflow, and `make conformance-image` builds the dnp3c runner from the v0.12.0 commit (`31ce30d5`). Of the references only cB-Sigma dnp3 changes, from v0.3.0 to v0.3.1; opendnp3 3.1.2, DSC go-dnp3 v0.8.2, dnp3py 0.6.0 and nfm-dnp3 1.0.1 are unchanged.
+- **GET_FILE_INFO names in the interop suite** (IEEE 1815-2012 4.4.18, p. 75: the answer carries the file name of the request): `TestClientFiles` now checks the name of the descriptor go-dnp3's master receives, and `TestServerFiles` the name each reference master reports from go-dnp3's outstation. The outstations of DSC go-dnp3 v0.8.2 and cB-Sigma dnp3 v0.3.1 answer with the last path element; the suite logs that as a known bug of each (`file-info-base-name`, the rows `dscsystems-file-info-base-name` and `cbsigma-file-info-base-name` of dnp3-interop's `tests/known-bugs.tsv`) instead of failing.
+- **`TestServerDualEndPoint` over TLS** retries the race it already retried, with Docker's port proxy accepting a dial that go-dnp3's outstation has already dropped, also when the listening master reports it as a failed TLS handshake (`connect-failed`), as cB-Sigma dnp3's master of the v0.12.0 image does now and then (EOF, or a first record that is not a handshake); up to three attempts, as before, so a TLS fault of its own still fails the test. Locally the subtest failed 2 of 16 runs before and passed 20 of 20 after (one retry).
+
+### Documentation
+
+- README.md, INTEROPERABILITY.md, SECURITY.md and docs/FEATURE-STATUS.md name dnp3-interop v0.12.0 and cB-Sigma dnp3 v0.3.1; INTEROPERABILITY.md records the GET_FILE_INFO names of the two outstations as known bugs; the status line of docs/FEATURE-STATUS.md names go-dnp3 v1.12.0.
+
+---
+
 ## v1.12.0
 
 **Date:** 2026-11-12

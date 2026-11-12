@@ -29,17 +29,17 @@ type adapter struct {
 }
 
 // The reference images this version of go-dnp3 is qualified against:
-// otfabric/dnp3-interop v0.11.2 (opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
-// dnp3py 0.6.0, cB-Sigma dnp3 v0.3.0, nfm-dnp3 1.0.1). The images are pinned by multi-arch index digest so that
+// otfabric/dnp3-interop v0.12.0 (opendnp3 3.1.2, DSC go-dnp3 v0.8.2,
+// dnp3py 0.6.0, cB-Sigma dnp3 v0.3.1, nfm-dnp3 1.0.1). The images are pinned by multi-arch index digest so that
 // a run is reproducible. Moving to another release of dnp3-interop means changing these
 // constants; the Makefile and the interop workflow follow.
 const (
-	interopRelease         = "v0.11.2"
-	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:76a2baa2da118e049196d2b7310f84cc79b38ddf0443a40e410e4553f4773203"
-	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:768f85690f97fcf800d56f5862450365264f1021f675dd6a9ed5c581ec449134"
-	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:af83c625c14f0897805573166bdd610ee35e7ba818986ed2107f525f73b4f159"
-	defaultCbsigmaImage    = "ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:61a43fc0cb99c5f8987484fd983c302d4815702b31891ddfa1f29c7bc4876cb4"
-	defaultNfmdnp3Image    = "ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:9345804a876c9e1795fc099a724ca0e3e5c5f6deebbbf47113056413b2155bed"
+	interopRelease         = "v0.12.0"
+	defaultOpendnp3Image   = "ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:f53239c73d972fac0ea62427098b86a2a164cf8fa584ea7f3f334e9043617847"
+	defaultDscsystemsImage = "ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:58e8a65145f9f484a5f89bebec3262039857acc8925f8af53663299019a22e5f"
+	defaultDnp3pyImage     = "ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:0bc9913362efd7fbffbe0f3b12b53e0029b56080678d45b6b13b57558d72d000"
+	defaultCbsigmaImage    = "ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:930cc02e9d8d231ddc4dc81e6fe19df7f2b43eaf8267fc6bf4cf9d53ff40dc48"
+	defaultNfmdnp3Image    = "ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:a863002401cdadb6c6bdffec97bf85ae9824ca45ab483b67d88d6d75d0de1e72"
 )
 
 // adapters returns the reference implementations to test against. The image
@@ -565,6 +565,10 @@ func requireDocker(t testing.TB) {
 var knownBugs = map[string]map[string]string{
 	"dscsystems": {
 		"freeze-clear-without-frozen": "v0.8.2: FREEZE AND CLEAR leaves a counter that has no frozen counter of the same index uncleared",
+		"file-info-base-name":         "v0.8.2: GET_FILE_INFO is answered with the last path element, not the requested name of IEEE 1815-2012 4.4.18 (outstation/file.go, onGetFileInfo)",
+	},
+	"cbsigma": {
+		"file-info-base-name": "v0.3.1: GET_FILE_INFO is answered with the last path element, not the requested name of IEEE 1815-2012 4.4.18 (outfile.go, fileInfo)",
 	},
 	// nfm-dnp3's defects are reported upstream (fxodell/dnp3py#5, #7, #10)
 	// and fail its master against every outstation in dnp3-interop.

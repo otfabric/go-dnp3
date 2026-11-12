@@ -200,6 +200,13 @@ func TestClientDualEndPoint(t *testing.T) {
 	}
 }
 
+// droppedByProxy reports whether a listening master's error code can come
+// from a connection Docker's port proxy accepted for a dial the outstation
+// had already dropped: a lost connection, or with TLS a failed handshake.
+func droppedByProxy(code string, withTLS bool) bool {
+	return code == "connection-lost" || (withTLS && code == "connect-failed")
+}
+
 // TestServerDualEndPoint: go-dnp3's outstation connects to the reference
 // master, which listens, over TCP and TLS.
 func TestServerDualEndPoint(t *testing.T) {
@@ -236,9 +243,13 @@ func TestServerDualEndPoint(t *testing.T) {
 				// the container listens: the master can be handed a
 				// connection the outstation has already dropped, and reports
 				// it lost. The outstation keeps redialling, so a new master
-				// gets a live connection; only that case is retried.
+				// gets a live connection; only that case is retried. With TLS
+				// the master can see that connection fail its handshake
+				// (cB-Sigma's reports connect-failed: EOF, or a first record
+				// that is not a handshake); a TLS fault of its own fails
+				// every attempt.
 				r := runClientSpec(t, a, docker, argv)
-				for attempt := 2; !r.OK && r.errorCode() == "connection-lost" && attempt <= 3; attempt++ {
+				for attempt := 2; !r.OK && droppedByProxy(r.errorCode(), withTLS) && attempt <= 3; attempt++ {
 					t.Logf("connection lost before the poll (attempt %d): %s", attempt-1, r.errorCode())
 					r = runClientSpec(t, a, docker, argv)
 				}

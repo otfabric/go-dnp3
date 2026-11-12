@@ -64,6 +64,11 @@ func TestClientFiles(t *testing.T) {
 			if d.Type != app.FileTypeSimple || int(d.Size) != len(want["/readme.txt"]) {
 				t.Errorf("info of /readme.txt: %+v", d)
 			}
+			// The answer carries the name of the request (IEEE 1815-2012
+			// 4.4.18, p. 75).
+			if d.Name != "/readme.txt" && !knownBug(t, a, "file-info-base-name") {
+				t.Errorf("info of /readme.txt names %q", d.Name)
+			}
 			entries, err := c.ListDirectory(ctx, "/", client.FileOptions{})
 			if err != nil {
 				t.Fatalf("list /: %v", err)
@@ -139,6 +144,10 @@ func TestServerFiles(t *testing.T) {
 			r := runClient(t, a, port, "file-info", "--name", "/readme.txt")
 			if !r.OK || r.File == nil || r.File.Type != "file" || int(r.File.Size) != len(want["/readme.txt"]) {
 				t.Errorf("file-info /readme.txt: ok=%v %s %+v", r.OK, r.errorCode(), r.File)
+			} else if r.File.Name != "/readme.txt" {
+				// go-dnp3's outstation answers with the requested name
+				// (4.4.18, p. 75), which the master reports as sent.
+				t.Errorf("file-info /readme.txt names %q", r.File.Name)
 			}
 			r = runClient(t, a, port, "file-ls", "--name", "/")
 			if !r.OK {
