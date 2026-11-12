@@ -34,12 +34,12 @@ import (
 // The transports of contract 1.1, both directions: TLS (mutual), UDP and
 // serial lines.
 
-// pki is a test PKI written as PEM files into a directory the containers
-// mount at /pki: ca.pem; server.pem/.key for the outstation (localhost,
+// pki is a test PKI, kept in memory as PEM files that the containers
+// mount at /pki from a volume (pki.mount): ca.pem; server.pem/.key for the outstation (localhost,
 // host.docker.internal, 127.0.0.1); client.pem/.key for the master; and
 // rogue.pem/.key, a master certificate of another CA.
 type pki struct {
-	dir    string
+	files  []volumeFile
 	pool   *x509.CertPool
 	server tls.Certificate
 	client tls.Certificate
@@ -62,16 +62,8 @@ func testPKI(t *testing.T) *pki {
 }
 
 func makePKI() (*pki, error) {
-	// Not t.TempDir: the PKI is shared by the tests of the run. The
-	// containers run as uid 10001, so the files are world-readable.
-	dir, err := os.MkdirTemp("", "go-dnp3-interop-pki-")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(dir, 0o755); err != nil {
-		return nil, err
-	}
-	p := &pki{dir: dir, pool: x509.NewCertPool()}
+	// The PKI is shared by the tests of the run.
+	p := &pki{pool: x509.NewCertPool()}
 	serial := int64(1)
 	newCA := func(name string) (*x509.Certificate, *ecdsa.PrivateKey, []byte, error) {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -112,12 +104,8 @@ func makePKI() (*pki, error) {
 		}
 		certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 		keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pk})
-		if err := writePublic(filepath.Join(dir, file+".pem"), certPEM); err != nil {
-			return tls.Certificate{}, err
-		}
-		if err := writePublic(filepath.Join(dir, file+".key"), keyPEM); err != nil {
-			return tls.Certificate{}, err
-		}
+		p.add(file+".pem", certPEM)
+		p.add(file+".key", keyPEM)
 		return tls.X509KeyPair(certPEM, keyPEM)
 	}
 	ca, caKey, caDER, err := newCA("go-dnp3 interop CA")
@@ -125,9 +113,7 @@ func makePKI() (*pki, error) {
 		return nil, err
 	}
 	p.pool.AddCert(ca)
-	if err := writePublic(filepath.Join(dir, "ca.pem"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})); err != nil {
-		return nil, err
-	}
+	p.add("ca.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}))
 	if p.server, err = leaf("server", ca, caKey, x509.ExtKeyUsageServerAuth, true); err != nil {
 		return nil, err
 	}
@@ -144,9 +130,18 @@ func makePKI() (*pki, error) {
 	return p, nil
 }
 
-func writePublic(name string, b []byte) error { return os.WriteFile(name, b, 0o644) }
+// add keeps a file of the PKI. The containers run as uid 10001, so in the
+// volume the files are readable by all; the key is a throwaway of the run.
+func (p *pki) add(name string, b []byte) {
+	p.files = append(p.files, volumeFile{name: name, mode: 0o644, data: b})
+}
 
-func (p *pki) mount() []string { return []string{"-v", p.dir + ":/pki:ro"} }
+// mount is the docker run option that mounts the PKI at /pki, from a
+// volume of the test filled through image.
+func (p *pki) mount(t testing.TB, image string) []string {
+	t.Helper()
+	return []string{"-v", dockerVolume(t, image, p.files) + ":/pki:ro"}
+}
 
 // clientTLS is the master's configuration: our CA, the client
 // certificate, the name localhost.
@@ -185,7 +180,7 @@ func TestClientTLS(t *testing.T) {
 	for _, a := range adapters(t) {
 		t.Run(a.name, func(t *testing.T) {
 			a.need(t, "tls")
-			s := startServerSpec(t, a, serverSpec{docker: p.mount(),
+			s := startServerSpec(t, a, serverSpec{docker: p.mount(t, a.image),
 				args: []string{"--tls-cert", "/pki/server.pem", "--tls-key", "/pki/server.key", "--tls-ca", "/pki/ca.pem"}})
 			c := dialRef(t, s, client.WithTLS(p.clientTLS(p.client)))
 			res, err := c.IntegrityPoll(tctx(t))
@@ -221,7 +216,7 @@ func TestServerTLS(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			l, err := net.Listen("tcp", "0.0.0.0:0")
+			l, err := net.Listen("tcp", hostListenAddr(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -233,14 +228,14 @@ func TestServerTLS(t *testing.T) {
 				return []string{"integrity-poll", "--host", "host.docker.internal", "--port", strconv.Itoa(port),
 					"--tls", "--tls-ca", "/pki/ca.pem", "--tls-cert", "/pki/" + cert + ".pem", "--tls-key", "/pki/" + cert + ".key"}
 			}
-			r := runClientSpec(t, a, p.mount(), tlsArgs("client"))
+			r := runClientSpec(t, a, p.mount(t, a.image), tlsArgs("client"))
 			if !r.OK {
 				t.Fatalf("integrity poll over TLS failed: %s", r.errorCode())
 			}
 			if want := len(a.fixture(t).expectedStatic()); len(r.Objects) != want {
 				t.Errorf("%d objects over TLS, fixture %d", len(r.Objects), want)
 			}
-			if r := runClientSpec(t, a, p.mount(), tlsArgs("rogue")); r.OK {
+			if r := runClientSpec(t, a, p.mount(t, a.image), tlsArgs("rogue")); r.OK {
 				t.Fatal("go-dnp3 accepted a master certificate of another CA")
 			}
 		})
@@ -279,7 +274,7 @@ func clientUDPInNetwork(t *testing.T, a adapter) {
 	master := fmt.Sprintf("go-dnp3-interop-master-%d-%d", os.Getpid(), containerSeq.Add(1))
 	// The master container first, idle, so that its address is known
 	// when the outstation starts.
-	if _, stderr, err := docker("run", "-d", "--name", master, "--network", nw, "-v", filepath.Dir(bin)+":/m:ro",
+	if _, stderr, err := docker("run", "-d", "--name", master, "--network", nw, "-v", dockerVolume(t, a.image, []volumeFile{{name: "udpmaster", mode: 0o755, data: bin}})+":/m:ro",
 		"--entrypoint", "/bin/sh", a.image, "-c", "while [ ! -e /tmp/go ]; do sleep 0.05; done; exec /m/udpmaster -addr \"$(cat /tmp/go)\""); err != nil {
 		t.Fatalf("start the master container: %v\n%s", err, stderr)
 	}
@@ -317,41 +312,49 @@ func clientUDPInNetwork(t *testing.T, a adapter) {
 
 var (
 	udpMasterOnce sync.Once
-	udpMasterBin  string
+	udpMasterBin  []byte
 	udpMasterErr  error
 )
 
 // udpMasterBinary builds testdata/udpmaster for the Docker host's
-// architecture, once per run.
-func udpMasterBinary(t *testing.T) string {
+// architecture, once per run, and returns the executable.
+func udpMasterBinary(t *testing.T) []byte {
 	t.Helper()
-	udpMasterOnce.Do(func() {
-		arch, _, err := docker("info", "--format", "{{.Architecture}}")
-		if err != nil {
-			udpMasterErr = err
-			return
-		}
-		goarch := map[string]string{"x86_64": "amd64", "aarch64": "arm64"}[strings.TrimSpace(arch)]
-		if goarch == "" {
-			goarch = runtime.GOARCH
-		}
-		dir, err := os.MkdirTemp("", "go-dnp3-interop-bin-")
-		if err != nil {
-			udpMasterErr = err
-			return
-		}
-		_ = os.Chmod(dir, 0o755)
-		udpMasterBin = filepath.Join(dir, "udpmaster")
-		cmd := exec.Command("go", "build", "-o", udpMasterBin, "./testdata/udpmaster")
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+goarch)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			udpMasterErr = fmt.Errorf("%v\n%s", err, out)
-		}
-	})
+	udpMasterOnce.Do(func() { udpMasterBin, udpMasterErr = buildUDPMaster() })
 	if udpMasterErr != nil {
 		t.Fatalf("build the in-container master: %v", udpMasterErr)
 	}
 	return udpMasterBin
+}
+
+func buildUDPMaster() ([]byte, error) {
+	arch, _, err := docker("info", "--format", "{{.Architecture}}")
+	if err != nil {
+		return nil, err
+	}
+	goarch := map[string]string{"x86_64": "amd64", "aarch64": "arm64"}[strings.TrimSpace(arch)]
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	dir, err := os.MkdirTemp("", "go-dnp3-interop-bin-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	// The program is the constant "go"; the arguments reach it as argv,
+	// never through a shell.
+	cmd := exec.Command("go")
+	cmd.Args = append(cmd.Args, "build", "-o", filepath.Join(dir, "udpmaster"), "./testdata/udpmaster")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+goarch)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("%v\n%s", err, out)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	return root.ReadFile("udpmaster")
 }
 
 func TestServerUDP(t *testing.T) {
@@ -363,7 +366,7 @@ func TestServerUDP(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pc, err := net.ListenPacket("udp", "0.0.0.0:0")
+			pc, err := net.ListenPacket("udp", hostListenAddr(t))
 			if err != nil {
 				t.Fatal(err)
 			}

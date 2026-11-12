@@ -296,7 +296,7 @@ func TestSpec8_2_2_Rule1_VaryingSizes(t *testing.T) {
 	for i, n := range sizes {
 		part := make([]byte, n)
 		for j := range part {
-			part[j] = byte(len(want) + j)
+			part[j] = octet(len(want) + j)
 		}
 		want = append(want, part...)
 		got, err = r.Add(append(seg(i == 0, i == len(sizes)-1, uint8(i)), part...))
@@ -335,3 +335,7 @@ func TestSpecEX8_1_Headers(t *testing.T) {
 		t.Fatal("the receiver did not rebuild the fragment")
 	}
 }
+
+// octet is the low octet of v >= 0: test data that runs through every
+// octet value.
+func octet(v int) byte { return byte(max(v%256, 0)) }

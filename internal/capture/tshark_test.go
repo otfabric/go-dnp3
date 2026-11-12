@@ -5,7 +5,6 @@ package capture
 import (
 	"bufio"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -24,8 +23,8 @@ type tsharkFrame struct {
 
 func readTshark(t *testing.T, local string) map[int]tsharkFrame {
 	t.Helper()
-	p := filepath.Join(capturesDir, "tshark", strings.TrimSuffix(local, ".pcap")+".tsv")
-	f, err := os.Open(p)
+	p := filepath.Join("tshark", strings.TrimSuffix(local, ".pcap")+".tsv")
+	f, err := openRoot(t, capturesDir).Open(p)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -67,6 +67,7 @@ make build
 - **No dependencies** outside the standard library. The module's value for users in regulated environments depends on it
 - **Codecs stay pure**: `link`, `transport` and `app` do no I/O beyond `link.Reader` over an `io.Reader` and keep no state across fragments
 - **Every exported symbol is documented**, with the standard's terms; comments end with a period (golangci-lint's `godot`)
+- **Lint and scan findings are fixed in code**, never suppressed: no `//nolint`, no `#nosec`. Gosec does not run in golangci-lint or CI; a maintainer scans before each release with `cd ../engineering && make sast REPO=go-dnp3`, from a checkout of otfabric/engineering beside this one ([ADR-0011](https://github.com/otfabric/engineering/blob/main/docs/adr/0011-shared-sast.md)), and the one accepted finding, the `crypto/sha1` import IEEE 1815-2012 7.6.1.1.1 requires of secauth, is triaged privately. Convert integers with types or bounds gosec can follow (`min`/`max`, a check before the conversion, `encoding/binary`), and use `crypto/rand` outside tests; the chaos tests draw from `internal/chaosrand`
 - **Errors** are sentinels wrapped with detail, or typed errors for answers of the peer; see [ERRORS.md](ERRORS.md). Never return a bare `errors.New` from a public function
 - **Concurrency**: say in the comment which goroutine owns a field. Prefer one goroutine owning state over locks around it, as the channel, the association and the client do
 - **Logging** goes through `internal/logx` with a constant message and fields; see [OBSERVABILITY.md](OBSERVABILITY.md)

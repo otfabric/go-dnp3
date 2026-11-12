@@ -86,7 +86,7 @@ func TestClientFiles(t *testing.T) {
 
 			// Write a file of several blocks, read it back, delete it.
 			content := bytes.Repeat([]byte("go-dnp3 "), 300)
-			if _, err := c.WriteFile(ctx, "/logs/go-dnp3.txt", bytes.NewReader(content), uint32(len(content)), client.FileOptions{}); err != nil {
+			if _, err := c.WriteFile(ctx, "/logs/go-dnp3.txt", bytes.NewReader(content), len32(len(content)), client.FileOptions{}); err != nil {
 				t.Fatalf("write: %v", err)
 			}
 			var back bytes.Buffer
@@ -124,7 +124,7 @@ func TestServerFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			l, err := net.Listen("tcp", "0.0.0.0:0")
+			l, err := net.Listen("tcp", hostListenAddr(t))
 			if err != nil {
 				t.Fatal(err)
 			}

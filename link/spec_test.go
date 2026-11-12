@@ -75,7 +75,7 @@ func TestSpecAnnexE_BitShiftMethod(t *testing.T) {
 	for n := 0; n <= BlockSize; n++ {
 		for seed := range 32 {
 			for i := range block[:n] {
-				block[i] = byte(seed*97 + i*31 + n)
+				block[i] = octet(seed*97 + i*31 + n)
 			}
 			if got, want := CRC(block[:n]), bitwise(block[:n]); got != want {
 				t.Fatalf("n=%d seed=%d: CRC %#04x, bit-shift method %#04x", n, seed, got, want)
@@ -226,10 +226,10 @@ func TestSpec9_2_4_2_UserDataBlocks(t *testing.T) {
 	for n := 1; n <= MaxUserData; n++ {
 		data := make([]byte, n)
 		for i := range data {
-			data[i] = byte(i*13 + n)
+			data[i] = octet(i*13 + n)
 		}
 		b := stream(t, Frame{Function: PrimaryUnconfirmedUserData, Dest: 1, Src: 2, Data: data})
-		if c := CRC(b[:8]); b[8] != byte(c) || b[9] != byte(c>>8) {
+		if c := CRC(b[:8]); binary.LittleEndian.Uint16(b[8:]) != c {
 			t.Fatalf("n=%d: header CRC octets % x, want %#04x low octet first", n, b[8:10], c)
 		}
 		p, got := b[HeaderLength:], []byte(nil)
@@ -239,7 +239,7 @@ func TestSpec9_2_4_2_UserDataBlocks(t *testing.T) {
 				t.Fatalf("n=%d: block %d holds %d octets", n, blocks, size)
 			}
 			c := CRC(p[:size])
-			if p[size] != byte(c) || p[size+1] != byte(c>>8) {
+			if binary.LittleEndian.Uint16(p[size:]) != c {
 				t.Fatalf("n=%d: block %d CRC % x", n, blocks, p[size:size+2])
 			}
 			got = append(got, p[:size]...)

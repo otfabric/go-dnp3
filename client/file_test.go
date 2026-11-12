@@ -36,7 +36,7 @@ func (s *files) Open(_ context.Context, req server.FileRequest) (server.File, ap
 			sort.Strings(names)
 			var b []byte
 			for _, n := range names {
-				b, _ = app.AppendFileDescriptor(b, app.FileDescriptor{Name: n, Type: app.FileTypeSimple, Size: uint32(len(s.m[n]))})
+				b, _ = app.AppendFileDescriptor(b, app.FileDescriptor{Name: n, Type: app.FileTypeSimple, Size: len32(len(s.m[n]))})
 			}
 			return &file{r: bytes.NewReader(b), size: len(b)}, app.FileSuccess
 		}
@@ -79,7 +79,7 @@ func (s *files) Info(_ context.Context, name string) (app.FileDescriptor, app.Fi
 	if !ok {
 		return app.FileDescriptor{}, app.FileNotFound
 	}
-	return app.FileDescriptor{Name: name, Type: app.FileTypeSimple, Size: uint32(len(data))}, app.FileSuccess
+	return app.FileDescriptor{Name: name, Type: app.FileTypeSimple, Size: len32(len(data))}, app.FileSuccess
 }
 
 func (s *files) Authenticate(_ context.Context, user, password string) (uint32, bool) {
@@ -102,7 +102,7 @@ type file struct {
 
 func (f *file) Read(p []byte) (int, error)  { return f.r.Read(p) }
 func (f *file) Write(p []byte) (int, error) { return f.w.Write(p) }
-func (f *file) Size() uint32                { return uint32(f.size) }
+func (f *file) Size() uint32                { return len32(f.size) }
 func (f *file) Close(abort bool) error {
 	if f.s != nil && !abort {
 		f.s.mu.Lock()
@@ -139,16 +139,16 @@ func TestFileTransfer(t *testing.T) {
 		t.Fatalf("wrong password: %v", err)
 	}
 	payload := bytes.Repeat([]byte("payload "), 300)
-	if n, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(payload), uint32(len(payload)), FileOptions{AuthKey: key, MaxBlockSize: 256}); err != nil || n != int64(len(payload)) || !bytes.Equal(fs.get("/up.bin"), payload) {
+	if n, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(payload), len32(len(payload)), FileOptions{AuthKey: key, MaxBlockSize: 256}); err != nil || n != int64(len(payload)) || !bytes.Equal(fs.get("/up.bin"), payload) {
 		t.Fatalf("write: %d %v", n, err)
 	}
 	tail := []byte(" and more")
-	if _, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(tail), uint32(len(tail)), FileOptions{AuthKey: key, Append: true}); err != nil ||
+	if _, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(tail), len32(len(tail)), FileOptions{AuthKey: key, Append: true}); err != nil ||
 		!bytes.Equal(fs.get("/up.bin"), append(append([]byte(nil), payload...), tail...)) {
 		t.Fatalf("append: %v, %d octets", err, len(fs.get("/up.bin")))
 	}
 	_ = fs.Delete(ctx, "/up.bin", 0)
-	if _, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(payload), uint32(len(payload)), FileOptions{AuthKey: key}); err != nil {
+	if _, err := c.WriteFile(ctx, "/up.bin", bytes.NewReader(payload), len32(len(payload)), FileOptions{AuthKey: key}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.WriteFile(ctx, "/x", bytes.NewReader([]byte{1}), 1, FileOptions{AuthKey: 7}); !errors.As(err, &fe) || fe.Status != app.FilePermissionDenied {
@@ -158,7 +158,7 @@ func TestFileTransfer(t *testing.T) {
 	if _, err := c.WriteFile(ctx, "/broken", io.MultiReader(bytes.NewReader(make([]byte, 300)), failing{}), 600, FileOptions{MaxBlockSize: 256}); err == nil {
 		t.Fatal("write from a failing reader succeeded")
 	}
-	if info, err := c.FileInfo(ctx, "/up.bin"); err != nil || info.Size != uint32(len(payload)) {
+	if info, err := c.FileInfo(ctx, "/up.bin"); err != nil || info.Size != len32(len(payload)) {
 		t.Fatalf("info: %+v %v", info, err)
 	}
 	if _, err := c.FileInfo(ctx, "/missing"); !errors.As(err, &fe) {
@@ -212,7 +212,7 @@ func TestFileWriteAggressiveMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := bytes.Repeat([]byte{0xA5}, 6000)
-	if _, err := c.WriteFile(testCtx(t), "/big.bin", bytes.NewReader(data), uint32(len(data)), FileOptions{}); err != nil {
+	if _, err := c.WriteFile(testCtx(t), "/big.bin", bytes.NewReader(data), len32(len(data)), FileOptions{}); err != nil {
 		t.Fatalf("write of full-size blocks in aggressive mode: %v", err)
 	}
 	if !bytes.Equal(fs.get("/big.bin"), data) {

@@ -271,7 +271,7 @@ func TestCaptureClientWriteFile(t *testing.T) {
 		t.Run(tc.id, func(t *testing.T) {
 			c, exs, done := apiReplay(t, tc.id, fileExchange)
 			data := recordedFile(exs, true)
-			n, err := c.WriteFile(t.Context(), tc.name, bytes.NewReader(data), uint32(len(data)), FileOptions{MaxBlockSize: 1024, Permissions: tc.perm})
+			n, err := c.WriteFile(t.Context(), tc.name, bytes.NewReader(data), len32(len(data)), FileOptions{MaxBlockSize: 1024, Permissions: tc.perm})
 			sent := done()
 			if err != nil {
 				t.Fatal(err)

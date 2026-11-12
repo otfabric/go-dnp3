@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"runtime"
@@ -22,6 +21,7 @@ import (
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
 	"github.com/otfabric/go-dnp3/client"
+	"github.com/otfabric/go-dnp3/internal/chaosrand"
 	"github.com/otfabric/go-dnp3/link"
 	"github.com/otfabric/go-dnp3/secauth"
 	"github.com/otfabric/go-dnp3/server"
@@ -36,7 +36,7 @@ type chaosProxy struct {
 	enabled atomic.Bool
 	kills   atomic.Int64
 	mu      sync.Mutex
-	rng     *rand.Rand
+	rng     *chaosrand.Rand
 	conns   map[net.Conn]struct{}
 	wg      sync.WaitGroup
 }
@@ -47,7 +47,7 @@ func newChaosProxy(t *testing.T, target string, seed int64) *chaosProxy {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &chaosProxy{l: l, target: target, rng: rand.New(rand.NewSource(seed)), conns: map[net.Conn]struct{}{}}
+	p := &chaosProxy{l: l, target: target, rng: chaosrand.New(seed), conns: map[net.Conn]struct{}{}}
 	p.enabled.Store(true)
 	p.wg.Add(2)
 	go p.accept()
@@ -67,7 +67,7 @@ func (p *chaosProxy) float() float64 {
 func (p *chaosProxy) intn(n int) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.rng.Intn(n)
+	return p.rng.IntN(n)
 }
 
 func (p *chaosProxy) accept() {
@@ -137,7 +137,7 @@ func (p *chaosProxy) killer() {
 			return
 		}
 		if p.enabled.Load() && len(p.conns) > 0 {
-			k := p.rng.Intn(len(p.conns))
+			k := p.rng.IntN(len(p.conns))
 			for c := range p.conns {
 				if k == 0 {
 					_ = c.Close()
@@ -362,7 +362,7 @@ func TestChaos(t *testing.T) {
 			// Controls: counted when sent and when they succeed.
 			run(func(ctx context.Context) {
 				sent.Add(1)
-				_, err := c.Operate(ctx, client.DirectOperate, client.CROB(uint32(sent.Load()%4), app.OpLatchOn, 0, 0))
+				_, err := c.Operate(ctx, client.DirectOperate, client.CROB(uint32(max(sent.Load()%4, 0)), app.OpLatchOn, 0, 0))
 				if err == nil {
 					succeeded.Add(1)
 				}
@@ -494,6 +494,7 @@ func TestParallelMastersSecureAuthAndFiles(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, masters)
 	for i := range masters {
+		fill := byte(i)
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
@@ -506,13 +507,13 @@ func TestParallelMastersSecureAuthAndFiles(t *testing.T) {
 			}
 			defer func() { _ = c.Close() }()
 			name := fmt.Sprintf("/master-%d.bin", i)
-			data := bytes.Repeat([]byte{byte(i)}, 3000+i*100)
+			data := bytes.Repeat([]byte{fill}, 3000+i*100)
 			for round := range 10 {
 				if _, err := c.Operate(ctx, client.SelectBeforeOperate, client.CROB(0, app.OpLatchOn, 0, 0)); err != nil {
 					errs <- fmt.Errorf("master %d round %d control: %w", i, round, err)
 					return
 				}
-				if _, err := c.WriteFile(ctx, name, bytes.NewReader(data), uint32(len(data)), client.FileOptions{}); err != nil {
+				if _, err := c.WriteFile(ctx, name, bytes.NewReader(data), len32(len(data)), client.FileOptions{}); err != nil {
 					errs <- fmt.Errorf("master %d round %d write: %w", i, round, err)
 					return
 				}

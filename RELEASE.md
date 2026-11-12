@@ -9,6 +9,8 @@
 
 `client.WithDialer` now follows otfabric engineering policy 1.5 (rule API-R03) in full: nil keeps the default dialer, and the dialer's context carries the 10 s dial timeout, as on the server. This changes the behaviour of an exported function, which the maintainer accepted on v1 to follow the policy; no signature changes. No protocol behaviour changes.
 
+The 93 findings of a gosec scan are fixed in code, without suppressions; the one accepted finding is the `crypto/sha1` import that IEEE 1815-2012 7.6.1.1.1 requires. The retry and redial jitter draws from `crypto/rand`.
+
 ## Upgrading
 
 - **`client.WithDialer(nil)`** no longer fails `New` with `dnp3.ErrInvalidOption`; it keeps the default, a `net.Dialer` with a 10 s timeout, as `server.WithDialer(nil)` does. Code that relied on the error must check for a nil dialer itself.
@@ -20,9 +22,19 @@
 
 - `client.WithDialer(nil)` keeps the default dialer (API-R03: "nil keeps the default unchanged"); it was refused since v1.0.0.
 - The client dials through every dialer with a context that carries the 10 s dial timeout besides the caller's deadline and cancel (API-R03), for `Connect`, the reconnects, the dual end point and `UDPWithDialer`.
+- The jitter of `client.Retry`, `client.Reconnect` and `server.Redial` draws from `crypto/rand` instead of `math/rand/v2`; the pauses are distributed as before.
+
+### Static analysis
+
+- The 93 gosec findings (golangci-lint v2.15.0 with gosec enabled for the scan) are fixed in code, with no `//nolint` or `#nosec`: 66 integer conversions (G115, nearly all in tests) through types, `encoding/binary` and bounds; the slice bounds of the control echo check (`client/requests.go`, G602, not a bug) and of the session key parse (`secauth/keywrap.go`) made evident. Gosec stays out of golangci-lint and CI (otfabric policy GO-014): a maintainer scans before each release with `cd ../engineering && make sast REPO=go-dnp3`, from a checkout of otfabric/engineering beside this one (ADR-0011). The one accepted finding, G505 for the `crypto/sha1` import of HMAC-SHA-1, which every device must implement and be able to disable by configuration (IEEE 1815-2012 7.6.1.1.1), is recorded in the organisation's private triage, not in this repository.
+- SECURITY.md says how to turn HMAC-SHA-1 off (`secauth.User.MAC`, `client.WithChallengeMACs`).
 
 ### Tests
 
+- The chaos tests (`e2e/chaos_test.go`, `e2e/framechaos_test.go`, `internal/channel/chaos_test.go`) and `TestFileOverLargeFragments` draw from `internal/chaosrand`, SHA-256 in counter mode over the seed, instead of `math/rand`: `DNP3_CHAOS_SEED` still replays a run, now the same on every platform and Go release. The faults of a given seed differ from v1.12.1's, including those of `TestFrameChaos`'s fixed seed 1815.
+- The interop suite listens on the one address the containers reach as `host.docker.internal`, never on all interfaces (G102): 127.0.0.1 under Docker Desktop, the default bridge's gateway under Docker Engine on Linux. The TLS test PKI and the in-container UDP master reach the containers through a Docker volume, filled from memory, instead of world-readable files on the host (G302, G306). Subprocesses run with a constant program name (G204).
+- The capture corpus tests read and write through `os.Root` (G304).
+- `TestSpec13_2_3_3_SecondMasterRejected` dials the second master only after the outstation served the first: under load both connections could wait in the accept queue, and the outstation, rightly, kept whichever master's frame came first (it failed about 1 run in 20 on two loaded CPUs).
 - `TestDialerNilKeepsDefault` and `TestDialerDialTimeout` (client).
 
 ---

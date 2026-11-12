@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"math"
 	"net"
 	"slices"
 	"sync/atomic"
@@ -91,7 +92,11 @@ func TestClientSecureAuth(t *testing.T) {
 			for _, h := range res.Headers() {
 				for _, o := range h.Objects {
 					if v, ok := o.Value.(app.SecurityStatistic); ok {
-						stats[secauth.Statistic(o.Index)] = v.Value
+						if o.Index > math.MaxUint16 {
+							t.Fatalf("security statistic index %d", o.Index)
+						} else {
+							stats[secauth.Statistic(o.Index)] = v.Value
+						}
 					}
 				}
 			}
@@ -133,7 +138,7 @@ func TestServerSecureAuth(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			l, err := net.Listen("tcp", "0.0.0.0:0")
+			l, err := net.Listen("tcp", hostListenAddr(t))
 			if err != nil {
 				t.Fatal(err)
 			}

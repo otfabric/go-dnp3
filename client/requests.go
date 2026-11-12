@@ -330,8 +330,9 @@ func echoStatuses(req []app.Header, res *Result, exact bool) ([]app.CommandStatu
 	}
 	var out []app.CommandStatus
 	echo := make([]app.Header, len(got)) // the request as the response should repeat it
-	for i, e := range got {
-		h := req[i]
+	// The response echoes the first len(got) headers of the request.
+	for i, h := range req[:len(got)] {
+		e := got[i]
 		lastHeader := i == len(got)-1
 		if e.GV != h.GV || len(e.Objects) > len(h.Objects) || (!lastHeader && len(e.Objects) != len(h.Objects)) || len(e.Objects) == 0 {
 			return nil, fmt.Errorf("%w: control echo header %d is %s n=%d, the request %s n=%d",

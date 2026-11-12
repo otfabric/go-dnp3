@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"html"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -140,13 +141,13 @@ func logHeader(h app.Header) string {
 	case q.IsIndexed():
 		n := h.Count
 		if len(h.Objects) > 0 {
-			n = uint32(len(h.Objects))
+			n = len32(len(h.Objects))
 		}
 		return fmt.Sprintf("%s, %d-Byte Count and Index, count: %d", gv, width, n)
 	default:
 		n := h.Count
 		if len(h.Objects) > 0 {
-			n = uint32(len(h.Objects))
+			n = len32(len(h.Objects))
 		}
 		return fmt.Sprintf("%s, %d-Byte Count, count: %d", gv, width, n)
 	}
@@ -432,3 +433,6 @@ func TestConformanceLog(t *testing.T) {
 	}
 	t.Logf("%d logs: %d P blocks, %d L rows, %d T rows, %d A rows, %d header and value rows checked (%d values)", files, pBlocks, lRows, tRows, aRows, hRows, vRows)
 }
+
+// len32 is the length n as a uint32 field, at most math.MaxUint32.
+func len32(n int) uint32 { return uint32(min(uint64(max(n, 0)), math.MaxUint32)) }

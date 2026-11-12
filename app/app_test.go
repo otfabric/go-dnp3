@@ -152,8 +152,8 @@ func TestDirectOperateCROBVector(t *testing.T) {
 
 // sample returns a value of the family of gv that survives a round trip
 // through the variation unchanged.
-func sample(gv GroupVariation, d *desc, i int) Value {
-	ts := Timestamp(1_700_000_000_000) + Timestamp(max(i, 0))
+func sample(gv GroupVariation, d *desc, i uint8) Value {
+	ts := Timestamp(1_700_000_000_000) + Timestamp(i)
 	if d.time == tNone {
 		ts = 0
 	}
@@ -175,9 +175,9 @@ func sample(gv GroupVariation, d *desc, i int) Value {
 	case fCROB:
 		return CROB{Op: OpPulseOn, TripClose: TCCClose, Count: 2, OnTime: 1000, OffTime: 500, Status: StatusSuccess}
 	case fCounter:
-		v := uint32(70000 + i)
+		v := 70000 + uint32(i)
 		if d.num == nU16 {
-			v = uint32(4000 + i)
+			v = 4000 + uint32(i)
 		}
 		return Counter{Value: v, Flags: fl, Time: ts}
 	case fAnalog:
@@ -220,7 +220,7 @@ func sample(gv GroupVariation, d *desc, i int) Value {
 	case fDataSetChars:
 		return DataSetCharacteristics{Flags: DataSetReadable | DataSetStatic | DataSetEvents}
 	case fBufferFill:
-		return BufferFillStatus{Fill: uint8(40 + i), Overflow: i%2 == 1, Buffer: G2V1}
+		return BufferFillStatus{Fill: 40 + i, Overflow: i%2 == 1, Buffer: G2V1}
 	case fSecStat:
 		return SecurityStatistic{Flags: FlagOnline, Association: 1, Value: 99, Time: ts}
 	case fAttribute:
@@ -345,7 +345,7 @@ func TestRoundTripEveryVariation(t *testing.T) {
 				h.Start, h.Stop = h.Objects[0].Index, h.Objects[len(h.Objects)-1].Index
 			}
 			if h.Qualifier.IsCount() {
-				h.Count = uint32(len(h.Objects))
+				h.Count = len32(len(h.Objects))
 			}
 			return h
 		}

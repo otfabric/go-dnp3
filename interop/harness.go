@@ -5,10 +5,13 @@
 package interop
 
 import (
+	"archive/tar"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -231,12 +234,63 @@ func (a adapter) fixtureNamed(t testing.TB, name string) *fixture {
 
 var containerSeq atomic.Int64
 
+// docker runs the docker CLI with args, without a shell.
 func docker(args ...string) (stdout, stderr string, err error) {
+	return dockerIn(nil, args...)
+}
+
+// dockerIn is docker with stdin.
+func dockerIn(stdin io.Reader, args ...string) (stdout, stderr string, err error) {
 	var out, errb bytes.Buffer
-	cmd := exec.Command("docker", args...)
-	cmd.Stdout, cmd.Stderr = &out, &errb
+	// The program is the constant "docker"; the arguments are the harness's
+	// own and reach it as argv, never through a shell.
+	cmd := exec.Command("docker")
+	cmd.Args = append(cmd.Args, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, &out, &errb
 	err = cmd.Run()
 	return out.String(), errb.String(), err
+}
+
+// volumeFile is one file of a dockerVolume.
+type volumeFile struct {
+	name string
+	mode int64
+	data []byte
+}
+
+// dockerVolume creates a volume for the duration of the test that holds
+// files, owned by root with their mode, and returns its name. The files
+// never touch the host's file system: the containers run as another user
+// than the test, and a bind mount would need them world-readable there. The
+// volume is filled through a created, never started, container of image.
+func dockerVolume(t testing.TB, image string, files []volumeFile) string {
+	t.Helper()
+	name := fmt.Sprintf("go-dnp3-interop-%d-%d", os.Getpid(), containerSeq.Add(1))
+	if _, stderr, err := docker("volume", "create", name); err != nil {
+		t.Fatalf("create volume: %v\n%s", err, stderr)
+	}
+	t.Cleanup(func() { _, _, _ = docker("volume", "rm", "-f", name) })
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, f := range files {
+		if err := tw.WriteHeader(&tar.Header{Name: f.name, Mode: f.mode, Size: int64(len(f.data)), Typeflag: tar.TypeReg, ModTime: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(f.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := docker("container", "create", "--name", name, "-v", name+":/v", "--entrypoint", "/bin/true", image); err != nil {
+		t.Fatalf("create the volume's container: %v\n%s", err, stderr)
+	}
+	defer func() { _, _, _ = docker("rm", "-f", name) }()
+	if _, stderr, err := dockerIn(&buf, "cp", "-", name+":/v"); err != nil {
+		t.Fatalf("fill volume: %v\n%s", err, stderr)
+	}
+	return name
 }
 
 // refServer is a running reference outstation container.
@@ -535,6 +589,54 @@ func lastLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
+// hostIP is the address of this host that the containers reach as
+// host.docker.internal (--add-host=host.docker.internal:host-gateway).
+// Docker Desktop forwards host-gateway to the host's loopback, so the
+// listeners bind 127.0.0.1. Docker Engine on Linux maps host-gateway to the
+// gateway of the default bridge network, so they bind that address. Either
+// way nothing listens on all interfaces.
+func hostIP(t testing.TB) string {
+	t.Helper()
+	hostIPOnce.Do(func() { hostIPVal, hostIPErr = findHostIP() })
+	if hostIPErr != nil {
+		t.Fatalf("the host address the containers reach: %v", hostIPErr)
+	}
+	return hostIPVal
+}
+
+var (
+	hostIPOnce sync.Once
+	hostIPVal  string
+	hostIPErr  error
+)
+
+func findHostIP() (string, error) {
+	osName, stderr, err := docker("info", "--format", "{{.OperatingSystem}}")
+	if err != nil {
+		return "", fmt.Errorf("docker info: %v\n%s", err, stderr)
+	}
+	if strings.Contains(osName, "Docker Desktop") {
+		return "127.0.0.1", nil
+	}
+	out, stderr, err := docker("network", "inspect", "bridge", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}")
+	if err != nil {
+		return "", fmt.Errorf("inspect the bridge network: %v\n%s", err, stderr)
+	}
+	for f := range strings.FieldsSeq(out) {
+		if ip := net.ParseIP(f); ip != nil && ip.To4() != nil {
+			return ip.String(), nil
+		}
+	}
+	return "", fmt.Errorf("the bridge network has no IPv4 gateway: %q", strings.TrimSpace(out))
+}
+
+// hostListenAddr is the address, with port 0, of a listener that the
+// containers reach as host.docker.internal.
+func hostListenAddr(t testing.TB) string {
+	t.Helper()
+	return net.JoinHostPort(hostIP(t), "0")
+}
+
 func freePort(t testing.TB) int {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -597,3 +699,6 @@ func knownBug(t testing.TB, a adapter, behaviour string) bool {
 	}
 	return false
 }
+
+// len32 is the length n as a uint32 field, at most math.MaxUint32.
+func len32(n int) uint32 { return uint32(min(uint64(max(n, 0)), math.MaxUint32)) }

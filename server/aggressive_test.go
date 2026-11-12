@@ -3,6 +3,7 @@
 package server
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -132,7 +133,11 @@ func TestSecurityStatistics(t *testing.T) {
 	stats := map[secauth.Statistic]uint32{}
 	for _, h := range f.Headers {
 		for _, o := range h.Objects {
-			stats[secauth.Statistic(o.Index)] = o.Value.(app.SecurityStatistic).Value
+			if o.Index > math.MaxUint16 {
+				t.Fatalf("security statistic index %d", o.Index)
+			} else {
+				stats[secauth.Statistic(o.Index)] = o.Value.(app.SecurityStatistic).Value
+			}
 		}
 	}
 	if len(stats) != int(secauth.NumStatistics) {

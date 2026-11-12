@@ -363,7 +363,7 @@ func TestSpecTable6_2_AssemblyAbandoned(t *testing.T) {
 	for _, tc := range []struct {
 		row  string
 		bad  func(n uint8) [][]byte // after the first fragment N (FIR, CON)
-		good int                    // fragments accepted before the bad one
+		good uint8                  // fragments accepted before the bad one
 	}{
 		{"8: FIR=0 with the SEQ of the last fragment, other octets", func(n uint8) [][]byte {
 			return [][]byte{frag(ctl(false, false, true, n+1), app.FuncResponse, 0, event1),
@@ -399,7 +399,7 @@ func TestSpecTable6_2_AssemblyAbandoned(t *testing.T) {
 				out = append(out, tc.bad(n)...)
 				// The rest of the response, which the master no longer
 				// waits for.
-				return append(out, frag(ctl(false, true, true, n+uint8(tc.good)), app.FuncResponse, 0, event0))
+				return append(out, frag(ctl(false, true, true, n+tc.good), app.FuncResponse, 0, event0))
 			})
 			c := specDial(t, o, specQuiet...)
 			if _, err := c.Read(testCtx(t), app.ClassHeaders(1)...); !errors.Is(err, dnp3.ErrProtocol) {
@@ -424,9 +424,9 @@ func TestSpecTable6_2_AssemblyAbandoned(t *testing.T) {
 						after++
 					}
 				}
-				return after >= tc.good
+				return after >= int(tc.good)
 			})
-			if cs := o.confirms(); len(cs) != 2*tc.good {
+			if cs := o.confirms(); len(cs) != 2*int(tc.good) {
 				t.Fatalf("confirmations %v, want %d", cs, 2*tc.good)
 			}
 		})

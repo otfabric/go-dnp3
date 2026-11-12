@@ -5,6 +5,7 @@ package client
 import (
 	"bytes"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -152,7 +153,7 @@ func TestSpec4_4_4_3_Rule6_TruncatedResponse(t *testing.T) {
 	truncate := func(statuses ...app.CommandStatus) func(b []byte) []byte {
 		return func(b []byte) []byte {
 			out := bytes.Clone(b[:4])
-			out[3] = byte(len(statuses))
+			out[3] = byte(min(len(statuses), math.MaxUint8))
 			for i, s := range statuses {
 				obj := bytes.Clone(b[4+12*i : 4+12*(i+1)])
 				obj[11] = byte(s)

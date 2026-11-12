@@ -871,8 +871,8 @@ func (c *packetConn) next(t *testing.T) (link.Frame, net.Addr) {
 	}
 }
 
-func udpAt(ip string, port int) *net.UDPAddr {
-	return net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.MustParseAddr(ip), uint16(port)))
+func udpAt(ip string, port uint16) *net.UDPAddr {
+	return net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.MustParseAddr(ip), port))
 }
 
 // requestFrame is a single-frame request to dest.

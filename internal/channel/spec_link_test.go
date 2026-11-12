@@ -5,6 +5,7 @@ package channel
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -187,9 +188,10 @@ func (l *warnLog) has(s string) bool {
 // rawHeader returns a frame header with any control octet, also one whose
 // function code is not defined, with a valid CRC.
 func rawHeader(ctrl byte, dest, src link.Address) []byte {
-	h := []byte{link.Start0, link.Start1, 5, ctrl, byte(dest), byte(dest >> 8), byte(src), byte(src >> 8)}
+	h := binary.LittleEndian.AppendUint16([]byte{link.Start0, link.Start1, 5, ctrl}, uint16(dest))
+	h = binary.LittleEndian.AppendUint16(h, uint16(src))
 	c := link.CRC(h)
-	return append(h, byte(c), byte(c>>8))
+	return binary.LittleEndian.AppendUint16(h, c)
 }
 
 // TestSpecTable9_7 drives the Secondary Station state table (clause
@@ -208,7 +210,7 @@ func TestSpecTable9_7(t *testing.T) {
 		idle0         // Idle, EFCB 0
 	)
 	cases := []struct {
-		row    int
+		row    uint8
 		before state
 		fn     link.Function
 		fcb    bool
@@ -262,7 +264,7 @@ func TestSpecTable9_7(t *testing.T) {
 				m.delivered([]byte{0xF0})
 			}
 
-			data := []byte{byte(c.row)}
+			data := []byte{c.row}
 			if c.raw != nil {
 				if _, err := m.conn.Write(c.raw); err != nil {
 					t.Fatal(err)
@@ -1299,13 +1301,13 @@ func TestSpec9_2_5_2_1_Broadcast(t *testing.T) {
 			m.noReply()
 		}
 		for range 2 { // the confirmed data may be passed up, or not
-			m.write(link.Frame{Dir: true, Function: link.PrimaryUnconfirmedUserData, Dest: dest, Src: masterAddr, Data: segmentOf([]byte{byte(dest)})})
+			m.write(link.Frame{Dir: true, Function: link.PrimaryUnconfirmedUserData, Dest: dest, Src: masterAddr, Data: segmentOf([]byte{byte(dest & 0xFF)})})
 			for {
 				d := m.in.next(t)
 				if bytes.Equal(d.frag, []byte{0xBB}) {
 					continue
 				}
-				if !bytes.Equal(d.frag, []byte{byte(dest)}) || d.dest != dest {
+				if !bytes.Equal(d.frag, []byte{byte(dest & 0xFF)}) || d.dest != dest {
 					t.Fatalf("broadcast to %#04x delivered %v to %#04x", uint16(dest), d.frag, uint16(d.dest))
 				}
 				break

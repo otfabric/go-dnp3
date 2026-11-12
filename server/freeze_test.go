@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"net"
 	"slices"
 	"testing"
@@ -22,7 +23,7 @@ func freezeAt(seq uint8, at time.Time, interval time.Duration, hs ...app.Header)
 		ts = app.TimestampOf(at)
 	}
 	return req(seq, app.FuncFreezeAtTime, append([]app.Header{app.Counted(app.G50V2,
-		app.AbsoluteTime{Time: ts, Interval: uint32(interval.Milliseconds())})}, hs...)...)
+		app.AbsoluteTime{Time: ts, Interval: ms32(interval)})}, hs...)...)
 }
 
 func TestFreezeAtTime(t *testing.T) {
@@ -635,3 +636,6 @@ func TestFrozenCounterTimes(t *testing.T) {
 		})
 	}
 }
+
+// ms32 is d in milliseconds as a uint32 field, from 0 to math.MaxUint32.
+func ms32(d time.Duration) uint32 { return uint32(min(max(d.Milliseconds(), 0), math.MaxUint32)) }

@@ -491,7 +491,7 @@ func (o *keyChangeOutstation) answer(f *app.Fragment, raw []byte, send func(*app
 			o.badRequest.Store(true)
 		}
 		o.ksq++
-		st := app.AuthSessionKeyStatus{KSQ: o.ksq, User: uint16(o.user.Load()), KeyWrap: app.KeyWrap(o.keyWrap.Load()), Status: app.KeyStatusNotInit, Challenge: []byte{1, 2, 3, 4}}
+		st := app.AuthSessionKeyStatus{KSQ: o.ksq, User: uint16(min(o.user.Load(), math.MaxUint16)), KeyWrap: app.KeyWrap(min(o.keyWrap.Load(), math.MaxUint8)), Status: app.KeyStatusNotInit, Challenge: []byte{1, 2, 3, 4}}
 		if o.monitoring != nil {
 			st.Status, st.MAC = app.KeyStatusOK, app.MACHMACSHA256Trunc16
 		}
@@ -838,7 +838,7 @@ func TestSpec7_4_1_6_AggressiveOverRequestLimit(t *testing.T) {
 	if got := rec.aggressive(app.FuncDirectOperate); len(got) != 3 || got[0] || got[1] || !got[2] {
 		t.Fatalf("aggressive mode per request: %v, want [false false true]", got)
 	}
-	if n := executed.Load(); n != int32(len(big)+2) {
+	if n := executed.Load(); int(n) != len(big)+2 {
 		t.Fatalf("%d controls executed, want %d", n, len(big)+2)
 	}
 	if s := c.SecurityStatistics(); s[secauth.StatAuthenticationFailures] != 0 {

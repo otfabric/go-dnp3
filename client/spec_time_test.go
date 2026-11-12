@@ -5,8 +5,10 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"slices"
 	"sync"
@@ -30,8 +32,8 @@ func writtenTime(f *app.Fragment) (time.Time, app.GroupVariation, bool) {
 // delayResponse is the response to DELAY_MEASURE with a fine time delay
 // object (g52v2) of d.
 func delayResponse(seq uint8, iin app.IIN, d time.Duration) []byte {
-	ms := uint16(d / time.Millisecond)
-	return frag(app.SingleControl(seq), app.FuncResponse, iin, []byte{0x34, 0x02, 0x07, 0x01, byte(ms), byte(ms >> 8)})
+	ms := uint16(min(max(d.Milliseconds(), 0), math.MaxUint16))
+	return frag(app.SingleControl(seq), app.FuncResponse, iin, binary.LittleEndian.AppendUint16([]byte{0x34, 0x02, 0x07, 0x01}, ms))
 }
 
 // timeAnswer answers the time synchronization requests as an outstation

@@ -4,6 +4,8 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
+	"math"
 	"net"
 	"sync"
 	"testing"
@@ -184,7 +186,7 @@ func specDial(t *testing.T, o *specOutstation, opts ...Option) *Client {
 // frag encodes a response fragment with the given control, function, IIN
 // and the octets of its objects.
 func frag(c app.Control, fc app.FunctionCode, iin app.IIN, objects ...[]byte) []byte {
-	b := []byte{c.Byte(), byte(fc), byte(iin), byte(iin >> 8)}
+	b := binary.LittleEndian.AppendUint16([]byte{c.Byte(), byte(fc)}, uint16(iin))
 	for _, o := range objects {
 		b = append(b, o...)
 	}
@@ -232,3 +234,6 @@ func (m *frameMetrics) userData() map[app.FunctionCode][]link.Function {
 	}
 	return out
 }
+
+// len32 is the length n as a uint32 field, at most math.MaxUint32.
+func len32(n int) uint32 { return uint32(min(uint64(max(n, 0)), math.MaxUint32)) }
