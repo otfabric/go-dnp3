@@ -19,10 +19,9 @@ We will acknowledge your report within 48 hours and aim to provide a fix or miti
 
 | Version | Supported |
 |---------|-----------|
-| 1.12.x | Yes |
-| 1.11.x | Yes, until 1.12.0 is released |
-| 1.4.x – 1.10.x | No: upgrade to 1.12.x |
-| 1.0.x – 1.3.x | No: upgrade to 1.12.x. These versions crash the outstation on a malformed READ of g70v5 that any master able to reach it can send (fixed in v1.4.0) |
+| 1.13.x | Yes |
+| 1.4.x – 1.12.x | No: upgrade to 1.13.x |
+| 1.0.x – 1.3.x | No: upgrade to 1.13.x. These versions crash the outstation on a malformed READ of g70v5 that any master able to reach it can send (fixed in v1.4.0) |
 | 0.x | No |
 
 ## Security Considerations
