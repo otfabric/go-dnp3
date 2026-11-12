@@ -70,7 +70,7 @@ The client (`client.WithDialer`, `client.UDPWithDialer`) and the outstation's di
 
 ### Static analysis
 
-golangci-lint runs gosec on every push and pull request (`make lint-ci`, [`.golangci.yml`](.golangci.yml)), and the findings are fixed in code: no `//nolint` or `#nosec`. One finding is excluded, by a rule scoped to its file and recorded in [`.otfabric/exceptions.yaml`](.otfabric/exceptions.yaml): G505, the `crypto/sha1` import above. Jitter of retries and redials draws from `crypto/rand`. A clean gosec run is not a proof that no weakness is left.
+Gosec and Opengrep scans run on a maintainer's machine before each release, with `make sast REPO=go-dnp3` in otfabric/engineering ([ADR-0011](https://github.com/otfabric/engineering/blob/main/docs/adr/0011-shared-sast.md)), never in a GitHub workflow, so that a public CI log does not publish a finding before it is fixed. Gosec findings are fixed in code: no `//nolint` or `#nosec`. The one accepted finding is G505, the `crypto/sha1` import above, which IEEE 1815-2012 7.6.1.1.1 requires; it is recorded in the organisation's private triage, not in this repository. Jitter of retries and redials draws from `crypto/rand`. A clean scan is not a proof that no weakness is left.
 
 ### Resource Limits
 

@@ -9,7 +9,8 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 | Tier | Command | Needs | Runs in CI |
 |---|---|---|---|
 | Unit and component tests, with the race detector | `make test` | Go | `CI`, Go 1.26 and 1.27, on every push and pull request |
-| Static analysis: staticcheck, and golangci-lint with gosec ([`.golangci.yml`](.golangci.yml)) | `make lint`, `make lint-ci` | Go, the linters | `CI` (golangci-lint) |
+| Static analysis: staticcheck and golangci-lint ([`.golangci.yml`](.golangci.yml)) | `make lint`, `make lint-ci` | Go, the linters | `CI` (golangci-lint) |
+| SAST: Gosec and Opengrep, findings fixed in code ([ADR-0011](https://github.com/otfabric/engineering/blob/main/docs/adr/0011-shared-sast.md)) | `make sast REPO=go-dnp3` in otfabric/engineering | the engineering repository | no: on a maintainer's machine before each release |
 | End-to-end: go-dnp3's master against its outstation over loopback, including chaos and stress (`e2e/`) | `make e2e` | Go | part of `make test` |
 | Coverage gate | `make coverage-check` | Go | `CI` (`coverage-min: "90"`) |
 | Per-package coverage floor | `make coverage-pkg-check` | Go | `CI` (`Per-package coverage`) |

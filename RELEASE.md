@@ -9,7 +9,7 @@
 
 `client.WithDialer` now follows otfabric engineering policy 1.5 (rule API-R03) in full: nil keeps the default dialer, and the dialer's context carries the 10 s dial timeout, as on the server. This changes the behaviour of an exported function, which the maintainer accepted on v1 to follow the policy; no signature changes. No protocol behaviour changes.
 
-golangci-lint now runs gosec, and its 93 findings are fixed in code, without suppressions; the one exclusion is the `crypto/sha1` import that IEEE 1815-2012 7.6.1.1.1 requires. The retry and redial jitter draws from `crypto/rand`.
+The 93 findings of a gosec scan are fixed in code, without suppressions; the one accepted finding is the `crypto/sha1` import that IEEE 1815-2012 7.6.1.1.1 requires. The retry and redial jitter draws from `crypto/rand`.
 
 ## Upgrading
 
@@ -26,7 +26,7 @@ golangci-lint now runs gosec, and its 93 findings are fixed in code, without sup
 
 ### Static analysis
 
-- golangci-lint runs gosec (`.golangci.yml`, `make lint-ci`, CI). Its 93 findings with golangci-lint v2.15.0 are fixed in code, with no `//nolint` or `#nosec`: 66 integer conversions (G115, nearly all in tests) through types, `encoding/binary` and bounds; the slice bounds of the control echo check (`client/requests.go`, G602, not a bug) and of the session key parse (`secauth/keywrap.go`) made evident. One exclusion, scoped to `secauth/secauth.go` and G505: the `crypto/sha1` import of HMAC-SHA-1, which every device must implement and be able to disable by configuration (IEEE 1815-2012 7.6.1.1.1). It is recorded against GO-014 in `.otfabric/exceptions.yaml`, since otfabric policy 1.5 advises against gosec in golangci-lint.
+- The 93 gosec findings (golangci-lint v2.15.0 with gosec enabled for the scan) are fixed in code, with no `//nolint` or `#nosec`: 66 integer conversions (G115, nearly all in tests) through types, `encoding/binary` and bounds; the slice bounds of the control echo check (`client/requests.go`, G602, not a bug) and of the session key parse (`secauth/keywrap.go`) made evident. Gosec stays out of golangci-lint and CI (otfabric policy GO-014): a maintainer scans before each release with `make sast REPO=go-dnp3` in otfabric/engineering (ADR-0011). The one accepted finding, G505 for the `crypto/sha1` import of HMAC-SHA-1, which every device must implement and be able to disable by configuration (IEEE 1815-2012 7.6.1.1.1), is recorded in the organisation's private triage, not in this repository.
 - SECURITY.md says how to turn HMAC-SHA-1 off (`secauth.User.MAC`, `client.WithChallengeMACs`).
 
 ### Tests
