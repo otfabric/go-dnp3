@@ -70,7 +70,7 @@ The client (`client.WithDialer`, `client.UDPWithDialer`) and the outstation's di
 
 ### Static analysis
 
-Gosec and Opengrep scans run on a maintainer's machine before each release, with `make sast REPO=go-dnp3` in otfabric/engineering ([ADR-0011](https://github.com/otfabric/engineering/blob/main/docs/adr/0011-shared-sast.md)), never in a GitHub workflow, so that a public CI log does not publish a finding before it is fixed. Gosec findings are fixed in code: no `//nolint` or `#nosec`. The one accepted finding is G505, the `crypto/sha1` import above, which IEEE 1815-2012 7.6.1.1.1 requires; it is recorded in the organisation's private triage, not in this repository. Jitter of retries and redials draws from `crypto/rand`. A clean scan is not a proof that no weakness is left.
+Gosec and Opengrep scans run on a maintainer's machine before each release, with `cd ../engineering && make sast REPO=go-dnp3`, from a checkout of otfabric/engineering beside this one ([ADR-0011](https://github.com/otfabric/engineering/blob/main/docs/adr/0011-shared-sast.md)), never in a GitHub workflow, so that a public CI log does not publish a finding before it is fixed. Gosec findings are fixed in code: no `//nolint` or `#nosec`. The one accepted finding is G505, the `crypto/sha1` import above, which IEEE 1815-2012 7.6.1.1.1 requires; it is recorded in the organisation's private triage, not in this repository. Jitter of retries and redials draws from `crypto/rand`. A clean scan is not a proof that no weakness is left.
 
 ### Resource Limits
 
