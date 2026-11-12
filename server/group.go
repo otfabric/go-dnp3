@@ -113,20 +113,25 @@ func (g *Group) Serve(l net.Listener) error {
 			_ = c.Close()
 			continue
 		}
-		if !g.spawn(func() {
-			defer g.release()
-			if err := handshake(c); err != nil {
-				g.servers[0].log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
-			} else {
-				_ = g.ServeConn(c, c.RemoteAddr())
-			}
-		}) {
+		if !g.spawn(func() { g.serveAccepted(c, handshake) }) {
 			// Accepted as Close closed the listener.
 			g.release()
 			_ = c.Close()
 			return nil
 		}
 	}
+}
+
+// serveAccepted runs in the goroutine of one accepted connection: the
+// handshake, then ServeConn; it releases the connection's slot (acquire)
+// when the connection ends.
+func (g *Group) serveAccepted(c net.Conn, handshake func(net.Conn) error) {
+	defer g.release()
+	if err := handshake(c); err != nil {
+		g.servers[0].log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
+		return
+	}
+	_ = g.ServeConn(c, c.RemoteAddr())
 }
 
 // spawn is Server.spawn for the group: f runs in a goroutine that Close
