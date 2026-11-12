@@ -30,8 +30,7 @@ type Option func(*options) error
 // wrapped in dnp3.ErrConnectFailed, so errors.Is finds the dialer's own
 // sentinels. It must honour ctx: the context of Connect (or Dial), with
 // the caller's deadline and cancel, and on a reconnect one that ends with
-// the attempt (at least 10 seconds) or Close. The dial timeout is the
-// dialer's own; the default's is 10 seconds.
+// the attempt or Close; ctx also carries the dial timeout of 10 seconds.
 type Dialer interface {
 	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 }
@@ -257,11 +256,11 @@ func WithMetrics(m dnp3.Metrics) Option {
 // which sees the resolved IP). A StreamOpener of WithStream opens its own
 // stream and does not use it: UDP and UDPFrom dial with a net.Dialer,
 // UDPWithDialer takes a dialer. The default is a net.Dialer with a 10
-// second timeout; nil is refused with dnp3.ErrInvalidOption.
+// second timeout; nil keeps it.
 func WithDialer(d Dialer) Option {
 	return func(o *options) error {
 		if d == nil {
-			return invalidOption("nil dialer")
+			d = &net.Dialer{Timeout: dialTimeout}
 		}
 		o.dialer = d
 		return nil

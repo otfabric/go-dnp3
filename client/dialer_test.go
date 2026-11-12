@@ -69,6 +69,56 @@ func TestDialerReceives(t *testing.T) {
 	}
 }
 
+// TestDialerDialTimeout: without a deadline of the caller, the dialer's
+// context carries the dial timeout of 10 seconds.
+func TestDialerDialTimeout(t *testing.T) {
+	_, addr := outstation(t)
+	var (
+		mu       sync.Mutex
+		deadline time.Time
+		hasDL    bool
+	)
+	var nd net.Dialer
+	d := dialerFunc(func(ctx context.Context, n, a string) (net.Conn, error) {
+		mu.Lock()
+		deadline, hasDL = ctx.Deadline()
+		mu.Unlock()
+		return nd.DialContext(ctx, n, a)
+	})
+	c, err := New(addr, WithDialer(d))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	before := time.Now()
+	if err := c.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !hasDL || deadline.Before(before.Add(dialTimeout)) || deadline.After(time.Now().Add(dialTimeout)) {
+		t.Errorf("dialer deadline %v (%v), want %v after the dial", deadline, hasDL, dialTimeout)
+	}
+}
+
+// TestDialerNilKeepsDefault: WithDialer(nil) keeps the default
+// net.Dialer (otfabric policy 1.5, API-R03).
+func TestDialerNilKeepsDefault(t *testing.T) {
+	_, addr := outstation(t)
+	c, err := New(addr, WithDialer(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	nd, ok := c.opts.dialer.(*net.Dialer)
+	if !ok || nd.Timeout != dialTimeout {
+		t.Fatalf("dialer %T %+v, want a net.Dialer with a %v timeout", c.opts.dialer, c.opts.dialer, dialTimeout)
+	}
+	if err := c.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestDialerCancel: a dialer that honours ctx ends when the caller
 // cancels Connect.
 func TestDialerCancel(t *testing.T) {
