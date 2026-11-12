@@ -66,7 +66,7 @@ The client (`client.WithDialer`, `client.UDPWithDialer`) and the outstation's di
 - **Watch the security statistics.** The outstation counts authentication failures, refused key changes, reply timeouts and more per master (g121, readable by any master); `StatisticsThreshold` and `StatisticsClass` make them events (g122) a SCADA system can alarm on
 - **Only the control direction is authenticated.** Responses and unsolicited data from the outstation are not authenticated; use TLS to protect them
 - **Non-critical requests (READ) are not challenged.** They disclose data without authentication; use TLS where that matters
-- Secure Authentication is verified against DSC go-dnp3 and cB-Sigma dnp3 in both roles (dnp3-interop v0.12.0; file authentication since contract 1.3); aggressive mode only between go-dnp3's ends, as no reference implements it (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
+- Secure Authentication is verified against DSC go-dnp3 and cB-Sigma dnp3 in both roles (dnp3-interop v0.12.1; file authentication since contract 1.3); aggressive mode only between go-dnp3's ends, as no reference implements it (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
 
 ### Static analysis
 

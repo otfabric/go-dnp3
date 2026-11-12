@@ -313,8 +313,8 @@ request row of Tables 14-2 to 14-4 is answered without an error IIN:
 | DNP Users Group IED certification procedures (dnp3c 0.2.0): 3.1 rev 1 at subset levels 2 and 3, 2.7 at level 2 | ✅ `make conformance`, against the [test outstation](internal/cmd/conformance) with dnp3-interop's dnp3c runner; not a certification |
 | Master against outstation, every function | ✅ |
 | Concurrency, many masters, reconnects, cancellation, `-race` | ✅ |
-| As master against opendnp3 3.1.2, DSC go-dnp3 v0.8.2, dnp3py 0.6.0 and cB-Sigma dnp3 v0.3.1 outstations | ✅ `make interop`, dnp3-interop v0.12.0 |
-| As outstation against the same masters and nfm-dnp3 1.0.1 | ✅ `make interop`, dnp3-interop v0.12.0; nfm-dnp3 with the exceptions under [Interop coverage](#interop-coverage) |
+| As master against opendnp3 3.1.2, DSC go-dnp3 v0.8.2, dnp3py 0.6.0 and cB-Sigma dnp3 v0.3.1 outstations | ✅ `make interop`, dnp3-interop v0.12.1 |
+| As outstation against the same masters and nfm-dnp3 1.0.1 | ✅ `make interop`, dnp3-interop v0.12.1; nfm-dnp3 with the exceptions under [Interop coverage](#interop-coverage) |
 | TLS with mutual authentication, both roles | ✅ against opendnp3, DSC go-dnp3 and cB-Sigma dnp3, including a refused certificate of another CA |
 | UDP, both roles | ✅ against opendnp3, DSC go-dnp3 and cB-Sigma dnp3; the master against opendnp3's outstation from a container on its network, as that outstation answers one fixed peer |
 | Serial, both roles | ✅ against opendnp3, DSC go-dnp3 and cB-Sigma dnp3 over a pseudo-terminal bridged to TCP |
