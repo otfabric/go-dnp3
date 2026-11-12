@@ -87,11 +87,10 @@ defines no coding for it.
   `client.UDPWithDialer(d, addr)`, or a `StreamOpener` of your own, to
   supply one. `client.Accept`, `WithDualEndpoint`'s listener and the
   server's listeners and UDP sockets accept and do not dial. The client's
-  dialer gets the context of `Connect` (or of the reconnect attempt), not
-  a dial timeout of the library: a custom dialer sets its own, as the
-  default's 10 s. `client.WithDialer(nil)` is refused with
-  `dnp3.ErrInvalidOption`, as since v1.0.0; `server.WithDialer(nil)` keeps
-  the default.
+  dialer gets the context of `Connect` (or of the reconnect attempt) with
+  the 10 s dial timeout, as the server's does. `client.WithDialer(nil)`
+  and `server.WithDialer(nil)` keep the default (since v1.13.0; the
+  client refused nil before).
 
 - **UDP outstation**: one socket serves one master at a time; a master
   behind another address takes it over when it sends. `WithMasterIPs` and

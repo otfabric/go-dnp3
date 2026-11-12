@@ -1,5 +1,32 @@
 # go-dnp3 Releases
 
+## v1.13.0
+
+**Date:** 2026-11-12
+**Previous release:** v1.12.1
+
+## Summary
+
+`client.WithDialer` now follows otfabric engineering policy 1.5 (rule API-R03) in full: nil keeps the default dialer, and the dialer's context carries the 10 s dial timeout, as on the server. This changes the behaviour of an exported function, which the maintainer accepted on v1 to follow the policy; no signature changes. No protocol behaviour changes.
+
+## Upgrading
+
+- **`client.WithDialer(nil)`** no longer fails `New` with `dnp3.ErrInvalidOption`; it keeps the default, a `net.Dialer` with a 10 s timeout, as `server.WithDialer(nil)` does. Code that relied on the error must check for a nil dialer itself.
+- **A custom client dialer** now gets a context that ends 10 s after the dial starts, if the caller's ends later. A dialer that needs longer than 10 s to connect now fails with `dnp3.ErrConnectFailed`, as the default dialer does.
+
+## Changes
+
+### Changed
+
+- `client.WithDialer(nil)` keeps the default dialer (API-R03: "nil keeps the default unchanged"); it was refused since v1.0.0.
+- The client dials through every dialer with a context that carries the 10 s dial timeout besides the caller's deadline and cancel (API-R03), for `Connect`, the reconnects, the dual end point and `UDPWithDialer`.
+
+### Tests
+
+- `TestDialerNilKeepsDefault` and `TestDialerDialTimeout` (client).
+
+---
+
 ## v1.12.1
 
 **Date:** 2026-11-12

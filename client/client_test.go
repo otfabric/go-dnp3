@@ -86,7 +86,7 @@ func silent(t *testing.T) string {
 
 func TestOptionValidation(t *testing.T) {
 	bad := []Option{
-		WithAddresses(0xFFFF, 10), WithDialer(nil), WithStream(nil),
+		WithAddresses(0xFFFF, 10), WithStream(nil),
 		WithReconnect(Reconnect{MinDelay: time.Second, MaxDelay: time.Millisecond}),
 		WithRetry(Retry{}), WithResponseTimeout(0), WithMaxFragment(10),
 		WithStartup(Startup{EnableUnsolicited: []int{4}}), WithPoll(Poll{}), WithQueueLimit(0),
