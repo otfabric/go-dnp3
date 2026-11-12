@@ -8,6 +8,22 @@ import (
 	"time"
 )
 
+// lingeringClientGoroutines returns the client goroutines still running a
+// moment after Close: one that called wg.Done as it returned may still be
+// on its last line when Wait lets Close return, so the stacks are read
+// until they are gone or a second has passed. A goroutine that Close did
+// not wait for, started after it, keeps running and is reported.
+func lingeringClientGoroutines() []string {
+	deadline := time.Now().Add(time.Second)
+	for {
+		left := clientGoroutines()
+		if len(left) == 0 || time.Now().After(deadline) {
+			return left
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // clientGoroutines returns the stacks of goroutines that Close waits for:
 // a channel's watch, the reconnect loop and the dual end point's accept.
 func clientGoroutines() []string {
@@ -51,11 +67,11 @@ func TestCloseDuringConnectLeavesNoGoroutine(t *testing.T) {
 		if err := c.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if left := clientGoroutines(); len(left) > 0 {
+		if left := lingeringClientGoroutines(); len(left) > 0 {
 			t.Fatalf("close %d: a goroutine runs after Close returned:\n%s", i, strings.Join(left, "\n\n"))
 		}
 		<-done
-		if left := clientGoroutines(); len(left) > 0 {
+		if left := lingeringClientGoroutines(); len(left) > 0 {
 			t.Fatalf("close %d: a goroutine runs after Close and Connect returned:\n%s", i, strings.Join(left, "\n\n"))
 		}
 	}

@@ -7,7 +7,7 @@
 
 ## Summary
 
-Caller-supplied dialers on every path that dials (otfabric engineering policy 1.5, rule API-R03), so that an application can apply an address allowlist against the resolved IP, dial through a proxy or a jump host, bind a source address, or test over an in-memory connection. The outstation's dial-out (`DialAndServe`) takes a dialer and a reconnect jitter; the client's UDP gets a dialer-taking variant; both ends hold dialers to the contract of `net.Dialer`. Exported API is added, none removed or changed. No protocol behaviour changes.
+Caller-supplied dialers on every path that dials (otfabric engineering policy 1.5, rule API-R03), so that an application can apply an address allowlist against the resolved IP, dial through a proxy or a jump host, bind a source address, or test over an in-memory connection. The outstation's dial-out (`DialAndServe`) takes a dialer and a reconnect jitter; the client's UDP gets a dialer-taking variant; both ends hold dialers to the contract of `net.Dialer`. Exported API is added, none removed or changed. No protocol behaviour changes. It also fixes the build for 32-bit platforms (linux/arm, linux/386), which v1.11.0 broke.
 
 ## Upgrading
 
@@ -15,6 +15,10 @@ Caller-supplied dialers on every path that dials (otfabric engineering policy 1.
 - A dialer of `client.WithDialer` that returns neither a connection nor an error now fails `Connect` with `dnp3.ErrConnectFailed`; it made `Connect` panic before; a connection returned together with an error is closed.
 
 ## Changes
+
+### Fixed
+
+- The `client` package compiles again on 32-bit platforms (linux/arm, linux/386; v1.11.0 does not): the error message of `WithKeyChangeCount` passed `MaxKeyChangeCount` (`1 << 31`, an untyped constant) as an `int`. `make cross` now covers linux/386 and type-checks the tests on every platform, `make check` runs it, and CI has a Cross-compile job.
 
 ### Master
 
