@@ -97,6 +97,29 @@ defines no coding for it.
   `ServeUDPFixed` limit who may.
 - **Multi-fragment requests** are not reassembled by the outstation: a
   request is one fragment.
+- **A READ plans at most four reads of the database**: each header is
+  charged with the points it selects (every point of the type for all
+  objects, the points within a range, the indexes of a list), against a
+  budget of four times the points of the database plus 1024. The headers
+  beyond it are answered with IIN2.2.
+- **Pattern controls count per point**: `server.WithMaxControls` counts
+  every point a pattern control block (g12v2 with its g12v3 mask) operates.
+  A block whose mask names more than the limit operates those within it
+  and is answered with TOO_MANY_OBJS.
+- **A file status per g70v5 block**: the outstation answers a WRITE of
+  several file blocks with their g70v6 statuses over as many fragments as
+  `server.WithMaxFragment` needs.
+- **The master's handler sets its pace**: the `client.Handler` runs on a
+  goroutine of its own. While it is 64 fragments behind, unsolicited
+  responses are neither processed nor confirmed, so that the outstation
+  repeats them, and the automatic polls wait; the application's own
+  requests go on.
+- **Directory listings up to 16 MiB**: `client.ListDirectory` refuses a
+  longer listing with `dnp3.ErrProtocol` and aborts the transfer.
+- **Close from a callback**: `client.Client.Close` waits for the `Handler`
+  and the state handler, and `server.Server.Close` (or `Group.Close`) for
+  the association goroutine a `server.Handler` runs on. A callback that
+  wants its station closed calls `go c.Close()`.
 - **Frames for another address are dropped**: a master hears only frames
   sent to its own address (`client.WithAddresses`). An outstation whose
   unsolicited responses go to a configured destination address (some

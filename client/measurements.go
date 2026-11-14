@@ -3,6 +3,7 @@
 package client
 
 import (
+	"runtime/debug"
 	"sync"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -46,7 +47,14 @@ type ResponseInfo struct {
 // Handler receives measurements. It is called for every fragment of every
 // response and unsolicited response, in the order they arrived, on a
 // goroutine of the client's own: a slow handler does not delay the
-// protocol, and a handler may issue requests.
+// protocol, and a handler may issue requests. A handler that falls far
+// behind (64 fragments) holds back what the outstation can push: while
+// it does, unsolicited responses are neither processed nor confirmed, so
+// that the outstation repeats them, and the client's automatic polls wait.
+// A panic in the handler is recovered and logged; the client goes on.
+//
+// A handler must not call [Client.Close] itself: Close waits for the
+// handler to return. Call it from another goroutine (go c.Close()).
 type Handler interface {
 	HandleMeasurements(info ResponseInfo, ms []Measurement)
 }
@@ -122,6 +130,15 @@ func withOnline(v app.Value) app.Value {
 	return v
 }
 
+// maxNotices is how many notices the dispatcher holds before it is full:
+// as many fragments as a session's receive queue holds (internal/channel,
+// 64). While it is full, unsolicited responses are not taken (the
+// outstation repeats them) and the automatic polls wait: what a peer can
+// make the client hold for a slow handler is bounded. The responses to the
+// application's own requests are always queued; their Result holds them
+// too.
+const maxNotices = 64
+
 // dispatcher delivers responses to the Handler and state changes to the
 // state handler, one at a time and in order, on its own goroutine.
 type dispatcher struct {
@@ -129,6 +146,11 @@ type dispatcher struct {
 	mu     sync.Mutex
 	queue  []notice
 	signal chan struct{}
+	// held counts the notices pushed and not delivered yet: those queued
+	// and those of the batch being delivered.
+	held int
+	// room is signalled when a notice has been delivered.
+	room chan struct{}
 }
 
 type notice struct {
@@ -140,12 +162,20 @@ type notice struct {
 }
 
 func newDispatcher(c *Client) *dispatcher {
-	return &dispatcher{c: c, signal: make(chan struct{}, 1)}
+	return &dispatcher{c: c, signal: make(chan struct{}, 1), room: make(chan struct{}, 1)}
+}
+
+// full reports whether the dispatcher holds maxNotices notices or more.
+func (d *dispatcher) full() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.held >= maxNotices
 }
 
 func (d *dispatcher) push(n notice) {
 	d.mu.Lock()
 	d.queue = append(d.queue, n)
+	d.held++
 	d.mu.Unlock()
 	select {
 	case d.signal <- struct{}{}:
@@ -191,7 +221,21 @@ func (d *dispatcher) run() {
 	}
 }
 
+// deliver hands one notice to the application, recovering from a panic in
+// its handler: the notice is lost, the dispatcher goes on.
 func (d *dispatcher) deliver(n notice) {
+	defer func() {
+		if r := recover(); r != nil {
+			d.c.log.Error("panic while delivering", "panic", r, "stack", string(debug.Stack()))
+		}
+		d.mu.Lock()
+		d.held--
+		d.mu.Unlock()
+		select {
+		case d.room <- struct{}{}:
+		default:
+		}
+	}()
 	o := d.c.opts
 	if n.isState {
 		if o.stateHandler != nil {

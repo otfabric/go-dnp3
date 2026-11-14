@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -211,7 +212,8 @@ func WithDialer(d Dialer) Option {
 }
 
 // WithMaxConnections limits concurrent connections; further ones are
-// closed at once. The default is 16.
+// closed at once. An accepted connection counts from the moment it is
+// accepted, also during its TLS handshake. The default is 16.
 func WithMaxConnections(n int) Option {
 	return func(o *options) error {
 		if n < 1 {
@@ -261,7 +263,10 @@ func WithSelectTimeout(d time.Duration) Option {
 }
 
 // WithMaxControls sets how many controls one request may carry; the
-// controls beyond it are answered with TOO_MANY_OBJS. The default is 16.
+// controls beyond it are answered with TOO_MANY_OBJS. Every point a
+// pattern control block (g12v2 with its mask g12v3) operates counts as a
+// control: the block carries out those within the limit and is answered
+// with TOO_MANY_OBJS when its mask names more. The default is 16.
 func WithMaxControls(n int) Option {
 	return func(o *options) error {
 		if n < 1 {
@@ -350,7 +355,7 @@ func WithDeadbandIntegerOnly(enabled bool) Option {
 // outstation reports, keyed by variation, for example
 // app.AttrManufacturerName. The list of attribute variations (g0v255) is
 // built from them; an attribute is writable when the [Handler] implements
-// [WriteHandler].
+// [WriteHandler]. The attributes' data is copied.
 func WithAttributes(attrs map[uint8]app.Attribute) Option {
 	return func(o *options) error { return o.addAttributeSet(0, attrs, nil, true) }
 }
@@ -360,7 +365,7 @@ func WithAttributes(attrs map[uint8]app.Attribute) Option {
 // variation. The variations in writable can be written by a master, with
 // a value of the same type: the outstation stores it and, when the
 // [Handler] implements [AttributeSetWriteHandler], tells it first. Other
-// writes are refused.
+// writes are refused. The attributes' data is copied.
 func WithAttributeSet(set uint16, attrs map[uint8]app.Attribute, writable ...uint8) Option {
 	return func(o *options) error {
 		for _, v := range writable {
@@ -378,6 +383,7 @@ func (o *options) addAttributeSet(set uint16, attrs map[uint8]app.Attribute, wri
 		if v == app.AttrAllAttributes || v == app.AttrListOfVariations || v == 0 {
 			return invalidOption("attribute variation %d", v)
 		}
+		a.Data = bytes.Clone(a.Data) // the set keeps its own data
 		as.attrs[v] = a
 	}
 	for _, v := range writable {

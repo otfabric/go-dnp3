@@ -35,10 +35,10 @@ make check
 # Run the tests with the race detector
 make test
 
-# Run the codec and outstation fuzz targets (FUZZTIME=30s by default)
+# Run every fuzz target (FUZZTIME=30s by default)
 make fuzz
 
-# Run the codec benchmarks
+# Run the benchmarks
 make bench
 
 # Regenerate the object table, Measurements' points and OBJECTS.md from app/catalog.json

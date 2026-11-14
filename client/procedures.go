@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -155,7 +156,19 @@ func unsContradicts(f *app.Fragment) bool {
 // is not processed again, unless it reports a restart (Table 6-3 row 8);
 // one with the same sequence number and other octets is processed and,
 // with WithAutoIntegrity, followed by an integrity poll (Table 6-3 row 5).
+//
+// While the handler's queue is full (maxNotices), an unsolicited response
+// is neither processed nor confirmed, as one lost on the line: the
+// outstation keeps its events and repeats it.
 func (c *Client) receiveUnsolicited(sess *channel.Session, f *app.Fragment, data []byte) {
+	if c.opts.handler != nil && c.events.full() {
+		err := fmt.Errorf("%w: handler queue full (%d fragments), unsolicited response seq %d not taken", dnp3.ErrProtocol, maxNotices, f.Control.Seq)
+		c.log.Warn("unsolicited response dropped", "error", err)
+		if m := c.opts.metrics; m != nil {
+			m.OnDecodeError(c.remoteAddr(), err)
+		}
+		return
+	}
 	if f.Control.CON {
 		if c.opts.noUnsConfirm {
 			c.log.Debug("unsolicited response not confirmed (WithUnsolicitedConfirm)", "seq", f.Control.Seq)
@@ -186,7 +199,7 @@ func (c *Client) receiveUnsolicited(sess *channel.Session, f *app.Fragment, data
 // before it runs.
 func (c *Client) enqueueIntegrity() {
 	queued := time.Now()
-	c.enqueue(task{name: "integrity", run: func(ctx context.Context) error {
+	c.enqueue(task{name: "integrity", reads: true, run: func(ctx context.Context) error {
 		// An integrity poll that completed since, by the startup sequence,
 		// the restart procedure or the application, already did what this
 		// one would.

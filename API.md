@@ -68,7 +68,7 @@ The master for one outstation.
 | `New(addr, opts...)` | A client; not connected yet. The port defaults to 20000 |
 | `Dial(ctx, addr, opts...)` | `New` and `Connect` |
 | `(*Client).Connect(ctx)` | Open the channel and run the startup sequence; when the sequence fails, the channel is closed and the client is disconnected |
-| `(*Client).Close()` | Close, stop reconnecting and the tasks; waits for the client's goroutines |
+| `(*Client).Close()` | Close, stop reconnecting and the tasks; waits for the client's goroutines, so the `Handler` and the state handler call `go c.Close()` instead |
 | `(*Client).State()`, `Addr()`, `Outstation()` | Accessors |
 | `(*Client).SecurityStatistics()` | The master's security statistics, indexed by `secauth.Statistic` (session key changes, challenges answered, errors received, ...); all zero without secure authentication |
 
@@ -81,7 +81,7 @@ The master for one outstation.
 | `WithStateHandler(func(State, error))` | none | Channel state changes |
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer of `Connect`, the reconnects and the dual end point's own dial (`DialContext(ctx, "tcp", addr)`, the address given to `New`); the TLS handshake that follows runs over its connection and is bounded to 10 s. A connection exactly when the error is nil: neither fails the dial, a connection with an error is closed; the error wraps `dnp3.ErrConnectFailed`. It must honour ctx (Connect's, or the reconnect attempt's), which also carries the 10 s dial timeout; nil keeps the default. `WithStream` openers do not use it |
-| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`, `UDPFrom(local, remote)` from a fixed local port, or `UDPWithDialer(Dialer, addr)` with a caller's dialer, called with network `"udp"`), an outstation that connects (`Accept(net.Listener)`, listening only), a pipe |
+| `WithStream(StreamOpener)` | TCP | Any byte stream: serial, UDP (`UDP(addr)`, `UDPFrom(local, remote)` from a fixed local port, or `UDPWithDialer(Dialer, addr)` with a caller's dialer, called with network `"udp"`), an outstation that connects (`Accept(net.Listener)`, listening only, with one Accept in progress that a later attempt takes over; the client does not close the listener), a pipe |
 | `WithDualEndpoint(net.Listener, allow)` | off | The TCP dual end point (13.2.3.1.3): dial the outstation and take the connections it establishes on the listener, one at a time, the master's own first; `allow` validates the outstation's address. `Close` closes the listener; excludes `WithStream` |
 | `WithTLS(*tls.Config)` | off | TLS |
 | `WithReconnect(Reconnect)` | off | Reconnect with exponential backoff (`MinDelay`, `MaxDelay`); `Jitter` (0 to 1, default 0) draws each delay d from [(1-Jitter)·d, d] |
@@ -137,7 +137,7 @@ Every request takes a `context.Context` and returns a `*Result` (its fields
 | `ReadAttributeSet(ctx, set, variation)`, `WriteAttributeSet(ctx, set, variation, a)` | The same for another set |
 | `Write(ctx, headers...)` | WRITE |
 | `Request(ctx, fc, headers...)` | Any function code |
-| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`, `Created`) |
+| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`, `Created`); a directory listing longer than 16 MiB is refused with `dnp3.ErrProtocol` |
 | `Broadcast(ctx, dest, fc, headers...)` | A request to a broadcast address (`link.BroadcastNoConfirm` 0xFFFD, `BroadcastConfirm` 0xFFFE, `BroadcastOptionalConfirm` 0xFFFF); no answer, IIN1.0 in the next response |
 
 Commands: `Command{Index, Value, GV}`, built with `CROB(index, op, on, off)`
@@ -154,6 +154,12 @@ fragment. A measurement is indexed point data; its `Value` is one of
 `AnalogDeadband`, `AnalogCommandEvent`, `AbsoluteTime` (g50v4), `BCD`
 (g101), `UnsignedInteger` (g102), `OctetString` or `SecurityStatistic`.
 [OBJECTS.md](OBJECTS.md) lists the objects.
+
+The handler runs on a goroutine of its own, in order. While it is 64
+fragments behind, unsolicited responses are neither processed nor
+confirmed (the outstation repeats them) and the automatic polls wait; a
+panic in it is recovered and logged. It must not call `Close`: call
+`go c.Close()` there.
 
 ## Package `server`
 
@@ -179,7 +185,7 @@ The outstation.
 | `(*Server).Restart()` | Behave as after a restart |
 | `(*Server).Now()` | The outstation's clock, set by time synchronization |
 | `(*Server).CloseConnections()` | Drop the connections, keep serving |
-| `(*Server).Close()` | Stop everything; waits for the goroutines |
+| `(*Server).Close()` | Stop everything, the TLS handshakes in progress too; waits for the goroutines, so a `Handler` method calls `go srv.Close()` instead |
 
 ### Options
 
@@ -193,11 +199,11 @@ The outstation.
 | `WithLogger`, `WithMetrics` | silent | See [OBSERVABILITY.md](OBSERVABILITY.md) |
 | `WithTLS(*tls.Config)` | off | TLS for `ListenAndServe`, and the TLS client configuration of `DialAndServe` |
 | `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer of `DialAndServe` (`DialContext(ctx, "tcp", addr)`; ctx carries the 10 s dial timeout and the cancel of `DialAndServe`'s context and `Close`, and a custom dialer must honour it); with `WithTLS` the handshake runs over its connection. A connection exactly when the error is nil: neither fails the attempt, a connection with an error is closed; failed attempts are logged wrapping `dnp3.ErrConnectFailed`. nil keeps the default. `server.Dialer` has the shape of `client.Dialer` |
-| `WithMaxConnections(n)` | 16 | Concurrent connections |
+| `WithMaxConnections(n)` | 16 | Concurrent connections, counted from accept (during a TLS handshake too); a connection beyond the limit is closed |
 | `WithMaxFragment(tx, rx)` | 2048, 2048 | Largest response sent, request reassembled |
 | `WithConfirmTimeout(d)` | 5 s | Wait for an application confirmation |
 | `WithSelectTimeout(d)` | 10 s | A SELECT's validity |
-| `WithMaxControls(n)` | 16 | Controls per request; more get TOO_MANY_OBJS |
+| `WithMaxControls(n)` | 16 | Controls per request, each point of a pattern control block counted; more get TOO_MANY_OBJS |
 | `WithUnsolicited(Unsolicited)` | disabled | `Enabled`, `Classes`, `HoldTime`, `HoldCount`, `Retries`, `RetryDelay` |
 | `WithLink(Link)` | unconfirmed | As for the client. A TCP connection on which no master sends a frame within `KeepAlive` and `Timeout` is closed |
 | `WithEventLimits(map[PointType]int)` | 100 each | Events buffered per type and master |

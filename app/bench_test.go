@@ -28,18 +28,39 @@ func integrityResponse() *Fragment {
 	}}
 }
 
+// Results of the benchmarks, kept so that the work is not optimised away.
+var (
+	benchEncoded []byte
+	benchDecoded *Fragment
+)
+
 func BenchmarkEncodeResponse(b *testing.B) {
 	f := integrityResponse()
 	buf := make([]byte, 0, 2048)
+	enc, err := f.AppendEncode(buf[:0])
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.SetBytes(int64(len(enc)))
+	b.ReportAllocs()
+	b.ResetTimer()
 	for range b.N {
-		_, _ = f.AppendEncode(buf[:0])
+		benchEncoded, _ = f.AppendEncode(buf[:0])
 	}
 }
 
 func BenchmarkDecodeResponse(b *testing.B) {
-	enc, _ := integrityResponse().Encode()
+	enc, err := integrityResponse().Encode()
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := Decode(enc); err != nil {
+		b.Fatal(err)
+	}
 	b.SetBytes(int64(len(enc)))
+	b.ReportAllocs()
+	b.ResetTimer()
 	for range b.N {
-		_, _ = Decode(enc)
+		benchDecoded, _ = Decode(enc)
 	}
 }

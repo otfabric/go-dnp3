@@ -79,13 +79,14 @@ identifiers.
 | warn | `accept failed` (the listener keeps accepting after a pause) | `error` |
 | warn | `TLS handshake failed` (also when it took longer than 10 s) | `remote`, `error` |
 | warn | `fragment dropped` | `error` |
+| warn | `unsolicited response dropped` (the client's handler has 64 fragments it has not taken; the response is not confirmed, and the outstation repeats it) | `error` |
 | warn | `multi-fragment request ignored` | `control` |
 | warn | `frame with invalid FCV bit ignored` | `frame` |
 | warn | `unauthenticated critical broadcast discarded` | `function` |
 | info | `confirmed user data while the link is not reset ignored` | |
 | error | `no random challenge data`, `key status MAC` | `error` |
 | error | `response does not encode` | `fragment`, `error` |
-| error | `panic while serving a request`, `panic while receiving a fragment` (the request or fragment is lost; the association, client and process go on) | `panic`, `stack` |
+| error | `panic while serving a request`, `panic while receiving a fragment`, `panic while delivering` (the client's `Handler` or state handler; the request, fragment or notification is lost; the association, client and process go on) | `panic`, `stack` |
 | debug | `challenge answered` | `csq`, `user` |
 | debug | `frame sent`, `frame received` | `frame` |
 | debug | `request sent`, `request received`, `response sent`, `fragment received` | `fragment` |
@@ -107,7 +108,7 @@ implement only what you need.
 | `OnFrameSent(remote, frame, size)`, `OnFrameReceived` | Every link frame |
 | `OnFramingError(remote, err)` | Octets skipped or a frame discarded: start, length, CRC |
 | `OnFragmentSent(remote, fragment, size)`, `OnFragmentReceived` | Every application fragment |
-| `OnDecodeError(remote, err)` | A segment or fragment that could not be decoded, or a full receive queue |
+| `OnDecodeError(remote, err)` | A segment or fragment that could not be decoded, a full receive queue, or an unsolicited response the client did not take while its handler's queue was full |
 
 Frames and fragments passed to the callbacks must not be kept or modified.
 

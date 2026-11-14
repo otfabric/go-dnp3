@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet cross vuln test e2e coverage coverage-check coverage-pkg-check cover bench fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch conformance conformance-image print-conformance-image docs-check captures-verify captures-oracle captures-report captures-seeds
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet cross vuln test e2e coverage coverage-check coverage-pkg-check cover bench bench-smoke fuzz check clean interop test-interop generate generate-check coverpkg-check upstream-watch conformance conformance-image print-conformance-image docs-check captures-verify captures-oracle captures-report captures-seeds
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -145,24 +145,26 @@ cover: coverage ## Open coverage report in browser
 	@echo "Opening coverage report"
 	@go tool cover -html=coverage.out
 
-bench: ## Run the codec benchmarks
+bench: ## Run the benchmarks of the codecs, the outstation's READ and the master's Measurements
 	@echo "Running benchmarks"
-	@go test -count=1 -run='^$$' -bench=. -benchmem ./link ./transport ./app
+	@go test -count=1 -run='^$$' -bench=. -benchmem ./link ./transport ./app ./server ./client
+
+bench-smoke: ## Run every benchmark once, so that one that fails or no longer builds is seen
+	@echo "Running every benchmark once"
+	@go test -count=1 -run='^$$' -bench=. -benchtime=1x $(TEST_PKGS)
 
 # Duration each fuzz target runs. Override with FUZZTIME=... (e.g. FUZZTIME=5m).
 FUZZTIME ?= 30s
-fuzz: ## Run the codec and outstation fuzz targets for FUZZTIME each (default 30s)
+# The targets are discovered (go test -list) in every package of TEST_PKGS,
+# so a new one runs without being listed here.
+fuzz: ## Run every fuzz target of the library packages for FUZZTIME each (default 30s)
 	@echo "Fuzzing (FUZZTIME=$(FUZZTIME))"
-	@go test -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZTIME) ./link
-	@go test -run='^$$' -fuzz='^FuzzReader$$' -fuzztime=$(FUZZTIME) ./link
-	@go test -run='^$$' -fuzz='^FuzzReassembler$$' -fuzztime=$(FUZZTIME) ./transport
-	@go test -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZTIME) ./app
-	@go test -run='^$$' -fuzz='^FuzzDecodeFileDescriptors$$' -fuzztime=$(FUZZTIME) ./app
-	@go test -run='^$$' -fuzz='^FuzzParseActivateConfigStatus$$' -fuzztime=$(FUZZTIME) ./app
-	@go test -run='^$$' -fuzz='^FuzzOutstation$$' -fuzztime=$(FUZZTIME) ./server
-	@go test -run='^$$' -fuzz='^FuzzPack$$' -fuzztime=$(FUZZTIME) ./server
-	@go test -run='^$$' -fuzz='^FuzzMaster$$' -fuzztime=$(FUZZTIME) ./client
-	@go test -run='^$$' -fuzz='^FuzzKeyUnwrap$$' -fuzztime=$(FUZZTIME) ./secauth
+	@for pkg in $(TEST_PKGS); do \
+		for target in $$(go test -list='^Fuzz' "$$pkg" | grep '^Fuzz'); do \
+			echo "$$target ($$pkg)"; \
+			go test -run='^$$' -fuzz="^$$target\$$" -fuzztime=$(FUZZTIME) "$$pkg" || exit 1; \
+		done; \
+	done
 
 test-interop: ## Run the interop suite against the opendnp3, dscsystems, dnp3py, cbsigma and nfmdnp3 reference images (needs Docker)
 	@echo "Running interop tests against dnp3-interop $(INTEROP_RELEASE): opendnp3, dscsystems, dnp3py, cbsigma, nfmdnp3"
@@ -205,7 +207,7 @@ upstream-watch: ## Compare app/catalog.json with the upstream object definitions
 coverpkg-check: ## Fail when CI's coverpkg (.github/workflows/ci.yml) is not COVER_PKGS
 	@grep -qF -- "$(COVER_PKGS)" .github/workflows/ci.yml || { echo "coverpkg in .github/workflows/ci.yml must be: $(COVER_PKGS)"; exit 1; }
 
-check: generate-check coverpkg-check captures-verify fmt fmt-check lint lint-ci vet cross vuln test coverage-pkg-check examples docs-check ## Run generate-check + coverpkg-check + captures-verify + format + lint + vet + cross + vuln + test + per-package coverage + docs-check
+check: generate-check coverpkg-check captures-verify fmt fmt-check lint lint-ci vet cross vuln test coverage-pkg-check bench-smoke examples docs-check ## Run generate-check + coverpkg-check + captures-verify + format + lint + vet + cross + vuln + test + per-package coverage + bench-smoke + docs-check
 
 # The documents against the code (DOC-008): docsync, as docs.yml runs it.
 docs-check: ## Check that the documents agree with the code (docsync)

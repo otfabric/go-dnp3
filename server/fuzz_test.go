@@ -3,6 +3,8 @@
 package server
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -103,11 +105,84 @@ func FuzzOutstation(f *testing.F) {
 		}
 	}
 	f.Fuzz(func(t *testing.T, frag []byte) {
+		// The goroutines a request starts end with it.
+		goroutines := runtime.NumGoroutine()
 		// New events for every input, of every size.
 		tick++
 		_ = sdb.UpdateBinaryInput(uint32(max(tick%200, 0)), app.Binary{Value: tick%2 == 0, Flags: app.FlagOnline})
 		_ = sdb.UpdateAnalogInput(uint32(max(tick%100, 0)), app.Analog{Value: float64(tick), Flags: app.FlagOnline})
 		run(t, a, srv, frag)
 		run(t, sa, small, frag)
+		settles(t, goroutines)
+		// What the outstations keep between requests stays within their
+		// limits, whatever the requests were.
+		for _, as := range []struct {
+			a *association
+			s *Server
+		}{{a, srv}, {sa, small}} {
+			withinLimits(t, as.a, as.s)
+		}
 	})
+}
+
+// withinLimits fails t when the state an association keeps between
+// requests exceeds the limits of the outstation: the event buffer, the open
+// files (16 per master), the fragments held during a probe, the file
+// transport statuses not yet answered and the FREEZE_AT_TIME schedules.
+func withinLimits(t *testing.T, a *association, s *Server) {
+	t.Helper()
+	var problems []string
+	done := make(chan struct{})
+	a.post(func() {
+		defer close(done)
+		if n := len(a.files); n > 16 {
+			problems = append(problems, fmt.Sprintf("%d open files", n))
+		}
+		if n := len(a.held); n > maxHeld {
+			problems = append(problems, fmt.Sprintf("%d fragments held", n))
+		}
+		if n := len(a.pendingFileStatus); n > 0 {
+			problems = append(problems, fmt.Sprintf("%d file transport statuses left after the response", n))
+		}
+	})
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("association did not answer within 5s")
+	}
+	a.events.mu.Lock()
+	total := 0
+	for typ := range a.events.count {
+		if a.events.count[typ] > a.events.limit[typ] {
+			problems = append(problems, fmt.Sprintf("%d events of type %d, limit %d", a.events.count[typ], typ, a.events.limit[typ]))
+		}
+		total += a.events.limit[typ]
+	}
+	if n := len(a.events.events); n > total {
+		problems = append(problems, fmt.Sprintf("%d events buffered, limits %d", n, total))
+	}
+	a.events.mu.Unlock()
+	s.mu.Lock()
+	if n := len(s.freezes); n > MaxScheduledFreezes {
+		problems = append(problems, fmt.Sprintf("%d scheduled freezes", n))
+	}
+	s.mu.Unlock()
+	if len(problems) > 0 {
+		t.Fatalf("state beyond the limits: %v", problems)
+	}
+}
+
+// settles fails t unless the number of goroutines comes back to at most n
+// within 5 seconds.
+func settles(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > n {
+		if time.Now().After(deadline) {
+			buf := make([]byte, 1<<20)
+			t.Fatalf("%d goroutines, %d before:\n%s", runtime.NumGoroutine(), n, buf[:runtime.Stack(buf, true)])
+		}
+		runtime.Gosched()
+		time.Sleep(time.Millisecond)
+	}
 }

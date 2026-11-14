@@ -15,7 +15,8 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 | Coverage gate | `make coverage-check` | Go | `CI` (`coverage-min: "90"`) |
 | Per-package coverage floor | `make coverage-pkg-check` | Go | `CI` (`Per-package coverage`) |
 | Fuzzing | `make fuzz` | Go | `CI`, 10 s per target |
-| Benchmarks of the codecs (`link`, `transport`, `app`) | `make bench` | Go | no |
+| Benchmarks of the codecs (`link`, `transport`, `app`), of the outstation's READ of its whole database (`server`) and of the master's `Measurements` (`client`) | `make bench`; `make bench-smoke` runs each benchmark once | Go | no; `make bench-smoke` is part of `make check` |
+| Tests on a 32-bit platform (linux/386) and `make fuzz` for 10 minutes per target | `GOARCH=386 go test ./...`, `make fuzz FUZZTIME=10m` | Go, linux/amd64 for 386 | `Extended`, weekly |
 | Examples: each self-contained one must exit successfully | `make examples` | Go | `CI` |
 | Generated files against `app/catalog.json` | `make generate-check` | Go | `CI` |
 | Cross-compilation without cgo: linux/amd64, arm64, arm; darwin/arm64; windows/amd64 | `make cross` | Go | no |
@@ -100,9 +101,38 @@ cancellation.
 the number of goroutines, and on Linux and macOS the number of open file
 descriptors (`/dev/fd`), has not returned to what it was within 5 s after
 the test's cleanups, `Close` included. The `Close` lifecycle tests of
-`client` (`edge_paths_test.go`, `dual_test.go`) and the stress tests of
+`client` (`edge_paths_test.go`, `dual_test.go`, `limits_test.go`) and
+`server` (`lifecycle_test.go`, `limits_test.go`) and the stress tests of
 `e2e/stress_test.go` use it. It counts the whole process, so it is not for
-parallel tests.
+parallel tests. The client's lifecycle tests in `client/lifecycle_test.go`
+run in a `testing/synctest` bubble over `net.Pipe`, which itself fails a
+test that leaves a goroutine behind.
+
+## Lifecycle contract
+
+The rows of the lifecycle contract matrix of otfabric/engineering, and the
+tests that hold each for the master (`client`) and the outstation
+(`server`, `Group`). The lifecycle tests wait for events or a synctest
+bubble, never for a sleep.
+
+| Row | Contract | Tests |
+|---|---|---|
+| L1 | Close twice returns nil | `TestNotConnectedAndClosed` (client); `TestDatabaseAPI`, `TestGroupServeAndLimits` (server, group) |
+| L2 | Concurrent Close | `FuzzMaster`, `TestConnectClosedWhileDialing`, `TestDualEndpointCloseDuringDial`, `TestDualEndpointAcceptBackoffEndsAtClose` (client); `TestConcurrentClose` (server, group) |
+| L3 | Close during a blocked read: a request in flight | `TestCloseWithRequestInFlight` (client: the request fails with `ErrClosed`; server: the handler's context ends) |
+| L4 | Close during a write to a peer that does not read | `TestCloseDuringWrite` (client, server) |
+| L5 | Close during a handshake | `TestDualEndpointCloseDuringHandshake`, `TestCloseDuringConnectLeavesNoGoroutine` (client); `TestCloseEndsTLSHandshakes` (server: `Serve` and `ServeByMasterIP`, to a server and to a group) |
+| L6 | Cancel a pending request | `TestContextCancellation` (e2e), `TestDialerCancel` (client) |
+| L7 | Late response | `TestSpecTable6_2_Row1_LateResponseDiscarded` (client): discarded, logged at debug level, not counted |
+| L8 | Response after a reconnect | `TestRequestAfterReconnect` (client) |
+| L9 | A callback calls a public method | `TestHandlerIssuesRequest` (client); `TestHandlerCallsServer` (server) |
+| L10 | A callback calls Close | `TestHandlerStartsClose` (client: the `Handler` and the state handler; server: a `Handler`): Close waits for the callback's goroutine, so a callback calls `go Close()`; the doc comments of both `Close` methods and `Handler` types say so |
+| L11 | A slow callback | `TestSlowHandlerDoesNotDelayRequests`, `TestHandlerQueueBounded` (client); `TestSlowHandlerDelaysOneMaster` (server) |
+| L12 | A queue at capacity | `TestQueueFull` (internal/channel), `TestQueueLimit`, `TestHandlerQueueBounded`, `TestPollsWaitForHandler` (client), `TestSpec4_5_12_OverflowUntilEveryBufferHasRoom` (server); automatic tasks dropped from a full task queue are logged at debug level, not counted |
+| L13 | Concurrent sessions | `TestManyMasters`, `TestParallelMastersSecureAuthAndFiles` (e2e); `TestSpec13_2_3_3_SecondConnectionRejected`, `TestMaxConnectionsCountsFromAccept`, group multi-drop tests (server) |
+| L14 | A failure during startup | `TestConnectClosedWhileDialing`, `TestFailedConnectDoesNotReconnect`, `TestAcceptAttemptsShareOneAccept` (client); `TestMaxConnectionsFreedAfterHandshake` (server) |
+| L15 | Shutdown(ctx) | not applicable: no `Shutdown` method |
+| L16 | Close racing a reconnect | `TestCloseWhileWaitingToReconnect`, `TestCloseDuringConnectLeavesNoGoroutine` (client); `TestDialAndServeEndsWhileWaiting` (server) |
 
 ## Interop
 
@@ -169,8 +199,9 @@ Targets: `FuzzDecode` and `FuzzReader` (`link`), `FuzzReassembler`
 content) and `FuzzParseActivateConfigStatus` (g91v1) (`app`), `FuzzOutstation` and `FuzzPack`
 (`server`), `FuzzMaster` (`client`: the master against an outstation that
 answers every request with the fuzz input, with Secure Authentication
-configured) and `FuzzKeyUnwrap` (`secauth`: session key change data). `make fuzz` runs each for `FUZZTIME` (default 30s). A new target
-must be added to the `fuzz` recipe by name.
+configured) and `FuzzKeyUnwrap` (`secauth`: session key change data). `make fuzz` discovers the targets
+(`go test -list '^Fuzz'` in every library package) and runs each for
+`FUZZTIME` (default 30s), so a new target runs without being listed.
 
 The corpora hold seeds taken from the recorded traffic
 (`capture-<file>-<frame>`, written by `make captures-seeds`): one per shape
@@ -192,7 +223,7 @@ package. To keep it as a regression test, fix the cause and commit that file;
 | Pull request | `pr.yml` | `docs.yml` (docsync, otfabric-policy) always; `ci.yml`, `conformance.yml`, `interop.yml` unless every changed file is documentation; then `OT Fabric Required Checks` |
 | Push to a branch | none | nothing; dispatch `ci.yml`, `conformance.yml`, `interop.yml` to test a branch without a pull request |
 | Push to `main` | `docs.yml` | the light checks; the merged commit was tested as the pull request's merge commit |
-| Schedule | `codeql.yml`, `upstream-watch.yml` | the scheduled runs, on `main` |
+| Schedule | `codeql.yml`, `upstream-watch.yml`, `extended.yml` | the scheduled runs, on `main`; `extended.yml` runs the tests on linux/386 and `make fuzz` for 10 minutes per target |
 | Release | `release.yml` | the release workflow tests the release commit again |
 
 Documentation means an added or modified `*.md` file outside `.github/`, `testdata/` and `vendor/`, other than `AGENTS.md` and `CLAUDE.md`. A deleted or renamed document, or any other file, runs everything. `OT Fabric Required Checks` fails unless every job that applies succeeded; its summary lists them.

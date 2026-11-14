@@ -60,25 +60,50 @@ func TestAcceptOverTLS(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Fatalf("Close while waiting for a connection took %v", d)
 	}
-	// An Accept whose context ends, on a listener nobody dials.
+	// An attempt whose context ends, on a listener nobody dials, leaves its
+	// Accept to the next attempt of the opener, which takes the connection
+	// it returns.
 	idle, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	open := Accept(idle)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, _, err := Accept(idle)(ctx); err == nil {
+	if _, _, err := open(ctx); err == nil {
 		t.Fatal("Accept returned without a connection")
 	}
-	// The connection that the abandoned Accept takes later is closed, not
-	// leaked: its peer reads the end of the stream.
 	late, err := net.Dial("tcp", idle.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, _, err := open(testCtx(t))
+	if err != nil {
+		t.Fatalf("attempt after one that timed out: %v", err)
+	}
+	if _, err := late.Write([]byte{0x05}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(conn, make([]byte, 1)); err != nil {
+		t.Fatalf("the connection the next attempt took: %v", err)
+	}
+	_ = conn.Close()
+	_ = late.Close()
+	// After the client is closed (the attempt's cause), the connection the
+	// pending Accept returns is closed: its peer reads the end of the
+	// stream.
+	closing, stop := context.WithCancelCause(context.Background())
+	stop(dnp3.ErrClosed)
+	if _, _, err := open(closing); err == nil {
+		t.Fatal("Accept returned without a connection")
+	}
+	late, err = net.Dial("tcp", idle.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = late.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := late.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
-		t.Fatalf("connection taken by an abandoned Accept: %v", err)
+		t.Fatalf("connection taken after Close: %v", err)
 	}
 	_ = late.Close()
 	_ = idle.Close()

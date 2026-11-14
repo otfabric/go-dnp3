@@ -98,10 +98,14 @@ const (
 // outstation takes part in the session key change and keeps the security
 // statistics (g121, g122) per master. A user number of 0, which IEEE
 // 1815-2012 reserves for an unknown user, is taken as 1, the default user.
+// The keys are copied: the caller may clear its own slices afterwards.
 func WithSecureAuthentication(cfg SecureAuth) Option {
 	return func(o *options) error {
-		// A copy per server: an Option may be used for several.
+		// A copy per server, of the keys too: an Option may be used for
+		// several, and the caller keeps its slices.
 		sa := cfg
+		sa.User.UpdateKey = bytes.Clone(sa.User.UpdateKey)
+		sa.User.Key = bytes.Clone(sa.User.Key)
 		if err := sa.User.Validate(); err != nil {
 			return invalidOption("%v", err)
 		}

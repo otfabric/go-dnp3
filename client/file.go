@@ -257,10 +257,37 @@ func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size u
 	}
 }
 
-// ListDirectory reads the directory name and returns its entries.
+// maxDirectory bounds the listing ListDirectory collects, in octets: room
+// for some 500 000 entries (g70v7 descriptors of 20 octets and a name), far
+// beyond a directory an outstation serves over DNP3. A listing that goes on
+// beyond it is refused instead of held.
+const maxDirectory = 16 << 20
+
+// errDirectoryTooLong is what the listing's buffer returns past maxDirectory.
+var errDirectoryTooLong = errors.New("directory listing too long")
+
+// listing is the buffer of ListDirectory: it takes at most max octets.
+type listing struct {
+	bytes.Buffer
+	max int
+}
+
+func (l *listing) Write(p []byte) (int, error) {
+	if len(p) > l.max-l.Len() {
+		return 0, errDirectoryTooLong
+	}
+	return l.Buffer.Write(p)
+}
+
+// ListDirectory reads the directory name and returns its entries. A
+// listing longer than 16 MiB is refused with dnp3.ErrProtocol, and the
+// transfer aborted.
 func (c *Client) ListDirectory(ctx context.Context, name string, o FileOptions) ([]app.FileDescriptor, error) {
-	var buf bytes.Buffer
+	buf := listing{max: maxDirectory}
 	if _, err := c.ReadFile(ctx, name, &buf, o); err != nil {
+		if errors.Is(err, errDirectoryTooLong) {
+			return nil, fmt.Errorf("%w: directory %q: listing longer than %d octets", dnp3.ErrProtocol, name, maxDirectory)
+		}
 		return nil, err
 	}
 	ds, err := app.DecodeFileDescriptors(buf.Bytes())

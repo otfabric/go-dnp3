@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/big"
 	"net"
@@ -182,9 +183,13 @@ func TestQueueLimit(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 	go func() { _, _ = c.IntegrityPoll(context.Background()) }() // holds the turn
-	time.Sleep(50 * time.Millisecond)
+	waitFor(t, "the first poll to hold the turn", func() bool { return len(c.turn) == 1 })
 	go func() { _, _ = c.IntegrityPoll(context.Background()) }() // waits
-	time.Sleep(50 * time.Millisecond)
+	waitFor(t, "the second poll to wait for the turn", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.waiting == 1
+	})
 	if _, err := c.IntegrityPoll(testCtx(t)); !errors.Is(err, dnp3.ErrBusy) {
 		t.Fatalf("over the queue limit: %v", err)
 	}
@@ -220,11 +225,41 @@ func TestTLS(t *testing.T) {
 	if _, err := Dial(testCtx(t), l.Addr().String(), WithTLS(&tls.Config{MinVersion: tls.VersionTLS12, ServerName: "localhost"})); !errors.Is(err, dnp3.ErrConnectFailed) {
 		t.Fatalf("untrusted: %v", err)
 	}
-	// ListenAndServe with TLS.
-	srv2, _ := server.New(server.WithTLS(&tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}))
-	go func() { _ = srv2.ListenAndServe("127.0.0.1:0") }()
-	time.Sleep(50 * time.Millisecond)
+	// ListenAndServe with TLS: closed once it listens, it returns nil.
+	listening := newListeningHook()
+	srv2, _ := server.New(server.WithTLS(&tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}),
+		server.WithLogger(listening))
+	served := make(chan error, 1)
+	go func() { served <- srv2.ListenAndServe("127.0.0.1:0") }()
+	select {
+	case <-listening.reached:
+	case err := <-served:
+		t.Fatalf("ListenAndServe with TLS: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("ListenAndServe with TLS did not start listening")
+	}
 	_ = srv2.Close()
+	if err := <-served; err != nil {
+		t.Fatalf("ListenAndServe after Close: %v", err)
+	}
+}
+
+// listeningHook is a Logger that closes reached once a server logs that it
+// listens.
+type listeningHook struct {
+	dnp3.Logger
+	once    sync.Once
+	reached chan struct{}
+}
+
+func newListeningHook() *listeningHook {
+	return &listeningHook{Logger: dnp3.NopLogger(), reached: make(chan struct{})}
+}
+
+func (h *listeningHook) Infof(format string, a ...any) {
+	if strings.Contains(fmt.Sprintf(format, a...), "listening") {
+		h.once.Do(func() { close(h.reached) })
+	}
 }
 
 func selfSigned(t *testing.T) tls.Certificate {

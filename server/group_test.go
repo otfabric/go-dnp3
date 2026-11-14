@@ -227,7 +227,11 @@ func TestGroupServeAndLimits(t *testing.T) {
 	go func() { udp <- g.ServeUDP(pc) }()
 	las := make(chan error, 1)
 	go func() { las <- g.ListenAndServe("127.0.0.1:0") }()
-	time.Sleep(50 * time.Millisecond)
+	// Close once both serve: the UDP socket is a channel of the servers,
+	// and ListenAndServe's listener is the group's second.
+	eventually(t, "ServeUDP and ListenAndServe to serve", func() bool {
+		return groupListeners(g) == 2 && hasDatagramChannel(s1)
+	})
 	_ = g.Close()
 	_ = g.Close()
 	for name, c := range map[string]chan error{"ServeUDP": udp, "ListenAndServe": las} {
@@ -302,7 +306,9 @@ func TestGroupListeners(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- g.ListenAndServe("") }()
-	time.Sleep(50 * time.Millisecond)
+	eventually(t, "ListenAndServe on the default address to listen or fail", func() bool {
+		return groupListeners(g) == 1 || len(done) == 1
+	})
 
 	// TLS from the first server's WithTLS.
 	ts, err := New(WithAddress(51), WithTLS(&tls.Config{MinVersion: tls.VersionTLS12}))
@@ -315,7 +321,9 @@ func TestGroupListeners(t *testing.T) {
 	}
 	tdone := make(chan error, 1)
 	go func() { tdone <- tg.ListenAndServe("127.0.0.1:0") }()
-	time.Sleep(50 * time.Millisecond)
+	eventually(t, "ListenAndServe with TLS to listen", func() bool {
+		return groupListeners(tg) == 1 || len(tdone) == 1
+	})
 	_ = tg.Close()
 	_ = g.Close()
 	for _, c := range []chan error{done, tdone} {
@@ -326,4 +334,23 @@ func TestGroupListeners(t *testing.T) {
 			t.Fatal("ListenAndServe did not return after Close")
 		}
 	}
+}
+
+// groupListeners returns the number of listeners g serves.
+func groupListeners(g *Group) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.listeners)
+}
+
+// hasDatagramChannel reports whether s serves a datagram socket.
+func hasDatagramChannel(s *Server) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for ch := range s.channels {
+		if ch.Datagram() {
+			return true
+		}
+	}
+	return false
 }

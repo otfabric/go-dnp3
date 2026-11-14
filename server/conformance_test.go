@@ -1093,10 +1093,11 @@ func TestUnsolicitedUnlimitedRetries(t *testing.T) {
 		}
 	}
 	m.send(confirm(first.Control.Seq, true))
-	time.Sleep(60 * time.Millisecond)
-	for len(m.in) > 0 {
-		<-m.in
-	}
+	// The outstation handles the confirmation before the READ that follows
+	// it: a repeat sent before the confirmation arrives ahead of the READ's
+	// response, and none follows it.
+	m.send(req(0, app.FuncRead, app.AllObjects(app.G80V1)))
+	m.recvFunc(app.FuncResponse)
 	m.none(200 * time.Millisecond)
 }
 

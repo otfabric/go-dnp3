@@ -113,7 +113,7 @@ func (g *Group) Serve(l net.Listener) error {
 			_ = c.Close()
 			continue
 		}
-		if !g.spawn(func() { g.serveAccepted(c, handshake) }) {
+		if !g.spawn(func() { g.serveAccepted(c, g.handshake) }) {
 			// Accepted as Close closed the listener.
 			g.release()
 			_ = c.Close()
@@ -132,6 +132,12 @@ func (g *Group) serveAccepted(c net.Conn, handshake func(net.Conn) error) {
 		return
 	}
 	_ = g.ServeConn(c, c.RemoteAddr())
+}
+
+// handshake is the TLS handshake of a connection the group accepted: it
+// ends when the group is closed, which closes its first server.
+func (g *Group) handshake(c net.Conn) error {
+	return handshake(g.servers[0].closeCtx, c)
 }
 
 // spawn is Server.spawn for the group: f runs in a goroutine that Close
@@ -153,7 +159,7 @@ func (g *Group) ServeConn(rw io.ReadWriteCloser, remote net.Addr) error {
 		_ = rw.Close()
 		return dnp3.ErrClosed
 	}
-	return serveConn(rw, remote, g.servers)
+	return serveConn(rw, remote, g.servers, false)
 }
 
 // ServeUDP serves the outstations of the group over UDP on pc, as

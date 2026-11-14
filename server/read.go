@@ -4,6 +4,7 @@ package server
 
 import (
 	"math"
+	"slices"
 
 	"github.com/otfabric/go-dnp3/app"
 )
@@ -84,10 +85,12 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 	// The objects a READ may plan are bounded by the size of the database:
 	// four complete reads of it, which every reasonable request stays within,
 	// so a request repeating headers that name every point is answered with
-	// IIN2.2 instead of holding the database for its whole length.
+	// IIN2.2 instead of holding the database for its whole length. Each
+	// header is charged with the points it selects, which is also the work
+	// of planning it: a header naming one point costs one.
 	budget := 4*db.size() + 1024
-	charge := func(t PointType) bool {
-		budget -= len(db.points[t])
+	charge := func(t PointType, sel selector) bool {
+		budget -= db.countSelected(t, sel)
 		if budget < 0 {
 			p.iin |= app.IINParameterError
 			return false
@@ -110,7 +113,7 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				if t == TimeAndInterval {
 					continue // read by group and variation only, as the references do
 				}
-				if !charge(t) {
+				if !charge(t, selector{all: true}) {
 					break
 				}
 				statics = append(statics, db.statics(t, selector{all: true}, 0, true)...)
@@ -123,7 +126,7 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				p.iin |= app.IINParameterError
 				continue
 			}
-			if !charge(AnalogInput) {
+			if !charge(AnalogInput, sel) {
 				continue
 			}
 			statics = append(statics, db.deadbandItems(sel, v, &p)...)
@@ -180,7 +183,7 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				statics = append(statics, a.statisticItems(sel, v, &p)...)
 				continue
 			}
-			if !charge(t) {
+			if !charge(t, sel) {
 				continue
 			}
 			items := db.statics(t, sel, v, false)
@@ -216,6 +219,59 @@ func validVariation(t PointType, event bool, gv app.GroupVariation) bool {
 	default:
 	}
 	return gv.Known()
+}
+
+// countSelected returns how many points of t the selector names, at most:
+// every point for all objects, those within a range, the indexes of an
+// index list. The caller holds mu.
+func (db *Database) countSelected(t PointType, s selector) int {
+	switch {
+	case s.all:
+		return len(db.points[t])
+	case s.indexes != nil:
+		return len(s.indexes)
+	default:
+		lo, hi := db.rangeOf(t, s)
+		return hi - lo
+	}
+}
+
+// rangeOf returns the positions in the sorted indexes of t of the first
+// point within the range of s and of the first point beyond it. The caller
+// holds mu.
+func (db *Database) rangeOf(t PointType, s selector) (lo, hi int) {
+	if s.start > s.stop {
+		return 0, 0
+	}
+	idx := db.indexes(t)
+	lo, _ = slices.BinarySearch(idx, s.start)
+	hi, found := slices.BinarySearch(idx, s.stop)
+	if found {
+		hi++
+	}
+	return lo, hi
+}
+
+// selected returns the indexes of the points of t the selector names, in
+// ascending order, without visiting the points outside it. The caller holds
+// mu.
+func (db *Database) selected(t PointType, s selector) []uint32 {
+	switch {
+	case s.all:
+		return db.indexes(t)
+	case s.indexes != nil:
+		out := make([]uint32, 0, len(s.indexes))
+		for i := range s.indexes {
+			if _, ok := db.points[t][i]; ok {
+				out = append(out, i)
+			}
+		}
+		slices.Sort(out)
+		return out
+	default:
+		lo, hi := db.rangeOf(t, s)
+		return db.indexes(t)[lo:hi]
+	}
 }
 
 // covers reports whether every index the selector names exists.
@@ -266,10 +322,7 @@ func (db *Database) statics(t PointType, s selector, requested uint8, class0 boo
 	var cur *item
 	var last uint32
 	indexed := s.indexes != nil
-	for _, idx := range db.indexes(t) {
-		if !s.has(idx) {
-			continue
-		}
+	for _, idx := range db.selected(t, s) {
 		p := db.points[t][idx]
 		if class0 && p.cfg.ExcludeFromClass0 {
 			continue
@@ -472,10 +525,7 @@ func (db *Database) deadbandItems(sel selector, requested uint8, p *readPlan) []
 	var cur *item
 	var last uint32
 	indexed := sel.indexes != nil
-	for _, idx := range db.indexes(AnalogInput) {
-		if !sel.has(idx) {
-			continue
-		}
+	for _, idx := range db.selected(AnalogInput, sel) {
 		d := db.points[AnalogInput][idx].cfg.Deadband
 		if intOnly {
 			d = min(math.Round(d), math.MaxUint32)

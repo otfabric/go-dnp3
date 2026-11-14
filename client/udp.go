@@ -4,10 +4,13 @@ package client
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
+	"sync"
 	"time"
 
+	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/internal/channel"
 )
 
@@ -108,34 +111,73 @@ func (u udpConn) Write(b []byte) (int, error) {
 // The client does not close l. For TLS, give a listener of
 // tls.NewListener: the master is the TLS server of such a connection.
 //
+// The opener has at most one Accept on l in progress. An attempt that ends
+// before a connection came, by its context, leaves that Accept to the next
+// attempt, which takes the connection it returns; only after the client is
+// closed is a connection it returns closed. The pending Accept ends when l
+// is closed.
+//
 //	l, _ := net.Listen("tcp", ":20000")
 //	c, err := client.New("outstation", client.WithStream(client.Accept(l)))
 func Accept(l net.Listener) StreamOpener {
-	return func(ctx context.Context) (io.ReadWriteCloser, net.Addr, error) {
-		type accepted struct {
-			conn net.Conn
-			err  error
-		}
-		done := make(chan accepted, 1)
+	a := &acceptor{l: l}
+	return a.open
+}
+
+// acceptor is the state of an Accept opener.
+type acceptor struct {
+	l  net.Listener
+	mu sync.Mutex
+	// pending receives the outcome of the Accept in progress; nil when
+	// none is.
+	pending chan accepted
+}
+
+type accepted struct {
+	conn net.Conn
+	err  error
+}
+
+func (a *acceptor) open(ctx context.Context) (io.ReadWriteCloser, net.Addr, error) {
+	a.mu.Lock()
+	ch := a.pending
+	if ch == nil {
+		ch = make(chan accepted, 1)
+		a.pending = ch
 		go func() {
-			conn, err := l.Accept()
-			done <- accepted{conn, err}
+			conn, err := a.l.Accept()
+			ch <- accepted{conn, err}
 		}()
-		select {
-		case a := <-done:
-			if a.err != nil {
-				return nil, nil, a.err
-			}
-			return a.conn, a.conn.RemoteAddr(), nil
-		case <-ctx.Done():
-			// The pending Accept takes the next connection; it is closed
-			// rather than leaked.
+	}
+	a.mu.Unlock()
+	select {
+	case r := <-ch:
+		a.done(ch)
+		if r.err != nil {
+			return nil, nil, r.err
+		}
+		return r.conn, r.conn.RemoteAddr(), nil
+	case <-ctx.Done():
+		if errors.Is(context.Cause(ctx), dnp3.ErrClosed) {
+			// The client is closed: no attempt follows, and the connection
+			// the pending Accept takes is closed rather than kept.
+			a.done(ch)
 			go func() {
-				if a := <-done; a.conn != nil {
-					_ = a.conn.Close()
+				if r := <-ch; r.conn != nil {
+					_ = r.conn.Close()
 				}
 			}()
-			return nil, nil, ctx.Err()
 		}
+		return nil, nil, ctx.Err()
 	}
+}
+
+// done forgets the Accept whose outcome ch receives, so that the next
+// attempt starts another.
+func (a *acceptor) done(ch chan accepted) {
+	a.mu.Lock()
+	if a.pending == ch {
+		a.pending = nil
+	}
+	a.mu.Unlock()
 }

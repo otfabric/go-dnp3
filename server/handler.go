@@ -68,6 +68,11 @@ type Command struct {
 // The returned status is echoed to the master. A handler that does not
 // support a point returns app.StatusNotSupported; the response then also
 // sets IIN2.2 (PARAMETER_ERROR).
+//
+// A handler, and every optional handler interface, must not call
+// [Server.Close] itself: Close waits for the association goroutine the
+// handler runs on. Call it from another goroutine (go srv.Close()); ctx
+// is canceled when the server closes.
 type Handler interface {
 	// Select checks whether the control could be executed now, without
 	// executing it.

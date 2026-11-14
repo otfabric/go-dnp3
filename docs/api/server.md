@@ -204,7 +204,7 @@ Database holds the points of an outstation. It is safe for concurrent use; updat
 func (db *Database) Add(t PointType, index uint32, cfg PointConfig, initial app.Value) error
 ```
 
-Add adds a point with its configuration and initial value. Adding an index that exists replaces its configuration and value.
+Add adds a point with its configuration and initial value. Adding an index that exists replaces its configuration and value. The data of an octet string is copied.
 
 #### func (Database) AddAnalogInput
 
@@ -292,7 +292,7 @@ Batch runs fn with the database locked and then hands the events it produced to 
 func (db *Database) Get(t PointType, index uint32) (app.Value, bool)
 ```
 
-Get returns the current value of a point.
+Get returns the current value of a point. The data of an octet string is a copy: changing it does not change the point.
 
 #### func (Database) Len
 
@@ -316,7 +316,7 @@ Remove removes a point. It reports whether the point existed.
 func (db *Database) Update(t PointType, index uint32, v app.Value, mode EventMode) error
 ```
 
-Update sets the value of a point and produces an event as mode says. A zero Time in the value is stamped with the outstation's clock for the event.
+Update sets the value of a point and produces an event as mode says. A zero Time in the value is stamped with the outstation's clock for the event. The data of an octet string is copied.
 
 #### func (Database) UpdateAnalogInput
 
@@ -587,6 +587,8 @@ Handler executes controls. Its methods are called on the goroutine of the master
 
 The returned status is echoed to the master. A handler that does not support a point returns app.StatusNotSupported; the response then also sets IIN2.2 (PARAMETER\_ERROR).
 
+A handler, and every optional handler interface, must not call [Server.Close](#func-server-close) itself: Close waits for the association goroutine the handler runs on. Call it from another goroutine (go srv.Close()); ctx is canceled when the server closes.
+
 ### type HandlerFunc
 
 ```go
@@ -711,7 +713,7 @@ WithAddress sets the link address of the outstation. The default is 10.
 func WithAttributeSet(set uint16, attrs map[uint8]app.Attribute, writable ...uint8) Option
 ```
 
-WithAttributeSet sets the device attributes of another set (group 0, the set is the index; IEEE 1815-2012 clause 11.9.1), keyed by variation. The variations in writable can be written by a master, with a value of the same type: the outstation stores it and, when the [Handler](#type-handler) implements [AttributeSetWriteHandler](#type-attributesetwritehandler), tells it first. Other writes are refused.
+WithAttributeSet sets the device attributes of another set (group 0, the set is the index; IEEE 1815-2012 clause 11.9.1), keyed by variation. The variations in writable can be written by a master, with a value of the same type: the outstation stores it and, when the [Handler](#type-handler) implements [AttributeSetWriteHandler](#type-attributesetwritehandler), tells it first. Other writes are refused. The attributes' data is copied.
 
 #### func WithAttributes
 
@@ -719,7 +721,7 @@ WithAttributeSet sets the device attributes of another set (group 0, the set is 
 func WithAttributes(attrs map[uint8]app.Attribute) Option
 ```
 
-WithAttributes sets the device attributes of set 0 (group 0) the outstation reports, keyed by variation, for example app.AttrManufacturerName. The list of attribute variations (g0v255) is built from them; an attribute is writable when the [Handler](#type-handler) implements [WriteHandler](#type-writehandler).
+WithAttributes sets the device attributes of set 0 (group 0) the outstation reports, keyed by variation, for example app.AttrManufacturerName. The list of attribute variations (g0v255) is built from them; an attribute is writable when the [Handler](#type-handler) implements [WriteHandler](#type-writehandler). The attributes' data is copied.
 
 #### func WithConfirmTimeout
 
@@ -817,7 +819,7 @@ WithMasters restricts the masters the outstation answers to these link addresses
 func WithMaxConnections(n int) Option
 ```
 
-WithMaxConnections limits concurrent connections; further ones are closed at once. The default is 16.
+WithMaxConnections limits concurrent connections; further ones are closed at once. An accepted connection counts from the moment it is accepted, also during its TLS handshake. The default is 16.
 
 #### func WithMaxControls
 
@@ -825,7 +827,7 @@ WithMaxConnections limits concurrent connections; further ones are closed at onc
 func WithMaxControls(n int) Option
 ```
 
-WithMaxControls sets how many controls one request may carry; the controls beyond it are answered with TOO\_MANY\_OBJS. The default is 16.
+WithMaxControls sets how many controls one request may carry; the controls beyond it are answered with TOO\_MANY\_OBJS. Every point a pattern control block (g12v2 with its mask g12v3) operates counts as a control: the block carries out those within the limit and is answered with TOO\_MANY\_OBJS when its mask names more. The default is 16.
 
 #### func WithMaxFragment
 
@@ -849,7 +851,7 @@ WithMetrics sets the metrics callbacks. A value that also implements dnp3.Server
 func WithSecureAuthentication(cfg SecureAuth) Option
 ```
 
-WithSecureAuthentication enables Secure Authentication: critical requests are executed only after the master answered a challenge with the right MAC, or when they carry it themselves in aggressive mode. The outstation takes part in the session key change and keeps the security statistics (g121, g122) per master. A user number of 0, which IEEE 1815-2012 reserves for an unknown user, is taken as 1, the default user.
+WithSecureAuthentication enables Secure Authentication: critical requests are executed only after the master answered a challenge with the right MAC, or when they carry it themselves in aggressive mode. The outstation takes part in the session key change and keeps the security statistics (g121, g122) per master. A user number of 0, which IEEE 1815-2012 reserves for an unknown user, is taken as 1, the default user. The keys are copied: the caller may clear its own slices afterwards.
 
 #### func WithSelectTimeout
 
@@ -1104,6 +1106,12 @@ type Server struct {
 	// handles assigns file handles, unique to the outstation.
 
 	// FREEZE_AT_TIME schedules, by the points they name
+	// pending counts the connections Serve and ServeByMasterIP accepted
+	// that are not among channels yet, in their TLS handshake: they count
+	// against WithMaxConnections from the moment they are accepted.
+
+	// closeCtx is canceled by Close: it ends the TLS handshakes of accepted
+	// connections.
 
 }
 ```
@@ -1132,7 +1140,7 @@ Address returns the link address of the outstation.
 func (s *Server) Close() error
 ```
 
-Close stops the listeners, closes every connection and stops the associations. It waits for their goroutines to end.
+Close stops the listeners, closes every connection, ends the TLS handshakes in progress and stops the associations. It waits for their goroutines to end, so it must not be called from a [Handler](#type-handler) method, which runs on an association goroutine: call go srv.Close() there.
 
 #### func (Server) CloseConnections
 

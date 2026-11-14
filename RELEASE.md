@@ -1,5 +1,47 @@
 # go-dnp3 Releases
 
+## v1.13.1
+
+**Date:** 2026-11-14
+**Previous release:** v1.13.0
+
+## Summary
+
+The outstation and the master hold to their documented limits in more places, close cleanly in more situations, and keep their own copies of the slices a caller gives them. No exported identifier changes. Two protocol behaviours change: a pattern control block counts each point it operates against `server.WithMaxControls`, and a control header without objects is answered with IIN2.2.
+
+## Upgrading
+
+- **Pattern controls**: `server.WithMaxControls` now counts every point a pattern control block (g12v2 with its g12v3 mask) operates. A block whose mask names more points than the limit operates those within it and is answered with TOO_MANY_OBJS. An outstation that relies on large patterns raises the limit.
+- **Slow master handlers**: while a `client.Handler` is 64 fragments behind, the master neither processes nor confirms unsolicited responses (the outstation repeats them), and its automatic polls wait for it.
+- **Close from a callback**: `Client.Close` waits for the `Handler` and the state handler, and `Server.Close` for the association goroutine a `server.Handler` runs on. A callback that closes its station calls `go c.Close()`; the doc comments now say so.
+
+## Changes
+
+### Fixed
+
+- The outstation counts a connection against `server.WithMaxConnections` from the moment it is accepted, also during its TLS handshake; a connection beyond the limit is closed (`server/server.go`, `server/route.go`, `server/group.go`).
+- `Server.Close` and `Group.Close` end the TLS handshakes in progress, and the goroutines of a `Route` are tracked, so Close returns without waiting for a peer that stalls its handshake.
+- `server.WithMaxControls` counts each point of a pattern control block (IEEE 1815-2012 A.8.1.2.2).
+- A SELECT, OPERATE or DIRECT_OPERATE whose control header (g12v1, g12v2, g12v3, g41v1 to g41v4) carries no objects is answered with IIN2.2.
+- A WRITE of several g70v5 file blocks is answered with its g70v6 statuses over as many fragments as the transmit fragment size needs.
+- The READ budget (four times the points of the database, plus 1024) charges each header with the points it selects, so many headers that each name a few points are answered in full; LIMITATIONS.md documents the budget.
+- The master holds at most 64 fragments for its `Handler`; a panic in the `Handler` or the state handler is recovered and logged (`panic while delivering`), and the master goes on, as OBSERVABILITY.md states.
+- `client.Accept` keeps one Accept in progress per opener: an attempt that ends before the outstation connected leaves it to the next attempt, which takes the connection.
+- `client.ListDirectory` collects a listing up to 16 MiB and refuses a longer one with `dnp3.ErrProtocol`.
+- The server and the client copy the key slices of `WithSecureAuthentication`, the attribute data of `server.WithAttributes` and `WithAttributeSet`, and the octet strings given to `Database.Add` and the `Update` functions; `Database.Get` returns a copy.
+
+### Tests
+
+- The lifecycle contract (L1 to L16) is written down in TESTING.md, with the test of each row; `server/lifecycle_test.go` and `client/lifecycle_test.go` add the rows that had none, and the server package checks for goroutine leaks.
+- Allocation-budget tests for the decoders and the session (`budget_test.go` in `link`, `transport`, `app`, `internal/channel`); `FuzzOutstation`, `FuzzMaster` and `FuzzReassembler` check what they hold and that their goroutines end.
+- `server/limits_test.go`, `client/limits_test.go` and `server/ownership_test.go` pin the limits and the copies above.
+- `TestQueueLimit`, `TestTLS` (client), `TestGroupServeAndLimits`, `TestGroupListeners`, `TestUnsolicitedUnlimitedRetries` and `TestContextCancellation` wait for the condition they need instead of sleeping.
+- `make fuzz` discovers the fuzz targets with `go test -list`, so a new one runs without being listed.
+- The weekly `Extended` workflow runs the tests on linux/386 and every fuzz target for 10 minutes.
+- The benchmarks check their errors, keep their results and report allocations; `BenchmarkReadWholeDatabase` (server) and `BenchmarkMeasurements` (client) are new, and `make bench-smoke`, part of `make check`, runs each benchmark once.
+
+---
+
 ## v1.13.0
 
 **Date:** 2026-11-12

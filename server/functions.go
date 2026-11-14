@@ -243,7 +243,10 @@ func (a *association) write(req *app.Fragment) *response {
 		for i, s := range st {
 			vals[i] = s
 		}
-		r.plans = []fragPlan{{headers: []app.Header{app.FreeFormat(app.G70V6, vals...)}}}
+		// One status per block: a WRITE of many blocks is answered in as
+		// many fragments as its statuses need, each within the transmit
+		// fragment size.
+		r.plans, _ = pack([]item{{h: app.FreeFormat(app.G70V6, vals...)}}, a.srv.opts.maxTxFragment)
 	}
 	return r
 }
