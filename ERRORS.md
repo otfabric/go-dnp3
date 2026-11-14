@@ -123,8 +123,8 @@ status that does not encode, or does not fit a fragment, with
 PARAMETER_ERROR. `app.Fragment.Encode` fails with `app.ErrInvalidValue`
 for a BCD value that does not fit its variation, a floating-point
 attribute of a size other than 4 or 8 octets, a g81v1 fill above 127, and,
-in a response, a group 60 or variation 0 header (`app.ErrInvalidQualifier`
-for qualifier 0x06). `app.Decode` reports the same headers in a response,
+in a response, a group 60 or variation 0 header or a header whose objects
+all carry no value (`app.ErrInvalidQualifier` for qualifier 0x06). `app.Decode` reports the same headers in a response,
 a floating-point attribute of another size and a BCD sign character
 outside the most significant position with `app.ErrMalformed`
 (`app.ErrInvalidQualifier` for qualifier 0x06). A request whose

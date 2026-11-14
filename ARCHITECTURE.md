@@ -95,7 +95,12 @@ sessions of every outstation that takes it.
   wraps `link.ErrFraming`, so metrics count them and the stream goes on.
 - **Keep-alive**: after `KeepAlive` without a received frame the session
   sends REQUEST_LINK_STATUS; a peer that does not answer closes the channel
-  with `dnp3.ErrTimeout`.
+  with `dnp3.ErrTimeout`. The probe runs on a goroutine of its own, which
+  the channel's `Done` waits for.
+- **One destination per fragment**: the segments of a fragment all have
+  one destination. A segment for another destination (the station's own
+  address, a broadcast address or the self address) discards the partial
+  fragment.
 
 ## Client
 
@@ -125,8 +130,11 @@ sessions of every outstation that takes it.
   through the dispatcher.
 - **Automatic tasks** run one at a time on a task goroutine: the reactions
   to internal indications (clear the restart bit, integrity poll, time
-  synchronization, event poll) and the periodic polls of `WithPoll`. A
-  task already queued is not queued twice.
+  synchronization, event poll, session key change) and the periodic polls
+  of `WithPoll`. A task already queued is not queued twice. While the
+  `Handler`'s queue is full (64 fragments, or 4 MiB with each fragment
+  counted as at least 48 octets per decoded object), every automatic task
+  and each request it makes waits.
 - **Retries** wrap a whole request: only those that are safe to repeat,
   only for timeouts and transport failures, while the caller's context
   lives. Each request is reported to `RequestMetrics` once, with its retries.
@@ -182,7 +190,8 @@ open files. One goroutine owns all of it:
 - **Controls**: SELECT stores the encoded object headers, the sequence
   number and the time; OPERATE must repeat the headers, carry the next
   sequence number and arrive within the select timeout, or every control
-  gets NO_SELECT. The handler decides each control's status.
+  gets NO_SELECT. The headers are compared with their request statuses: a
+  control the SELECT marked NON_PARTICIPATING was not selected. The handler decides each control's status.
 
 ## Secure Authentication
 

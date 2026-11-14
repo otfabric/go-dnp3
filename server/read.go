@@ -59,14 +59,65 @@ type eventSelector struct {
 // noLimit is the limit of an event header without a count: all events.
 const noLimit = -1
 
-func (s *eventSelector) match(e *bufEvent) bool {
-	if s.limit >= 0 && s.taken >= s.limit {
-		return false
+// open reports whether the selector takes more events.
+func (s *eventSelector) open() bool { return s.limit < 0 || s.taken < s.limit }
+
+// selectorQueue finds, for each event, the first selector in request order
+// that takes it, without trying every selector: the positions of the
+// selectors are indexed by class and by type, and a selector whose count
+// is reached is dropped from the front of its lists for good. Selecting
+// the events of a buffer stays linear in the events however many event
+// headers a READ repeats.
+type selectorQueue struct {
+	sels    []*eventSelector
+	byClass [8][]int
+	byType  map[PointType][]int
+}
+
+func newSelectorQueue(sels []*eventSelector) *selectorQueue {
+	q := &selectorQueue{sels: sels, byType: map[PointType][]int{}}
+	for i, s := range sels {
+		if s.classes == 0 {
+			q.byType[s.typ] = append(q.byType[s.typ], i)
+			continue
+		}
+		for c := range q.byClass {
+			if s.classes&(1<<c) != 0 {
+				q.byClass[c] = append(q.byClass[c], i)
+			}
+		}
 	}
-	if s.classes != 0 {
-		return s.classes&(1<<e.class) != 0
+	return q
+}
+
+// head returns the position of the first open selector of l, dropping the
+// closed ones before it, or -1.
+func (q *selectorQueue) head(l *[]int) int {
+	for len(*l) > 0 {
+		if i := (*l)[0]; q.sels[i].open() {
+			return i
+		}
+		*l = (*l)[1:]
 	}
-	return e.typ == s.typ
+	return -1
+}
+
+// take returns the selector that takes e, or nil.
+func (q *selectorQueue) take(e *bufEvent) *eventSelector {
+	best := -1
+	if int(e.class) < len(q.byClass) {
+		best = q.head(&q.byClass[e.class])
+	}
+	if l, ok := q.byType[e.typ]; ok {
+		if i := q.head(&l); i >= 0 && (best < 0 || i < best) {
+			best = i
+		}
+		q.byType[e.typ] = l
+	}
+	if best < 0 {
+		return nil
+	}
+	return q.sels[best]
 }
 
 // readPlan is the content of a READ response before packing.
@@ -87,15 +138,29 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 	// so a request repeating headers that name every point is answered with
 	// IIN2.2 instead of holding the database for its whole length. Each
 	// header is charged with the points it selects, which is also the work
-	// of planning it: a header naming one point costs one.
+	// of planning it: a header naming one point costs one. Headers that
+	// are not of points (device attributes, file blocks, statistics, IIN
+	// bits) are charged with the objects they produce. Event headers are
+	// not: each buffered event is reported at most once per response, so
+	// the event buffer limits bound them.
 	budget := 4*db.size() + 1024
-	charge := func(t PointType, sel selector) bool {
-		budget -= db.countSelected(t, sel)
+	spend := func(n int) bool {
+		budget -= n
 		if budget < 0 {
 			p.iin |= app.IINParameterError
 			return false
 		}
 		return true
+	}
+	charge := func(t PointType, sel selector) bool {
+		return spend(db.countSelected(t, sel))
+	}
+	// chargeItems charges the objects of items, or refuses them all.
+	chargeItems := func(items []item) []item {
+		if !spend(objectCount(items)) {
+			return nil
+		}
+		return items
 	}
 
 	for i := range req.Headers {
@@ -149,11 +214,26 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				p.iin |= app.IINParameterError
 				continue
 			}
-			statics = append(statics, a.iinItem(sel))
+			statics = append(statics, chargeItems([]item{a.iinItem(sel)})...)
 		default:
 			t, isEvent, ok := pointTypeOfGroup(g)
 			if !ok {
+				// A READ of file blocks reads the file: it is charged with
+				// one object per block before, as a block read and then
+				// dropped could not be sent again. Other headers have no
+				// effect beyond the plan and are charged after with the
+				// objects they produced; once the budget is spent they are
+				// not planned at all.
+				if (h.GV == app.G70V5 && a.srv.opts.files != nil && budget < len(h.Objects)) || (g == 0 && budget < 0) {
+					p.iin |= app.IINParameterError
+					continue
+				}
+				before := len(p.items)
 				if a.srv.readOther(a, h, &p) {
+					if !spend(objectCount(p.items[before:])) {
+						clear(p.items[before:])
+						p.items = p.items[:before]
+					}
 					continue
 				}
 				p.iin |= app.IINObjectUnknown
@@ -180,7 +260,7 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 				continue
 			}
 			if t == SecurityStatistic {
-				statics = append(statics, a.statisticItems(sel, v, &p)...)
+				statics = append(statics, chargeItems(a.statisticItems(sel, v, &p))...)
 				continue
 			}
 			if !charge(t, sel) {
@@ -198,6 +278,15 @@ func (a *association) planRead(req *app.Fragment) readPlan {
 	}
 	p.items = append(p.items, statics...)
 	return p
+}
+
+// objectCount returns the number of objects of items.
+func objectCount(items []item) int {
+	n := 0
+	for _, it := range items {
+		n += len(it.h.Objects)
+	}
+	return n
 }
 
 // measurements are the types of input and output points, whose reads are
@@ -393,16 +482,16 @@ func relativeTime(gv app.GroupVariation) bool {
 func (a *association) eventItems(sels []*eventSelector) []item {
 	var picked []*bufEvent
 	var vars []uint8
+	q := newSelectorQueue(sels)
 	a.events.snapshot(func(e *bufEvent) bool {
-		for _, s := range sels {
-			if s.match(e) {
-				s.taken++
-				picked = append(picked, e)
-				vars = append(vars, s.variation)
-				return true
-			}
+		s := q.take(e)
+		if s == nil {
+			return false
 		}
-		return false
+		s.taken++
+		picked = append(picked, e)
+		vars = append(vars, s.variation)
+		return true
 	}, 0)
 
 	var out []item

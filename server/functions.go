@@ -337,11 +337,20 @@ func (s *Server) freezeNow(hs []app.Header, clear bool) {
 // its points or Close, whatever happens to the master's connection.
 const MaxScheduledFreezes = 16
 
+// minFreezeInterval is the shortest interval of a periodic FREEZE_AT_TIME
+// schedule: a request for a shorter one is served at this interval, so
+// that a schedule cannot keep the outstation freezing without pause.
+// IEEE 1815-2012 4.4.8 sets no lower bound; freeze intervals are commonly
+// seconds to hours.
+const minFreezeInterval = 100 * time.Millisecond
+
 // scheduledFreeze is a FREEZE_AT_TIME schedule waiting for its time.
 type scheduledFreeze struct {
 	timer *time.Timer
 	// first is when it freezes first, by the outstation's clock.
 	first time.Time
+	// interval is the period of a periodic schedule, 0 for a single one.
+	interval time.Duration
 }
 
 // freezeSchedule is one schedule of a FREEZE_AT_TIME request: a time and
@@ -364,7 +373,8 @@ type freezeSchedule struct {
 // A periodic schedule continues until a new FREEZE_AT_TIME is received;
 // go-dnp3 reads that per point set: a new schedule for the same point
 // headers replaces the old one. Every schedule is checked before any is
-// applied.
+// applied. A periodic interval shorter than minFreezeInterval is served
+// as minFreezeInterval.
 func (s *Server) freezeAtTime(hs []app.Header) app.IIN {
 	var scheds []freezeSchedule
 	for _, h := range hs {
@@ -401,6 +411,9 @@ func (s *Server) freezeAtTime(hs []app.Header) app.IIN {
 			added[freezeKey(sc.points)] = true
 		}
 	}
+	// The count and the changes are made under one lock: two requests on
+	// two associations cannot both pass the limit check and then both add.
+	var immediate [][]app.Header
 	s.mu.Lock()
 	n := len(s.freezes)
 	for key := range added {
@@ -408,24 +421,31 @@ func (s *Server) freezeAtTime(hs []app.Header) app.IIN {
 			n++
 		}
 	}
-	s.mu.Unlock()
 	if n > MaxScheduledFreezes {
+		s.mu.Unlock()
 		return app.IINParameterError
 	}
 	for _, sc := range scheds {
 		key := freezeKey(sc.points)
 		s.cancelFreeze(key)
 		interval := time.Duration(sc.at.Interval) * time.Millisecond
+		if interval > 0 && interval < minFreezeInterval {
+			interval = minFreezeInterval
+		}
 		switch {
 		case sc.at.Time == app.MaxTimestamp:
 			// Cancelled.
 		case sc.at.Time == 0 && interval == 0:
-			s.freezeNow(sc.points, false)
+			immediate = append(immediate, sc.points)
 		case sc.at.Time == 0:
 			s.scheduleFreeze(key, now.Truncate(time.Hour), interval, sc.points)
 		default:
 			s.scheduleFreeze(key, sc.at.Time.Time(), interval, sc.points)
 		}
+	}
+	s.mu.Unlock()
+	for _, hs := range immediate {
+		s.freezeNow(hs, false)
 	}
 	return 0
 }
@@ -443,10 +463,9 @@ func freezeKey(hs []app.Header) string {
 	return b.String()
 }
 
-// cancelFreeze ends the schedule of key, if there is one.
+// cancelFreeze ends the schedule of key, if there is one. The caller holds
+// s.mu.
 func (s *Server) cancelFreeze(key string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if f := s.freezes[key]; f != nil {
 		f.timer.Stop()
 		delete(s.freezes, key)
@@ -454,11 +473,10 @@ func (s *Server) cancelFreeze(key string) {
 }
 
 // scheduleFreeze freezes the points of hs at when and, with an interval,
-// every interval after it, until a new schedule for key or Close.
+// every interval after it, until a new schedule for key or Close. The
+// caller holds s.mu.
 func (s *Server) scheduleFreeze(key string, when time.Time, interval time.Duration, hs []app.Header) {
 	hs = append([]app.Header(nil), hs...)
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
 		return
 	}
@@ -467,7 +485,7 @@ func (s *Server) scheduleFreeze(key string, when time.Time, interval time.Durati
 		// The next occurrence after now.
 		when = when.Add((now.Sub(when)/interval + 1) * interval)
 	}
-	f := &scheduledFreeze{first: when}
+	f := &scheduledFreeze{first: when, interval: interval}
 	current := func() bool {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -719,22 +737,23 @@ func (s *Server) attributeSetItems(set uint32, as *attributeSet, v uint8, p *rea
 	}
 }
 
-// writeAttributes handles a WRITE of group 0 and returns its IIN bits.
+// writeAttributes handles a WRITE of group 0 and returns its IIN bits. The
+// set of an object is the index of the object for an index-prefixed
+// header (5.5.6, pp. 151-152), the start of the range otherwise.
 func (a *association) writeAttributes(ctx context.Context, h app.Header) app.IIN {
 	var iin app.IIN
 	start, _ := attributeSets(&h)
-	if h.Qualifier.IsIndexed() && len(h.Objects) > 0 {
-		start = h.Objects[0].Index
-	}
-	if start > 0xFFFF {
-		return app.IINParameterError
-	}
-	as := a.srv.opts.attributes[uint16(start)]
-	if as == nil {
-		return app.IINParameterError
-	}
 	v := h.GV.Variation()
 	for _, o := range h.Objects {
+		set := start
+		if h.Qualifier.IsIndexed() {
+			set = o.Index
+		}
+		if set > 0xFFFF || a.srv.opts.attributes[uint16(set)] == nil {
+			iin |= app.IINParameterError
+			continue
+		}
+		as := a.srv.opts.attributes[uint16(set)]
 		val, isAttribute := o.Value.(app.Attribute)
 		if !isAttribute {
 			iin |= app.IINParameterError
@@ -760,7 +779,7 @@ func (a *association) writeAttributes(ctx context.Context, h app.Header) app.IIN
 		as.mu.Unlock()
 		if ok {
 			if sw, has := a.srv.opts.handler.(AttributeSetWriteHandler); has {
-				ok = sw.WriteAttributeSet(ctx, uint16(start), v, val) == nil
+				ok = sw.WriteAttributeSet(ctx, uint16(set), v, val) == nil
 			}
 		}
 		if !ok {

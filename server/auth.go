@@ -459,9 +459,6 @@ func (a *association) keyStatusRequest(req *app.Fragment, v app.AuthSessionKeySt
 		a.count(secauth.StatDiscardedMessages)
 		return
 	}
-	// The KSQ counts every key status request and key change received
-	// (A.45.5).
-	a.keys.ksq++
 	a.countKeyStatusRequest(v.User)
 	if v.User != sa.User.Number {
 		// A.45.5: the answer to an invalid user number is the key status
@@ -476,6 +473,11 @@ func (a *association) keyStatusRequest(req *app.Fragment, v app.AuthSessionKeySt
 		a.sendAuth(req.Control.Seq, app.FreeFormat(app.G120V5, st))
 		return
 	}
+	// The KSQ counts every key status request and key change received
+	// for the user (A.45.5). The KSQ is the user's: a request for another
+	// user, which has no keys here, leaves it alone, so that it cannot
+	// make the user's key change that follows fail.
+	a.keys.ksq++
 	a.sendKeyStatus(req.Control.Seq)
 }
 
@@ -730,6 +732,19 @@ func (a *association) aggressive(req *app.Fragment, in inbound) *app.Fragment {
 	if ok {
 		want, err := secauth.MAC(sa.User.Algorithm(), key, secauth.AuthData(a.lastChallenge, in.frag[:len(in.frag)-n]))
 		ok = err == nil && secauth.Equal(want, mac.MAC)
+	}
+	if !ok && broadcast && in.sess != a.sess {
+		// A broadcast that came on another session than the master's
+		// current one, e.g. its datagram socket while it is connected
+		// over TCP: carried out when valid (13.2.3.2.4), but a refused
+		// one is not the current session's failure. It is discarded and
+		// neither moves the session keys nor closes the connection
+		// (Table 7-8 rows 10..12 apply to the master's association).
+		a.log.Warn("aggressive mode broadcast refused", "user", am.User, "csq", am.CSQ)
+		a.keys.count-- // not an authentication message of the master's
+		a.count(secauth.StatUnexpectedMessages)
+		a.count(secauth.StatDiscardedMessages)
+		return nil
 	}
 	if !ok {
 		a.log.Warn("aggressive mode request refused", "user", am.User, "csq", am.CSQ)

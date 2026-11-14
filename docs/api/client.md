@@ -78,6 +78,11 @@ type Client struct {
 	// needTime is the NEED_TIME indication of the outstation's latest
 	// response.
 
+	// lastSync is when the last successful automatic time synchronization
+	// ended (UnixNano), 0 before the first; syncTimer, guarded by taskMu,
+	// queues a time synchronization put off until the response timeout
+	// has passed since (enqueueTimeSync).
+
 	// dual is the dual end point of WithDualEndpoint, nil without.
 
 }
@@ -263,7 +268,7 @@ IntegrityPoll reads the events of classes 1, 2 and 3 and then the static data of
 func (c *Client) ListDirectory(ctx context.Context, name string, o FileOptions) ([]app.FileDescriptor, error)
 ```
 
-ListDirectory reads the directory name and returns its entries. A listing longer than 16 MiB is refused with dnp3.ErrProtocol, and the transfer aborted.
+ListDirectory reads the directory name and returns its entries. A listing longer than 16 MiB, each entry counted with the memory its descriptor takes, is refused with dnp3.ErrProtocol, and the transfer aborted.
 
 #### func (Client) Operate
 
@@ -315,7 +320,7 @@ ReadAttributes reads device attributes of set 0: one variation (for example app.
 func (c *Client) ReadFile(ctx context.Context, name string, w io.Writer, o FileOptions) (int64, error)
 ```
 
-ReadFile reads the file name from the outstation into w and returns the number of octets read.
+ReadFile reads the file name from the outstation into w and returns the number of octets read. When the outstation's answer to OPEN\_FILE announced the size of the file, a transfer that goes on beyond it fails with dnp3.ErrProtocol and is aborted. A size of 0xFFFFFFFF, the unknown size (IEEE 1815-2012 clause 4.4.17.2.1), or of 0, which some implementations send for no size, does not limit the transfer.
 
 #### func (Client) Request
 
@@ -732,7 +737,7 @@ WithMaxRequestFragment limits the request fragments the client sends to n octets
 func WithMaxResponse(n int) Option
 ```
 
-WithMaxResponse limits the octets the client collects of one response: those of all its fragments, the first included, as received. A response whose fragments add up to more is abandoned with dnp3.ErrProtocol at the fragment that crosses the limit, which is not confirmed, as an unexpected fragment of a multi-fragment response is (IEEE 1815-2012 Table 6-2); the request's Result holds the fragments before it. n is at least 249, the smallest fragment IEEE 1815-2012 allows. The default is DefaultMaxResponse, 16 MiB; WithMaxResponse(math.MaxInt) puts no limit on a response.
+WithMaxResponse limits the octets the client collects of one response: those of all its fragments, the first included, as received, each fragment counted as at least 48 octets for each object it decodes to, so that the memory a response takes stays bounded however densely its objects are packed (a fragment of 2048 octets of packed binary inputs, g1v1, counts some 780 000). A response whose fragments add up to more is abandoned with dnp3.ErrProtocol at the fragment that crosses the limit, which is not confirmed, as an unexpected fragment of a multi-fragment response is (IEEE 1815-2012 Table 6-2); the request's Result holds the fragments before it. n is at least 249, the smallest fragment IEEE 1815-2012 allows. The default is DefaultMaxResponse, 16 MiB; WithMaxResponse(math.MaxInt) puts no limit on a response.
 
 #### func WithMetrics
 

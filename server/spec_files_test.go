@@ -149,16 +149,16 @@ func TestSpecWithFileTimeout_Invalid(t *testing.T) {
 // p. 67): the counter skips 0 and the handles in use when it wraps.
 func TestSpec5_3_8_Rule9_HandlesUnique(t *testing.T) {
 	var h fileHandles
-	if got := h.assign("a"); got != 1 {
+	if got, _ := h.assign("a"); got != 1 {
 		t.Fatalf("first handle %d", got)
 	}
 	h.last = math.MaxUint32
-	if got := h.assign("b"); got != 2 {
+	if got, _ := h.assign("b"); got != 2 {
 		t.Fatalf("after the wrap: %d, want 2 (0 and 1 skipped)", got)
 	}
 	h.release(1)
 	h.last = 0
-	if got := h.assign("c"); got != 1 {
+	if got, _ := h.assign("c"); got != 1 {
 		t.Fatalf("a released handle is reused: %d", got)
 	}
 	if !h.isOpen("b") || h.isOpen("d") {

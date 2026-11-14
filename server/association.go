@@ -9,6 +9,7 @@ import (
 	"net"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -34,8 +35,15 @@ type association struct {
 	done   chan struct{}
 	once   sync.Once
 
+	// watchers counts the goroutines that wait for the end of a current
+	// session (use): at most one at a time.
+	watchers atomic.Int32
+
 	// Owned by run.
-	sess    *channel.Session
+	sess *channel.Session
+	// unwatch ends the watcher of sess when it stops being the current
+	// session.
+	unwatch chan struct{}
 	probing bool // a new connection waits for the probe of the current one
 	// waiting is that new connection's session, and held its fragments
 	// received during the probe, handled in order once it is taken.
@@ -280,21 +288,38 @@ func (a *association) reject(sess *channel.Session) {
 }
 
 // use makes sess the current session.
+//
+// One goroutine watches the current session: it ends when the session's
+// channel ends (the association then forgets the session), when another
+// session becomes the current one, or when the association ends. A
+// datagram channel outlives many uses of its session, so its watcher must
+// not wait for the channel alone.
 func (a *association) use(sess *channel.Session) {
 	a.detach()
+	if a.unwatch != nil {
+		close(a.unwatch)
+	}
+	stop := make(chan struct{})
+	a.unwatch = stop
 	a.sess = sess
 	// Every connection starts with a null unsolicited response; the
 	// classes the master enabled belong to the outstation and survive
 	// connections.
 	a.nullDone = false
+	a.watchers.Add(1)
 	go func() {
-		<-sess.Channel().Done()
-		a.post(func() {
-			if a.sess == sess {
-				a.detach()
-				a.sess = nil
-			}
-		})
+		defer a.watchers.Add(-1)
+		select {
+		case <-sess.Channel().Done():
+			a.post(func() {
+				if a.sess == sess {
+					a.detach()
+					a.sess = nil
+				}
+			})
+		case <-stop:
+		case <-a.done:
+		}
 	}()
 }
 
@@ -622,6 +647,17 @@ func (a *association) handle(in inbound) {
 		a.log.Warn("invalid request fragment ignored", "control", req.Control.String())
 		return
 	}
+	if broadcast && (req.Function == app.FuncAuthRequest || req.Function == app.FuncAuthRequestNoAck) {
+		// Secure authentication messages are exchanged with one master:
+		// a challenge reply, key status request or key change needs an
+		// answer, and a broadcast is never answered (IEEE 1815-2012 4.7,
+		// Table 4-16; clause 7.5). Sent to a broadcast address they are
+		// discarded and change no authentication state.
+		a.log.Debug("broadcast authentication request discarded", "function", req.Function.String())
+		a.count(secauth.StatUnexpectedMessages)
+		a.count(secauth.StatDiscardedMessages)
+		return
+	}
 	if req.Control.CON && !broadcast && !in.resumed && err == nil {
 		// A request asking for confirmation, which masters no longer send
 		// (4.3 Rule 11), is confirmed at once (4.3 Rule 12), with its
@@ -916,14 +952,20 @@ func (a *association) maybeUnsolicited() {
 			return
 		}
 	}
+	// An unsolicited response is a single fragment: only the events that
+	// can fill one are taken. Every event takes at least two octets (an
+	// index and a value), so a fragment holds fewer than maxTxFragment of
+	// them, and the first fragment of the events taken is the one of all
+	// of them.
+	limit := a.srv.opts.maxTxFragment
 	var sels []*eventSelector
 	for c := uint8(1); c <= 3; c++ {
 		if a.unsolMask&(1<<c) != 0 {
-			sels = append(sels, &eventSelector{classes: 1 << c, limit: noLimit})
+			sels = append(sels, &eventSelector{classes: 1 << c, limit: limit})
 		}
 	}
 	plans, _ := pack(a.eventItems(sels), a.srv.opts.maxTxFragment)
-	plan := plans[0] // an unsolicited response is a single fragment
+	plan := plans[0]
 	if len(plan.events) == 0 {
 		return
 	}

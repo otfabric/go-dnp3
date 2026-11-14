@@ -325,7 +325,10 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		return DoubleBitBinary{Value: DoubleBit(f >> 6), Flags: Flags(f & 0x3F), Time: t}, r.done()
 	case fBinaryCommandEvent:
 		s := r.u8()
-		t, _ := d.readTime(&r, c)
+		t, err := d.readTime(&r, c)
+		if err != nil {
+			return nil, err
+		}
 		return BinaryCommandEvent{Value: s&0x80 != 0, Status: CommandStatus(s & 0x7F), Time: t}, r.done()
 	case fCROB:
 		// The status is a UINT7; bit 7 is reserved and set to 0 by the
@@ -344,7 +347,10 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		} else {
 			v.Value = r.u32()
 		}
-		v.Time, _ = d.readTime(&r, c)
+		var err error
+		if v.Time, err = d.readTime(&r, c); err != nil {
+			return nil, err
+		}
 		return v, r.done()
 	case fAnalog:
 		var v Analog
@@ -352,7 +358,10 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 			v.Flags = Flags(r.u8())
 		}
 		v.Value = readNum(&r, d.num)
-		v.Time, _ = d.readTime(&r, c)
+		var err error
+		if v.Time, err = d.readTime(&r, c); err != nil {
+			return nil, err
+		}
 		return v, r.done()
 	case fDeadband:
 		return AnalogDeadband{Value: readNum(&r, d.num)}, r.done()
@@ -365,7 +374,10 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 	case fAnalogCommandEvent:
 		v := AnalogCommandEvent{Status: CommandStatus(r.u8() & 0x7F)}
 		v.Value = readNum(&r, d.num)
-		v.Time, _ = d.readTime(&r, c)
+		var err error
+		if v.Time, err = d.readTime(&r, c); err != nil {
+			return nil, err
+		}
 		return v, r.done()
 	case fTime:
 		return AbsoluteTime{Time: r.time()}, r.done()
@@ -397,7 +409,10 @@ func (d *desc) decodeValue(gv GroupVariation, b []byte, c *codecCtx) (Value, err
 		return BufferFillStatus{Fill: f & 0x7F, Overflow: f&0x80 != 0, Buffer: GV(r.u8(), r.u8())}, r.done()
 	case fSecStat:
 		v := SecurityStatistic{Flags: Flags(r.u8()), Association: r.u16(), Value: r.u32()}
-		v.Time, _ = d.readTime(&r, c)
+		var err error
+		if v.Time, err = d.readTime(&r, c); err != nil {
+			return nil, err
+		}
 		return v, r.done()
 	case fRaw, fActivation:
 		return Raw{Data: clone(b)}, nil

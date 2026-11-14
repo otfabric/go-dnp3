@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -147,8 +148,16 @@ func (c *Client) release() { <-c.turn }
 // confirmed again (rows 8 and 14), and any other fragment but the next
 // abandons the response with dnp3.ErrProtocol, unconfirmed (rows 9, 11,
 // 13 and 15 to 17), and so does the fragment that would take the
-// response beyond WithMaxResponse.
+// response beyond WithMaxResponse, each fragment counted by fragmentCost.
+//
+// An automatic task's request is not sent while the handler's queue is
+// full (attempt waits for room before the first): the second request of a
+// two-step exchange, such as a time synchronization, then fails with
+// dnp3.ErrBusy.
 func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Header) (*Result, error) {
+	if isAutomatic(ctx) && c.handlerFull() {
+		return nil, fmt.Errorf("%w: handler queue full: automatic %s request not sent", dnp3.ErrBusy, fc)
+	}
 	c.mu.Lock()
 	sess := c.sess
 	seq := c.seq
@@ -215,7 +224,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	defer timer.Stop()
 	expect := seq
 	var last []byte // the last fragment accepted
-	held := 0       // the octets of the fragments accepted, at most WithMaxResponse
+	held := 0       // the cost of the fragments accepted (fragmentCost), at most WithMaxResponse
 	challenged := false
 	for {
 		select {
@@ -267,11 +276,12 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 						dnp3.ErrProtocol, f.Control.Seq, f.Control.FIR, expect, fc)
 				}
 			}
-			if len(rf.raw) > c.opts.maxResponse-held {
+			cost := fragmentCost(f, rf.raw)
+			if cost > c.opts.maxResponse-held {
 				return res, fmt.Errorf("%w: response fragment seq %d would take the %s response beyond %d octets (WithMaxResponse): response abandoned",
 					dnp3.ErrProtocol, f.Control.Seq, fc, c.opts.maxResponse)
 			}
-			held += len(rf.raw)
+			held += cost
 			if f.Control.FIN {
 				// What follows the last fragment, such as a challenge of
 				// its CONFIRM (IEEE 1815-2012 clause 7.5.2.3.2 j), is no
@@ -287,7 +297,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 			res.Fragments = append(res.Fragments, f)
 			res.raw = append(res.raw, rf.raw)
 			res.IIN = f.IIN
-			c.events.response(f, false)
+			c.events.response(f, cost, false)
 			if f.Control.FIN {
 				c.onIIN(f.IIN)
 				if bits := f.IIN & dnp3.IINErrorBits; bits != 0 {
@@ -415,12 +425,78 @@ func (c *Client) do(ctx context.Context, fc app.FunctionCode, idempotent bool, f
 	return err
 }
 
+// attempt runs fn once with the turn held. An automatic task's attempt
+// waits first while the handler's queue is full, and starts only with the
+// turn and room in the queue: so each automatic request starts below the
+// bound of the queue (maxNotices, maxNoticeCost).
 func (c *Client) attempt(ctx context.Context, fn func(ctx context.Context) error) error {
-	if err := c.acquire(ctx); err != nil {
-		return err
+	auto := isAutomatic(ctx)
+	for {
+		if auto {
+			if err := c.waitRoom(ctx); err != nil {
+				return err
+			}
+		}
+		if err := c.acquire(ctx); err != nil {
+			return err
+		}
+		if !auto || !c.handlerFull() {
+			break
+		}
+		// The queue filled while waiting for the turn.
+		c.release()
 	}
 	defer c.release()
 	return fn(ctx)
+}
+
+// automaticKey marks the context of an automatic task (runTask).
+type automaticKey struct{}
+
+// isAutomatic reports whether ctx is that of an automatic task.
+func isAutomatic(ctx context.Context) bool {
+	v, _ := ctx.Value(automaticKey{}).(bool)
+	return v
+}
+
+// handlerFull reports whether the Handler's queue is full; without a
+// Handler, responses are not queued and it never is.
+func (c *Client) handlerFull() bool {
+	return c.opts.handler != nil && c.events.full()
+}
+
+// waitRoom waits until the Handler's queue is not full.
+func (c *Client) waitRoom(ctx context.Context) error {
+	for c.handlerFull() {
+		select {
+		case <-c.events.room:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.closeCh:
+			return dnp3.ErrClosed
+		}
+	}
+	return nil
+}
+
+// objectCost is what a response fragment counts for each object it
+// decodes to (app.Decode): an Object and its boxed value keep 40 to 50
+// octets of memory (measured for packed binary inputs g1v1 and g3v1,
+// binary inputs g1v2, events g2v2 and analog inputs g30v1 and g30v4), while
+// packed variations carry up to eight objects in one octet.
+const objectCost = 48
+
+// fragmentCost is what a response fragment counts against WithMaxResponse
+// and the Handler's queue: its octets, or objectCost for each object it
+// decodes to when that is more. What the client keeps of a fragment, its
+// octets and the decoded fragment, then stays within a small multiple of
+// its cost, however densely the objects are packed.
+func fragmentCost(f *app.Fragment, raw []byte) int {
+	n := 0
+	for _, h := range f.Headers {
+		n += len(h.Objects)
+	}
+	return max(len(raw), min(n, math.MaxInt/objectCost)*objectCost)
 }
 
 // retryable reports whether a failed attempt may be repeated: transport

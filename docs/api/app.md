@@ -1079,7 +1079,7 @@ FileDescriptor is a file descriptor object (g70v7): one entry of a directory, or
 func DecodeFileDescriptors(b []byte) ([]FileDescriptor, error)
 ```
 
-DecodeFileDescriptors decodes the content of a directory file: a sequence of file descriptor objects.
+DecodeFileDescriptors decodes the content of a directory file: a sequence of file descriptor objects. The result is allocated once, for the descriptors b holds, so that its size stays proportional to b.
 
 ### type FileMode
 
@@ -1296,7 +1296,7 @@ func (f *Fragment) AppendEncode(b []byte) ([]byte, error)
 
 AppendEncode appends the wire encoding of f to b.
 
-A response (function 129..131) cannot carry a header with qualifier 0x06 (ErrInvalidQualifier), nor one of group 60 or of a request-only variation such as variation 0 (ErrInvalidValue): IEEE 1815-2012 Table 4-8, 4.2.2.7.1.1 and 4.2.2.7.2.1. [Decode](#func-decode) refuses them in a response too.
+A response (function 129..131) cannot carry a header with qualifier 0x06 (ErrInvalidQualifier), nor one of group 60 or of a request-only variation such as variation 0 (ErrInvalidValue): IEEE 1815-2012 Table 4-8, 4.2.2.7.1.1 and 4.2.2.7.2.1. [Decode](#func-decode) refuses them in a response too. Nor can it carry a header whose objects all lack a value (ErrInvalidValue): in a response, values follow the indexes, so the bare index list it would encode is not what a receiver parses.
 
 #### func (Fragment) Encode
 

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"slices"
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
@@ -22,15 +23,30 @@ import (
 // outstation accept both.
 const keyStatusWithMAC = false
 
-// controlKey returns the key challenge replies are computed with.
+// controlKey returns a copy of the key challenge replies are computed
+// with, nil while there is none: a session key change clears the session
+// key it replaces, which must not change a MAC being computed with it.
+// The caller clears the copy after use.
 func (c *Client) controlKey() []byte {
 	u := c.opts.auth
 	if len(u.UpdateKey) == 0 {
-		return u.Key
+		return slices.Clone(u.Key)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.auth.sessionKey
+	return slices.Clone(c.auth.sessionKey)
+}
+
+// hasControlKey reports whether there is a key challenge replies are
+// computed with.
+func (c *Client) hasControlKey() bool {
+	u := c.opts.auth
+	if len(u.UpdateKey) == 0 {
+		return u.Key != nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.auth.sessionKey != nil
 }
 
 // changeSessionKeys runs the session key change procedure (IEEE 1815-2012
@@ -67,7 +83,12 @@ func (c *Client) changeSessionKeys(ctx context.Context) error {
 		if err == nil {
 			var done app.AuthSessionKeyStatus
 			if done, err = keyStatus(res); err == nil {
+				// The confirmation's MAC algorithm is the outstation's
+				// choice, within those this client accepts.
 				want, merr := secauth.MAC(done.MAC, monitoring, res.request)
+				if merr == nil && !c.acceptsKeyStatusMAC(done.MAC) {
+					merr = fmt.Errorf("%s not among the accepted MAC algorithms", done.MAC)
+				}
 				if merr != nil || done.Status != app.KeyStatusOK || !secauth.Equal(want, done.MACValue) {
 					if done.Status == app.KeyStatusOK {
 						c.count(secauth.StatAuthenticationFailures)
@@ -88,6 +109,9 @@ func (c *Client) changeSessionKeys(ctx context.Context) error {
 	if err != nil {
 		c.mu.Lock()
 		c.countLocked(secauth.StatFailedSessionKeyChanges)
+		// A key change the key change count asked for is asked for again
+		// with the next authentication message.
+		c.auth.countAsked = false
 		if errors.Is(err, dnp3.ErrTimeout) {
 			c.countLocked(secauth.StatReplyTimeouts)
 		}

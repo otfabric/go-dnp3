@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       fuzztime:
-        description: "Duration of each fuzz target (go test -fuzztime)"
+        description: "Duration of each fuzz target (go test -fuzztime): a number followed by s, m, h or x"
         required: false
         default: "10m"
 
@@ -57,4 +57,12 @@ jobs:
       - name: Fuzz
         env:
           FUZZTIME: ${{ inputs.fuzztime || '10m' }}
-        run: make fuzz FUZZTIME="$FUZZTIME"
+        # The input is free text: only a go test -fuzztime duration (a
+        # number of seconds, minutes or hours, or of iterations with x)
+        # reaches make.
+        run: |
+          if ! [[ "$FUZZTIME" =~ ^[0-9]+(s|m|h|x)$ ]]; then
+            echo "::error::fuzztime must be a number followed by s, m, h or x, such as 10m"
+            exit 1
+          fi
+          make fuzz FUZZTIME="$FUZZTIME"

@@ -420,6 +420,8 @@ type FSFileServer struct {
 
 FSFileServer is a read-only [FileServer](#type-fileserver) over an fs.FS, for example os.DirFS. Directories are served as file descriptor lists, so that a master can list them.
 
+Names are confined to the fs.FS: "..", absolute and backslash paths do not leave it. Whether a symbolic link inside it leads out of it is the fs.FS's choice: os.DirFS follows symbolic links, also to files outside its directory. To serve a directory without that, use the FS method of an [os.Root](https://pkg.go.dev/os#Root) from [os.OpenRoot](https://pkg.go.dev/os#OpenRoot), which does not follow links out of the directory, or an fs.FS without links.
+
 #### func (FSFileServer) Delete
 
 ```go

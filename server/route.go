@@ -46,7 +46,7 @@ func ServeByMasterIP(l net.Listener, routes ...Route) error {
 	log := routes[0].log()
 	var delay time.Duration
 	for {
-		c, err := logx.Call(log, "net.Listener.Accept", l.Accept)
+		c, remote, err := acceptConn(log, l)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				return err
@@ -56,12 +56,12 @@ func ServeByMasterIP(l net.Listener, routes ...Route) error {
 			continue
 		}
 		delay = 0
-		r, ok := routeOf(routes, c.RemoteAddr())
+		r, ok := routeOf(routes, remote)
 		if !ok {
 			_ = c.Close()
 			continue
 		}
-		r.serve(c)
+		r.serve(c, remote)
 	}
 }
 
@@ -104,24 +104,24 @@ func routeOf(routes []Route, a net.Addr) (Route, bool) {
 
 // serve gives an accepted connection to the route's target, as its Serve
 // would.
-func (r Route) serve(c net.Conn) {
+func (r Route) serve(c net.Conn, remote net.Addr) {
 	if r.Server != nil {
 		s := r.Server
 		switch {
 		case s.isClosed():
 			_ = c.Close()
 			return
-		case !s.opts.masterIPAllowed(c.RemoteAddr()):
-			s.log.Warn("connection refused: address not among WithMasterIPs", "remote", c.RemoteAddr().String())
+		case !s.opts.masterIPAllowed(remote):
+			s.log.Warn("connection refused: address not among WithMasterIPs", "remote", addrString(remote))
 			_ = c.Close()
 			return
 		case !s.reserve():
-			s.log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", s.opts.maxConns)
+			s.log.Warn("connection refused: limit reached", "remote", addrString(remote), "limit", s.opts.maxConns)
 			_ = c.Close()
 			return
 		}
 		// The goroutine is one Close waits for, as Serve's are.
-		if !s.spawn(func() { s.serveAccepted(c) }) {
+		if !s.spawn(func() { s.serveAccepted(c, remote) }) {
 			s.unreserve()
 			_ = c.Close()
 		}
@@ -132,16 +132,16 @@ func (r Route) serve(c net.Conn) {
 	case g.isClosed():
 		_ = c.Close()
 		return
-	case !g.masterIPAllowed(c.RemoteAddr()):
-		g.servers[0].log.Warn("connection refused: address not among WithMasterIPs", "remote", c.RemoteAddr().String())
+	case !g.masterIPAllowed(remote):
+		g.servers[0].log.Warn("connection refused: address not among WithMasterIPs", "remote", addrString(remote))
 		_ = c.Close()
 		return
 	case !g.acquire():
-		g.servers[0].log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", g.limit())
+		g.servers[0].log.Warn("connection refused: limit reached", "remote", addrString(remote), "limit", g.limit())
 		_ = c.Close()
 		return
 	}
-	if !g.spawn(func() { g.serveAccepted(c, g.handshake) }) {
+	if !g.spawn(func() { g.serveAccepted(c, remote, g.handshake) }) {
 		g.release()
 		_ = c.Close()
 	}

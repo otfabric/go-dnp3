@@ -139,11 +139,25 @@ func (c *Client) closeFile(ctx context.Context, handle uint32, abort bool) error
 }
 
 // ReadFile reads the file name from the outstation into w and returns the
-// number of octets read.
+// number of octets read. When the outstation's answer to OPEN_FILE
+// announced the size of the file, a transfer that goes on beyond it fails
+// with dnp3.ErrProtocol and is aborted. A size of 0xFFFFFFFF, the unknown
+// size (IEEE 1815-2012 clause 4.4.17.2.1), or of 0, which some
+// implementations send for no size, does not limit the transfer.
 func (c *Client) ReadFile(ctx context.Context, name string, w io.Writer, o FileOptions) (int64, error) {
+	return c.readFile(ctx, name, w, o, true)
+}
+
+// readFile is ReadFile; bySize refuses the octets beyond the size the
+// outstation announced.
+func (c *Client) readFile(ctx context.Context, name string, w io.Writer, o FileOptions, bySize bool) (int64, error) {
 	st, err := c.openFile(ctx, name, app.FileModeRead, 0, o)
 	if err != nil {
 		return 0, err
+	}
+	limit := int64(-1) // no limit
+	if bySize && st.Size != 0 && st.Size != unknownFileSize {
+		limit = int64(st.Size)
 	}
 	var n int64
 	for block := uint32(0); ; block++ {
@@ -155,6 +169,10 @@ func (c *Client) ReadFile(ctx context.Context, name string, w io.Writer, o FileO
 				case app.FileTransport:
 					if t.Block != block {
 						err = fmt.Errorf("%w: file block %d, asked for %d", dnp3.ErrProtocol, t.Block, block)
+						break
+					}
+					if limit >= 0 && int64(len(t.Data)) > limit-n {
+						err = fmt.Errorf("%w: file %q: block %d goes beyond the %d octets announced", dnp3.ErrProtocol, name, block, limit)
 						break
 					}
 					// The writer is the application's: one that does not
@@ -262,34 +280,63 @@ func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size u
 	}
 }
 
-// maxDirectory bounds the listing ListDirectory collects, in octets: room
-// for some 500 000 entries (g70v7 descriptors of 20 octets and a name), far
-// beyond a directory an outstation serves over DNP3. A listing that goes on
-// beyond it is refused instead of held.
+// maxDirectory bounds the listing ListDirectory collects: its octets, and
+// entryCost for each entry, at most 16 MiB. That is room for some 200 000
+// entries, far beyond a directory an outstation serves over DNP3. A
+// listing that goes on beyond it is refused instead of held; what the
+// listing and its decoded entries keep stays within twice the bound.
 const maxDirectory = 16 << 20
+
+// entryCost is what an entry of a listing counts beyond its octets: at
+// least the size of an app.FileDescriptor, which holds its name apart.
+const entryCost = 48
+
+// descriptorNameOffset is the size of a g70v7 file descriptor without its
+// name; its octets 2 and 3 are the name's length, as
+// app.DecodeFileDescriptors reads it.
+const descriptorNameOffset = 20
 
 // errDirectoryTooLong is what the listing's buffer returns past maxDirectory.
 var errDirectoryTooLong = errors.New("directory listing too long")
 
-// listing is the buffer of ListDirectory: it takes at most max octets.
+// listing is the buffer of ListDirectory: it takes octets and entries
+// that cost at most max.
 type listing struct {
 	bytes.Buffer
 	max int
+	// next is the offset of the first entry not counted yet; entries the
+	// number of entries counted.
+	next, entries int
 }
 
 func (l *listing) Write(p []byte) (int, error) {
-	if len(p) > l.max-l.Len() {
+	if len(p) > l.max-l.Len()-l.entries*entryCost {
 		return 0, errDirectoryTooLong
 	}
-	return l.Buffer.Write(p)
+	n, _ := l.Buffer.Write(p) // never fails: Buffer panics when out of memory
+	// Count the entries now whole.
+	b := l.Bytes()
+	for len(b)-l.next >= descriptorNameOffset {
+		e := descriptorNameOffset + (int(b[l.next+2]) | int(b[l.next+3])<<8)
+		if len(b)-l.next < e {
+			break
+		}
+		l.next += e
+		l.entries++
+	}
+	if l.Len()+l.entries*entryCost > l.max {
+		return n, errDirectoryTooLong
+	}
+	return n, nil
 }
 
 // ListDirectory reads the directory name and returns its entries. A
-// listing longer than 16 MiB is refused with dnp3.ErrProtocol, and the
-// transfer aborted.
+// listing longer than 16 MiB, each entry counted with the memory its
+// descriptor takes, is refused with dnp3.ErrProtocol, and the transfer
+// aborted.
 func (c *Client) ListDirectory(ctx context.Context, name string, o FileOptions) ([]app.FileDescriptor, error) {
 	buf := listing{max: maxDirectory}
-	if _, err := c.ReadFile(ctx, name, &buf, o); err != nil {
+	if _, err := c.readFile(ctx, name, &buf, o, false); err != nil {
 		if errors.Is(err, errDirectoryTooLong) {
 			return nil, fmt.Errorf("%w: directory %q: listing longer than %d octets", dnp3.ErrProtocol, name, maxDirectory)
 		}

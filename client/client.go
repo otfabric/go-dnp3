@@ -87,6 +87,12 @@ type Client struct {
 	// needTime is the NEED_TIME indication of the outstation's latest
 	// response.
 	needTime atomic.Bool
+	// lastSync is when the last successful automatic time synchronization
+	// ended (UnixNano), 0 before the first; syncTimer, guarded by taskMu,
+	// queues a time synchronization put off until the response timeout
+	// has passed since (enqueueTimeSync).
+	lastSync  atomic.Int64
+	syncTimer *time.Timer
 
 	// dual is the dual end point of WithDualEndpoint, nil without.
 	dual *dualEndpoint

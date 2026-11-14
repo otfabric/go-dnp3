@@ -343,11 +343,19 @@ func blockNumber(n uint32, last bool) uint32 {
 }
 
 func decFileDescriptor(b []byte) (Value, error) {
+	v, err := decodeFileDescriptor(b)
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func decodeFileDescriptor(b []byte) (FileDescriptor, error) {
 	r := reader{b: b}
 	off, n := r.u16(), r.u16()
 	v := FileDescriptor{Type: FileType(r.u16()), Size: r.u32(), Created: r.time(), Permissions: Permissions(r.u16()), RequestID: r.u16()}
 	if r.err == nil && off != g70v7NameOffset {
-		return nil, malformed("g70v7 name offset %d", off)
+		return FileDescriptor{}, malformed("g70v7 name offset %d", off)
 	}
 	v.Name = string(r.bytes(int(n)))
 	return v, r.done()
@@ -375,23 +383,44 @@ func AppendFileDescriptor(b []byte, d FileDescriptor) ([]byte, error) {
 }
 
 // DecodeFileDescriptors decodes the content of a directory file: a
-// sequence of file descriptor objects.
+// sequence of file descriptor objects. The result is allocated once, for
+// the descriptors b holds, so that its size stays proportional to b.
 func DecodeFileDescriptors(b []byte) ([]FileDescriptor, error) {
 	var out []FileDescriptor
+	if n := countFileDescriptors(b); n > 0 {
+		out = make([]FileDescriptor, 0, n)
+	}
 	for len(b) > 0 {
 		if len(b) < g70v7NameOffset {
 			return out, truncated("file descriptor: %d octets", len(b))
 		}
-		n := g70v7NameOffset + int(uint16(b[2])|uint16(b[3])<<8)
+		n := fileDescriptorLen(b)
 		if len(b) < n {
 			return out, truncated("file descriptor name")
 		}
-		v, err := decFileDescriptor(b[:n])
+		v, err := decodeFileDescriptor(b[:n])
 		if err != nil {
 			return out, err
 		}
-		out = append(out, v.(FileDescriptor))
+		out = append(out, v)
 		b = b[n:]
 	}
 	return out, nil
+}
+
+// fileDescriptorLen returns the encoded size of the file descriptor at
+// the start of b, which holds at least its fixed part.
+func fileDescriptorLen(b []byte) int {
+	return g70v7NameOffset + int(uint16(b[2])|uint16(b[3])<<8)
+}
+
+// countFileDescriptors returns the number of whole file descriptors at
+// the start of b.
+func countFileDescriptors(b []byte) int {
+	n := 0
+	for len(b) >= g70v7NameOffset && fileDescriptorLen(b) <= len(b) {
+		b = b[fileDescriptorLen(b):]
+		n++
+	}
+	return n
 }

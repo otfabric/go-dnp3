@@ -89,7 +89,7 @@ The master for one outstation.
 | `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`, and `Jitter`, 0 to 1, default 0, which draws each pause d from [(1-Jitter)·d, d]); each repeat is a new request with the next SEQ, and a time synchronization starts again with fresh times |
 | `WithResponseTimeout(d)` | 5 s | Per response fragment |
 | `WithMaxFragment(n)` | 2048 | Largest fragment reassembled; below 2048 is outside 4.3 Rule 3 |
-| `WithMaxResponse(n)` | 16 MiB (`DefaultMaxResponse`) | Octets collected of one response, all its fragments counted; at least 249. A response beyond it is abandoned with `dnp3.ErrProtocol` at the fragment that crosses the limit, which is not confirmed (Table 6-2); the `Result` holds the fragments before it. `math.MaxInt` puts no limit |
+| `WithMaxResponse(n)` | 16 MiB (`DefaultMaxResponse`) | Octets collected of one response, all its fragments counted, each as the larger of its octets and 48 octets per decoded object (one dense fragment can exceed a small limit); at least 249. A response beyond it is abandoned with `dnp3.ErrProtocol` at the fragment that crosses the limit, which is not confirmed (Table 6-2); the `Result` holds the fragments before it. `math.MaxInt` puts no limit |
 | `WithMaxRequestFragment(n)` | unlimited | Largest request sent, at least 249 (4.3 Rule 4); a larger one fails with `ErrInvalidOption`; a critical request that fits only without the aggressive mode objects is sent challenged; `WriteFile` sizes blocks to fit |
 | `WithLink(Link)` | unconfirmed | `Confirmed` (serial only: 13.2.1.1 forbids it over IP), `Timeout` (2 s), `Retries`, `KeepAlive` (60 s, any positive duration; negative disables it, for testing only); time synchronization messages always unconfirmed (10.3.4.1) |
 | `WithStartup(Startup)` | `Integrity` | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect; `EnableUnsolicited` also sets the other two (5.1.1.2 Rule 1); `Startup{}` runs nothing; `EnableUnsolicited` is sent again after an outstation restart |
@@ -103,8 +103,8 @@ The master for one outstation.
 | `WithQueueLimit(n)` | 64 | Requests that may wait for their turn |
 | `WithSecureAuthentication(secauth.User)` | off | Secure Authentication: session key change with an update key (on connect, at the interval, after the key change count, after an outstation restart, and again soon after an authentication failure, at most 3 times until a change succeeds; while there are no keys a backoff from 1 s, at most 3 retries, then the interval), challenge replies, the key status authenticated with the last monitoring key |
 | `WithKeyChangeInterval(d)` | 15 min | How often the session keys are changed; 0 turns the interval off, leaving the count |
-| `WithKeyChangeCount(n)` | 1000 (`DefaultKeyChangeCount`) | The session keys are also changed after n authentication messages sent or received; 1..`MaxKeyChangeCount` (2^31) |
-| `WithChallengeMACs(algs...)` | all but HMAC-SHA-1/4, and over TCP/UDP the 8-octet truncations | The MAC algorithms an outstation's challenge may ask for; the reply and the aggressive mode requests use the challenge's algorithm |
+| `WithKeyChangeCount(n)` | 1000 (`DefaultKeyChangeCount`) | The session keys are also changed after n authentication messages sent or received, and the change is tried again until one succeeds; 1..`MaxKeyChangeCount` (2^31) |
+| `WithChallengeMACs(algs...)` | all but HMAC-SHA-1/4, and over TCP/UDP the 8-octet truncations | The MAC algorithms an outstation's challenge may ask for; the reply and the aggressive mode requests use the challenge's algorithm. The MACs of a key status and of a key change confirmation are accepted by the same rule |
 | `WithAggressiveMode(fcs...)` | off | Send these function codes (`secauth.DefaultCritical` when none) in aggressive mode, once a challenge was answered since the last key change; a refused request makes the next one challenged, error 4 turns it off for the connection; `New` refuses it without `WithSecureAuthentication` |
 
 Constants: `DefaultPort` (20000), the port `Dial` uses when the address has none;
@@ -149,7 +149,7 @@ Every request takes a `context.Context` and returns a `*Result` (its fields
 | `ReadAttributeSet(ctx, set, variation)`, `WriteAttributeSet(ctx, set, variation, a)` | The same for another set |
 | `Write(ctx, headers...)` | WRITE |
 | `Request(ctx, fc, headers...)` | Any function code |
-| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`, `Created`); a directory listing longer than 16 MiB is refused with `dnp3.ErrProtocol` |
+| `ReadFile`, `WriteFile`, `ListDirectory`, `FileInfo`, `DeleteFile`, `AuthenticateFile` | The file functions (group 70); `ReadFile`, `WriteFile`, `ListDirectory` and `DeleteFile` take `FileOptions` (`MaxBlockSize`, `AuthKey`, `Permissions`, `Append`, `Created`); a directory listing longer than 16 MiB (each decoded entry counted with 48 octets) is refused with `dnp3.ErrProtocol`; `ReadFile` refuses data beyond the size announced in the OPEN_FILE answer with `dnp3.ErrProtocol` (a size of 0 or 0xFFFFFFFF does not limit it) |
 | `Broadcast(ctx, dest, fc, headers...)` | A request to a broadcast address (`link.BroadcastNoConfirm` 0xFFFD, `BroadcastConfirm` 0xFFFE, `BroadcastOptionalConfirm` 0xFFFF); no answer, IIN1.0 in the next response |
 
 Commands: `Command{Index, Value, GV}`, built with `CROB(index, op, on, off)`
@@ -183,7 +183,7 @@ The outstation.
 |--------|---------|
 | `New(opts...)` | An outstation |
 | `(*Server).ListenAndServe(addr)` | TCP (with `WithTLS`, TLS) on addr; when empty `:20000`, or `:19999` with TLS |
-| `(*Server).Serve(net.Listener)` | Accept on any listener |
+| `(*Server).Serve(net.Listener)` | Accept on any listener; an Accept that returns neither a connection nor an error, or a connection whose `RemoteAddr` does not return normally, is an Accept error (the same for `Group.Serve` and `ServeByMasterIP`) |
 | `(*Server).ServeConn(io.ReadWriteCloser, net.Addr)` | Serve one stream: serial, a pipe |
 | `(*Server).ServeUDP(net.PacketConn)` | DNP3 over UDP; answers the address that sent last |
 | `(*Server).ServeUDPTo(net.PacketConn, net.Addr)` | The same, with the master's address known from the start |
@@ -223,7 +223,7 @@ The outstation.
 | `WithTimeSync(interval)` | never | NEED_TIME at start and after the interval |
 | `WithDeadbandIntegerOnly(bool)` | off | Analog input deadbands (g34) in variations 1 and 2 only; a READ of g34v3 gets IIN2.1 |
 | `WithAttributes(map[uint8]app.Attribute)` | none | Device attributes of set 0 |
-| `WithAttributeSet(set, attrs, writable...)` | none | Device attributes of another set; the writable variations take a value of the same type |
+| `WithAttributeSet(set, attrs, writable...)` | none | Device attributes of another set; the writable variations take a value of the same type. An index-prefixed g0 WRITE writes each object to the set named by its own index |
 | `WithFileServer(FileServer)` | none | File transfer |
 | `WithFileTimeout(d, class)` | 5 min, class 1 | An open file no request names for `d` is closed and reported with a g70v6 HANDLE_EXPIRED event in `class` |
 | `WithSecureAuthentication(SecureAuth)` | off | Challenge critical requests, accept aggressive mode, keep the security statistics: `User`, `Critical` (default `DefaultCritical`, the same as `secauth.DefaultCritical`; always completed with `secauth.MandatoryCritical`), `ReplyTimeout` (default `DefaultReplyTimeout`, 2 s), `StatisticsClass` (default 1), `StatisticsThreshold` (all statistics; unset: the defaults of Table 7-6), `Thresholds` (per statistic, 1..65 535), `NoAggressiveMode`, `ExpectedKeyChangeInterval` (default 30 min, negative: off), `ExpectedKeyChangeCount` (default 2000), `MaxKeyStatusRequests` (default 5, 2..255) |
@@ -231,8 +231,9 @@ The outstation.
 Constants: `DefaultPort` (20000), `DefaultTLSPort` (19999), `DefaultEventLimit` (100),
 `DefaultFileTimeout` (5 min), `DefaultReplyTimeout` (2 s), `DefaultExpectedKeyChangeInterval` (30 min),
 `DefaultExpectedKeyChangeCount` (2000), `DefaultMaxKeyStatusRequests` (5), `MaxScheduledFreezes` (16: the FREEZE_AT_TIME
-requests the server keeps waiting at once; a periodic one keeps its place
-until `Close`); the variable `DefaultCritical`. `Class` is an event class
+requests the server keeps waiting at once, counted across all associations;
+a periodic one keeps its place until `Close`, and an interval below 100 ms
+is served as 100 ms); the variable `DefaultCritical`. `Class` is an event class
 (1..3) as `PointConfig`, `Unsolicited` and `SecureAuth` take it.
 
 ### Database
@@ -273,13 +274,19 @@ after an error of it.
 `FileServer` (`Open`, `Delete`, `Info`), `FileAuthenticator`, `File`
 (`io.Reader`, `io.Writer`, `Size`, `Close(abort)`), `FileRequest`, and
 `FSFileServer{FS}`: a read-only server over any `fs.FS` that also lists
-directories.
+directories. It follows symbolic links when its `fs.FS` does (`os.DirFS`
+does, also out of its directory); the `FS` method of an `os.Root` from
+`os.OpenRoot` does not. A `File` returned with a refused OPEN_FILE is
+closed; DELETE_FILE and OPEN_FILE of the same file (names compared
+cleaned) in different associations exclude each other (FILE_LOCKED). A
+`File.Close` that does not return normally is logged as `File.Close`, and
+CLOSE_FILE is answered FATAL (CANNOT_ABORT for an abort) without text.
 
 ## Package `app`
 
 | Symbol | Meaning |
 |--------|---------|
-| `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `HeaderLen`, `String`; `Decode(b)`; `AppendObjectValue(b, gv, v)` encodes one object without header, as a free-format object carries it; a response refuses qualifier 0x06, group 60 and request-only variations (Table 4-8) |
+| `Fragment{Control, Function, IIN, Headers}` | `Encode`, `AppendEncode`, `HeaderLen`, `String`; `Decode(b)`; `AppendObjectValue(b, gv, v)` encodes one object without header, as a free-format object carries it; a response refuses qualifier 0x06, group 60, request-only variations (Table 4-8) and a header whose objects carry no value (`ErrInvalidValue`) |
 | `Header{GV, Qualifier, Start, Stop, Count, Objects}` | `EncodedLen`, `String` |
 | `Object{Index, Value}`, `Value` | The closed set of value types |
 | `GroupVariation`, `GV(g, v)`, `G1V0` ... `G122V2`, `OctetStringGV(g, n)` (variation 0 for n outside 1..255) | `Group`, `Variation`, `Name`, `Known`, `IsEvent`, `Size`; [OBJECTS.md](OBJECTS.md) lists them all |

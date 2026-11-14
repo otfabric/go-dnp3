@@ -1,5 +1,75 @@
 # go-dnp3 Releases
 
+## v1.15.0
+
+**Date:** 2026-11-14
+**Previous release:** v1.14.0
+
+## Summary
+
+The outstation and the master bound more of what a peer can make them do and hold: the READ budget charges every kind of header, the master's response and Handler limits count the objects a fragment decodes to, `ReadFile` stops at the announced file size, and secure authentication requests sent to a broadcast address are discarded. No exported identifier changes. The behaviour changes a user may notice are listed under Upgrading.
+
+## Upgrading
+
+- **SELECT and OPERATE are compared with their request statuses.** An OPERATE whose controls carry other statuses than those of its SELECT matches no selection and is answered NO_SELECT; a control the SELECT marked NON_PARTICIPATING is not carried out.
+- **FREEZE_AT_TIME intervals below 100 ms** are served at 100 ms.
+- **The READ budget charges more headers.** Device attribute (g0), file block (g70v5), IIN (g80) and statistics (g121) headers count toward the READ object budget; headers beyond it are answered with IIN2.2.
+- **`client.WithMaxResponse` and the Handler queue count objects.** Each response fragment counts as the larger of its octets and 48 octets per decoded object. A single densely packed fragment can exceed a small limit: 2048 octets of packed binary inputs (g1v1) count some 780 000. Raise `WithMaxResponse` where a smaller limit was set.
+- **`client.ReadFile` refuses data beyond the announced size.** When the OPEN_FILE answer gives the file's size, a transfer that goes beyond it fails with `dnp3.ErrProtocol` and is aborted; a size of 0 or 0xFFFFFFFF does not limit it.
+- **Broadcast AUTHENTICATE_REQ is discarded.** AUTHENTICATE_REQ and AUTHENTICATE_REQ_NO_ACK sent to a broadcast address are discarded and counted, never answered.
+- **A key status request for an unknown user** no longer moves the configured user's KSQ.
+
+## Changes
+
+### Fixed
+
+Outstation (`server`):
+
+- An OPERATE no longer matches a SELECT whose controls carried a different request status; a control marked NON_PARTICIPATING in the SELECT is answered NO_SELECT and not carried out (IEEE 1815-2012 4.4.4, Table 11-7 note a).
+- The FREEZE_AT_TIME schedule limit (`MaxScheduledFreezes`) is applied atomically across associations; periodic intervals shorter than 100 ms are served at 100 ms.
+- An index-prefixed group 0 WRITE writes each object to the attribute set named by its own index (5.5.6).
+- Device attribute (g0), file block (g70v5), IIN (g80) and statistics (g121) headers of a READ count toward the READ object budget, file blocks before the file is read; headers beyond it are answered with IIN2.2.
+- Splitting a READ response into fragments costs time and memory in proportion to its objects, also for long headers of large objects; selecting events for a READ with many event headers is linear in the buffered events.
+- An unsolicited response selects only as many events as one fragment can carry.
+- AUTHENTICATE_REQ and AUTHENTICATE_REQ_NO_ACK sent to a broadcast address are discarded and counted, never answered, and no longer change secure authentication state (IEEE 1815-2012 4.7, clause 7).
+- A refused aggressive mode broadcast from a session other than the master's current one is discarded without counting as an authentication failure, so it no longer invalidates session keys or closes the master's connection.
+- A session key status request for an unknown user no longer moves the configured user's KSQ.
+- One goroutine watches a master's current session; switching a master between TCP and UDP no longer adds a goroutine per switch.
+- A `File.Close` that does not return normally no longer stops other files from closing or the session keys from being reset when a master goes away; CLOSE_FILE answers FATAL (CANNOT_ABORT for an abort) without text.
+- A `File` returned with a refused OPEN_FILE is closed; open and delete compare cleaned file names, and DELETE_FILE and OPEN_FILE of the same file in different associations exclude each other (FILE_LOCKED).
+- `Serve`, `Group.Serve` and `ServeByMasterIP` treat an Accept that returns neither a connection nor an error, or a connection whose `RemoteAddr` does not return normally, as an Accept error; `DialAndServe` closes and redials such a connection.
+- The `FSFileServer` documentation states that it follows symbolic links when its `fs.FS` does (`os.DirFS`), and recommends the `FS` method of an `os.Root`.
+
+Master (`client`):
+
+- `WithMaxResponse` and the Handler queue (64 fragments, now also 4 MiB) count each response fragment as at least 48 octets per decoded object, so densely packed responses stay within the bound.
+- Automatic tasks triggered by internal indications (time synchronization, restart handling, session key changes, event polls) wait while the Handler queue is full; an outstation that keeps NEED_TIME set is synchronized at most once per response timeout.
+- A session key change that the key change count asked for is retried until one succeeds.
+- `ReadFile` refuses file data beyond the size the outstation announced in its OPEN_FILE answer.
+- `ListDirectory` counts the memory of each decoded entry (48 octets) within its 16 MiB bound.
+- The MAC algorithms of key status and key change confirmation messages follow the same rule as challenges (`WithChallengeMACs`).
+- MACs are computed with copies of the session keys, so a key change does not alter a MAC in progress.
+- The UDP stream reuses one receive buffer instead of allocating 64 KiB per datagram.
+
+Link, transport and application layers:
+
+- A partially reassembled fragment is discarded when a segment for another destination (own, broadcast or self address) arrives; the channel's `Done` also waits for the keep-alive probe.
+- `app.Fragment.AppendEncode` refuses (`app.ErrInvalidValue`) a response header whose objects carry no values.
+- Object decoding returns the error of reading an object's time in every object family.
+- `app.DecodeFileDescriptors` allocates its result once.
+
+CI:
+
+- The `Extended` workflow checks its `fuzztime` input (a number followed by s, m, h or x).
+
+### Tests
+
+- `server/readcost_test.go`, `server/select_scope_test.go`, `server/session_scope_test.go`, `server/accept_guard_test.go` and `server/file_guard_test.go`: the READ budget per header kind, SELECT/OPERATE statuses, broadcast authentication requests and session watchers, the accept guard of `Serve`, `Group.Serve`, `ServeByMasterIP` and `DialAndServe`, and the file server's open, delete and Close paths.
+- `app/decode_limits_test.go` and `internal/channel/session_bounds_test.go`: response encoding without values, time decoding errors, directory decoding, and reassembly across destinations.
+- `client` tests for the object-counted response and Handler limits, automatic tasks while the Handler queue is full, key change retries, key status MACs and `ReadFile` beyond the announced size.
+
+---
+
 ## v1.14.0
 
 **Date:** 2026-11-14

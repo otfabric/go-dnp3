@@ -201,7 +201,9 @@ content) and `FuzzParseActivateConfigStatus` (g91v1) (`app`), `FuzzOutstation` a
 answers every request with the fuzz input, with Secure Authentication
 configured) and `FuzzKeyUnwrap` (`secauth`: session key change data). `make fuzz` discovers the targets
 (`go test -list '^Fuzz'` in every library package) and runs each for
-`FUZZTIME` (default 30s), so a new target runs without being listed.
+`FUZZTIME` (default 30s), so a new target runs without being listed. The
+`Extended` workflow takes its `fuzztime` input only in the form of a number
+followed by `s`, `m`, `h` or `x` (such as `10m`).
 
 The corpora hold seeds taken from the recorded traffic
 (`capture-<file>-<frame>`, written by `make captures-seeds`): one per shape

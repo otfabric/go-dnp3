@@ -85,6 +85,7 @@ type Session struct {
 	expectFCB bool
 	lastAck   link.Function // the most recent ACK or NACK sent
 	reasm     *transport.Reassembler
+	reasmDest link.Address // destination of the segments of the partial fragment
 
 	lastRx  atomic.Int64
 	queue   chan delivery
@@ -175,8 +176,14 @@ func (s *Session) run() {
 				continue
 			}
 			// Probe on another goroutine so that delivery goes on.
+			// The probe counts as a goroutine of the channel, so that
+			// Done waits for it too.
 			probing = true
-			go func() { probe <- s.Probe() }()
+			s.ch.wg.Add(1)
+			go func() {
+				defer s.ch.wg.Done()
+				probe <- s.Probe()
+			}()
 		case err := <-probe:
 			probing = false
 			if err == nil {
@@ -491,8 +498,17 @@ func (s *Session) wouldOverflow(seg []byte) bool {
 }
 
 // receive feeds a segment to the reassembler and queues a completed
-// fragment.
+// fragment. The segments of one fragment all have one destination: a
+// segment for another destination (the station's own address, a broadcast
+// address or the self address) discards the partial fragment, so that a
+// fragment is never delivered with a destination only some of its
+// segments had.
 func (s *Session) receive(seg []byte, dest link.Address) {
+	if s.reasm.Pending() && dest != s.reasmDest {
+		s.ch.cfg.Log.Debug("partial fragment discarded: segment for another destination", "dest", dest, "partial_dest", s.reasmDest)
+		s.reasm.Reset()
+	}
+	s.reasmDest = dest
 	frag, err := s.reasm.Add(seg)
 	if errors.Is(err, transport.ErrDuplicate) {
 		// A repeat (clause 8.2.1.4 rule 5.3), not damage.

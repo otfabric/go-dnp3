@@ -384,14 +384,17 @@ func WithMaxRequestFragment(n int) Option {
 const DefaultMaxResponse = 16 << 20
 
 // WithMaxResponse limits the octets the client collects of one response:
-// those of all its fragments, the first included, as received. A response
-// whose fragments add up to more is abandoned with dnp3.ErrProtocol at the
-// fragment that crosses the limit, which is not confirmed, as an
-// unexpected fragment of a multi-fragment response is (IEEE 1815-2012
-// Table 6-2); the request's Result holds the fragments before it. n is at
-// least 249, the smallest fragment IEEE 1815-2012 allows. The default is
-// DefaultMaxResponse, 16 MiB; WithMaxResponse(math.MaxInt) puts no limit
-// on a response.
+// those of all its fragments, the first included, as received, each
+// fragment counted as at least 48 octets for each object it decodes to, so
+// that the memory a response takes stays bounded however densely its
+// objects are packed (a fragment of 2048 octets of packed binary inputs,
+// g1v1, counts some 780 000). A response whose fragments add up to more is
+// abandoned with dnp3.ErrProtocol at the fragment that crosses the limit,
+// which is not confirmed, as an unexpected fragment of a multi-fragment
+// response is (IEEE 1815-2012 Table 6-2); the request's Result holds the
+// fragments before it. n is at least 249, the smallest fragment IEEE
+// 1815-2012 allows. The default is DefaultMaxResponse, 16 MiB;
+// WithMaxResponse(math.MaxInt) puts no limit on a response.
 func WithMaxResponse(n int) Option {
 	return func(o *options) error {
 		if n < 249 {
