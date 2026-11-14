@@ -376,13 +376,15 @@ func (a *association) restart() {
 
 func (a *association) run() {
 	defer a.srv.wg.Done()
+	defer a.srv.forget(a)
 	defer a.timer.Stop()
 	for {
 		a.maybeUnsolicited()
 		a.arm()
 		select {
 		case <-a.done:
-			a.detach()
+			// Detaching closes the open files, the application's.
+			a.safely(a.detach)
 			return
 		case f := <-a.fn:
 			a.safely(f)

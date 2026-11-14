@@ -581,6 +581,7 @@ func trailingChallenge(f *app.Fragment) (app.AuthChallenge, bool) {
 func (c *Client) onStrayAuth(sess *channel.Session, f *app.Fragment, raw []byte) {
 	if f.Function != app.FuncAuthResponse || c.opts.auth == nil {
 		c.log.Debug("response nobody waits for ignored", "seq", f.Control.Seq)
+		c.lateResponse(f)
 		return
 	}
 	c.mu.Lock()
@@ -606,6 +607,7 @@ func (c *Client) onStrayAuth(sess *channel.Session, f *app.Fragment, raw []byte)
 		}
 	}
 	c.log.Debug("authentication response nobody waits for discarded", "seq", f.Control.Seq)
+	c.lateResponse(f)
 	c.mu.Lock()
 	c.countLocked(secauth.StatUnexpectedMessages)
 	c.countLocked(secauth.StatDiscardedMessages)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
+	"github.com/otfabric/go-dnp3/internal/logx"
 	"github.com/otfabric/go-dnp3/link"
 )
 
@@ -89,7 +90,7 @@ func (g *Group) Serve(l net.Listener) error {
 	}()
 	var delay time.Duration
 	for {
-		c, err := l.Accept()
+		c, err := logx.Call(g.servers[0].log, "net.Listener.Accept", l.Accept)
 		if err != nil {
 			if g.isClosed() {
 				return nil
@@ -137,7 +138,7 @@ func (g *Group) serveAccepted(c net.Conn, handshake func(net.Conn) error) {
 // handshake is the TLS handshake of a connection the group accepted: it
 // ends when the group is closed, which closes its first server.
 func (g *Group) handshake(c net.Conn) error {
-	return handshake(g.servers[0].closeCtx, c)
+	return handshake(g.servers[0].closeCtx, g.servers[0].log, c)
 }
 
 // spawn is Server.spawn for the group: f runs in a goroutine that Close
@@ -222,10 +223,18 @@ func (g *Group) Close() error {
 		return nil
 	}
 	g.closed = true
+	// A Close of the application's listener that does not return normally
+	// is logged after the unlock.
+	var failed []*logx.Failure
 	for l := range g.listeners {
-		_ = l.Close()
+		if fail, _ := logx.Try("net.Listener.Close", l.Close); fail != nil {
+			failed = append(failed, fail)
+		}
 	}
 	g.mu.Unlock()
+	for _, fail := range failed {
+		g.servers[0].log.Report(fail)
+	}
 	for _, s := range g.servers {
 		_ = s.Close()
 	}

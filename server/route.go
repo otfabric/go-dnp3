@@ -10,6 +10,7 @@ import (
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
+	"github.com/otfabric/go-dnp3/internal/logx"
 )
 
 // A Route assigns the connections of the masters whose IP address lies in
@@ -42,9 +43,10 @@ func ServeByMasterIP(l net.Listener, routes ...Route) error {
 	if err := checkRoutes(routes); err != nil {
 		return err
 	}
+	log := routes[0].log()
 	var delay time.Duration
 	for {
-		c, err := l.Accept()
+		c, err := logx.Call(log, "net.Listener.Accept", l.Accept)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				return err
@@ -77,6 +79,17 @@ func checkRoutes(routes []Route) error {
 		}
 	}
 	return nil
+}
+
+// log is the logger of the route's target: the first server of a group.
+func (r Route) log() *logx.Logger {
+	switch {
+	case r.Server != nil:
+		return r.Server.log
+	case len(r.Group.servers) > 0:
+		return r.Group.servers[0].log
+	}
+	return nil // a Group not made by NewGroup
 }
 
 // routeOf returns the first route whose prefix holds the IP address of a.

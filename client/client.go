@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"runtime/debug"
 	"strconv"
@@ -39,6 +40,7 @@ type Client struct {
 	opts options
 	log  *logx.Logger
 	rm   dnp3.RequestMetrics
+	cm   dnp3.ClientMetrics
 
 	mu      sync.Mutex
 	ch      *channel.Channel
@@ -126,7 +128,13 @@ func New(addr string, opts ...Option) (*Client, error) {
 		rekey:   make(chan struct{}, 1),
 	}
 	c.counters = newAuthCounters()
-	c.rm, _ = o.metrics.(dnp3.RequestMetrics)
+	// The application's metrics are called guarded: a callback that does
+	// not return normally is logged, and the client goes on.
+	rm, _ := o.metrics.(dnp3.RequestMetrics)
+	c.rm = logx.RequestMetrics(rm, c.log)
+	cm, _ := o.metrics.(dnp3.ClientMetrics)
+	c.cm = logx.ClientMetrics(cm, c.log)
+	c.opts.metrics = logx.Metrics(o.metrics, c.log)
 	if o.dualListener != nil {
 		c.dual = &dualEndpoint{c: c, l: o.dualListener, allow: o.dualAllow, wake: make(chan struct{}, 1)}
 	}
@@ -329,7 +337,15 @@ const dialTimeout = 10 * time.Second
 
 func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, err error) {
 	if c.opts.opener != nil {
-		return c.opts.opener(ctx)
+		// An opener that does not return normally fails the attempt. Accept
+		// logs through the client's logger, which ctx carries.
+		ctx = logx.NewContext(ctx, c.log)
+		var rwc io.ReadWriteCloser
+		err = logx.Do(c.log, "StreamOpener", func() (err error) {
+			rwc, remote, err = c.opts.opener(ctx)
+			return err
+		})
+		return rwc, remote, err
 	}
 	if c.dual != nil {
 		return c.dual.open(ctx)
@@ -344,7 +360,10 @@ func (c *Client) open(ctx context.Context) (s channel.Stream, remote net.Addr, e
 // dial opens a TCP connection to the outstation, with TLS when configured.
 // The reconnects and the dual end point dial here as well.
 func (c *Client) dial(ctx context.Context) (net.Conn, error) {
-	conn, err := dialConn(ctx, c.opts.dialer, "tcp", c.addr)
+	// A dialer that does not return normally fails the dial.
+	conn, err := logx.Call(c.log, "Dialer.DialContext", func() (net.Conn, error) {
+		return dialConn(ctx, c.opts.dialer, "tcp", c.addr)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +375,8 @@ func (c *Client) dial(ctx context.Context) (net.Conn, error) {
 		}
 		tc := tls.Client(conn, cfg)
 		hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
-		err := tc.HandshakeContext(hctx)
+		// The handshake runs the callbacks of the application's tls.Config.
+		err := logx.Do(c.log, "TLS handshake", func() error { return tc.HandshakeContext(hctx) })
 		cancel()
 		if err != nil {
 			_ = conn.Close()
@@ -497,9 +517,19 @@ func (c *Client) Close() error {
 	c.state = dnp3.StateDisconnected
 	c.mu.Unlock()
 	if changed && c.opts.stateHandler != nil {
-		c.opts.stateHandler(dnp3.StateDisconnected, nil)
+		// On the caller's goroutine: one that does not return normally is
+		// logged, as on the dispatcher's, and Close returns.
+		_ = logx.Run(c.log, "state handler", func() { c.opts.stateHandler(dnp3.StateDisconnected, nil) })
 	}
 	return nil
+}
+
+// lateResponse reports a response fragment no request takes
+// (dnp3.ClientMetrics).
+func (c *Client) lateResponse(f *app.Fragment) {
+	if c.cm != nil {
+		c.cm.OnLateResponse(c.remoteAddr(), f.Function)
+	}
 }
 
 func (c *Client) setState(s dnp3.State, err error) {
@@ -564,10 +594,13 @@ func (c *Client) receive(sess *channel.Session, data []byte) {
 	}
 	switch f.Function {
 	case app.FuncResponse, app.FuncAuthResponse:
+		// Under c.mu, so that a request that ends finds every fragment
+		// it was given (discardUnread).
 		c.mu.Lock()
 		p := c.pending
+		taken := p != nil && p.accept(f, data, at)
 		c.mu.Unlock()
-		if p == nil || !p.accept(f, data, at) {
+		if !taken {
 			// IEEE 1815-2012 Table 6-2 row 1: a response nobody waits for
 			// is discarded, not confirmed. onStrayAuth logs it, or answers
 			// a challenge of a confirmation sent before (clause 7.5.2.3.2

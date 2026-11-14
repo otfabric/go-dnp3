@@ -17,7 +17,8 @@ import (
 // several goroutines at once; implementations must be safe for concurrent
 // use and must not block (increment a counter, send on a buffered
 // channel). Frames and fragments passed to them must not be retained or
-// modified.
+// modified. A method that does not return normally is logged with its
+// stack, at error level, and the protocol goes on as if it had returned.
 //
 // Embed [NopMetrics] to implement only the callbacks you need and to stay
 // compatible when methods are added.
@@ -104,6 +105,31 @@ type RequestMetrics interface {
 	// OnRetry is called when attempt (1 for the first) failed with err and
 	// the request is about to be tried again.
 	OnRetry(remote net.Addr, outstation uint16, fc app.FunctionCode, attempt int, err error)
+}
+
+// ClientMetrics is an optional extension of [Metrics] for a client. When
+// the value given to client.WithMetrics also implements it, the client
+// reports the work it drops: automatic tasks that found the task queue
+// full, and responses that came too late for their request. Both were
+// logged at debug level only before.
+type ClientMetrics interface {
+	// OnTaskDropped is called when an automatic task was not queued
+	// because the client's task queue (8 tasks) was full. name is the
+	// task: "restart", "time-sync", "integrity", "event-poll",
+	// "key-change", or "poll-<n>" for the n-th client.WithPoll, counted
+	// from 0. It is called after the client released its task queue, so
+	// it may call into the client.
+	OnTaskDropped(name string)
+
+	// OnLateResponse is called for each response fragment the client
+	// discards because no request waits for it (IEEE 1815-2012 Table 6-2
+	// row 1: its request timed out, was canceled or was abandoned), also
+	// one that reached a request that ended before it took it, or because
+	// it is not the first fragment of the response the request in
+	// progress awaits: another sequence number, or no FIR (rows 3 and 5).
+	// fc is the fragment's function code: app.FuncResponse, or
+	// app.FuncAuthResponse with secure authentication.
+	OnLateResponse(remote net.Addr, fc app.FunctionCode)
 }
 
 // ServerMetrics is an optional extension of [Metrics] for a server. When

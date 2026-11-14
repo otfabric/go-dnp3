@@ -70,6 +70,20 @@ func newTransaction() *transaction {
 	return &transaction{frags: make(chan received, 16), errc: make(chan error, 1)}
 }
 
+// discardUnread reports the fragments t was given that its request did not
+// take before it ended: they came too late for it (dnp3.ClientMetrics).
+// t is no longer pending, so no fragment follows them.
+func (c *Client) discardUnread(t *transaction) {
+	for {
+		select {
+		case r := <-t.frags:
+			c.lateResponse(r.f)
+		default:
+			return
+		}
+	}
+}
+
 // accept takes a response fragment, on the session's goroutine.
 func (t *transaction) accept(f *app.Fragment, raw []byte, at time.Time) bool {
 	select {
@@ -132,7 +146,8 @@ func (c *Client) release() { <-c.turn }
 // 5); during a multi-fragment response, a repeat of the last fragment is
 // confirmed again (rows 8 and 14), and any other fragment but the next
 // abandons the response with dnp3.ErrProtocol, unconfirmed (rows 9, 11,
-// 13 and 15 to 17).
+// 13 and 15 to 17), and so does the fragment that would take the
+// response beyond WithMaxResponse.
 func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Header) (*Result, error) {
 	c.mu.Lock()
 	sess := c.sess
@@ -167,6 +182,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 			c.pending = nil
 		}
 		c.mu.Unlock()
+		c.discardUnread(t)
 	}()
 
 	if c.log.DebugEnabled() {
@@ -199,6 +215,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 	defer timer.Stop()
 	expect := seq
 	var last []byte // the last fragment accepted
+	held := 0       // the octets of the fragments accepted, at most WithMaxResponse
 	challenged := false
 	for {
 		select {
@@ -230,6 +247,7 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 				// AwaitFirst.
 				if f.Control.Seq != expect || !f.Control.FIR {
 					c.log.Debug("response fragment out of sequence ignored", "seq", f.Control.Seq, "want", expect)
+					c.lateResponse(f)
 					continue
 				}
 				res.arrived = rf.at
@@ -249,6 +267,11 @@ func (c *Client) exchange(ctx context.Context, fc app.FunctionCode, hs []app.Hea
 						dnp3.ErrProtocol, f.Control.Seq, f.Control.FIR, expect, fc)
 				}
 			}
+			if len(rf.raw) > c.opts.maxResponse-held {
+				return res, fmt.Errorf("%w: response fragment seq %d would take the %s response beyond %d octets (WithMaxResponse): response abandoned",
+					dnp3.ErrProtocol, f.Control.Seq, fc, c.opts.maxResponse)
+			}
+			held += len(rf.raw)
 			if f.Control.FIN {
 				// What follows the last fragment, such as a challenge of
 				// its CONFIRM (IEEE 1815-2012 clause 7.5.2.3.2 j), is no

@@ -11,6 +11,7 @@ import (
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/internal/logx"
 )
 
 // PointType is a kind of point in the [Database].
@@ -446,12 +447,18 @@ func (b *Batch) Update(t PointType, index uint32, v app.Value, mode EventMode) e
 
 // Batch runs fn with the database locked and then hands the events it
 // produced to every association. When fn returns an error the updates
-// made so far are kept but no events are reported for them.
+// made so far are kept but no events are reported for them. A fn that
+// does not return normally is logged with its stack, at error level, and
+// counts as one that returned an error, which Batch returns: the database
+// is unlocked again.
 func (db *Database) Batch(fn func(*Batch) error) error {
 	db.mu.Lock()
 	b := &Batch{db: db}
-	err := fn(b)
+	fail, err := logx.Try("Database.Batch function", func() error { return fn(b) })
 	db.mu.Unlock()
+	if fail != nil && db.srv != nil { // a Database of no Server has no logger
+		db.srv.log.Report(fail)
+	}
 	if err == nil && len(b.events) > 0 && db.srv != nil {
 		db.srv.publish(b.events)
 	}

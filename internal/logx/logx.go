@@ -4,11 +4,18 @@
 // plus key-value fields. They go to the application's logger as structured
 // fields when it implements dnp3.FieldLogger, and as one formatted line
 // otherwise.
+//
+// It is also how the library calls the application's code (guard.go): a
+// call that does not return normally is logged with its stack, and its
+// caller goes on with an error instead of the goroutine, and with it the
+// process, ending. A call of the application's logger that does not return
+// normally loses its entry and is reported once more through Errorf.
 package logx
 
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"strings"
 
 	dnp3 "github.com/otfabric/go-dnp3"
@@ -34,7 +41,7 @@ func New(base dnp3.Logger, component string, kv ...any) *Logger {
 	l := &Logger{base: base, prefix: "dnp3 " + component}
 	l.static = append([]any{"component", "dnp3." + component}, kv...)
 	if fl, ok := base.(dnp3.FieldLogger); ok {
-		l.fields = fl.With(l.static...)
+		l.fields = l.withFields(fl, l.static)
 	}
 	l.ctx, _ = base.(dnp3.ContextLogger)
 	if d, ok := base.(interface{ DebugEnabled() bool }); ok {
@@ -54,16 +61,44 @@ func (l *Logger) With(kv ...any) *Logger {
 	c := *l
 	c.static = append(append([]any(nil), l.static...), kv...)
 	if l.fields != nil {
-		c.fields = l.fields.With(kv...)
+		c.fields = c.withFields(l.fields, kv)
 	}
 	c.prefix += format(kv)
 	return &c
 }
 
+// withFields returns fl.With(kv...), or nil, the formatted path, when that
+// does not return normally.
+func (l *Logger) withFields(fl dnp3.FieldLogger, kv []any) dnp3.FieldLogger {
+	defer l.rescue()
+	return fl.With(kv...)
+}
+
 // DebugEnabled reports whether a debug entry would be written. It is true
-// unless the application's logger says otherwise.
+// unless the application's logger says otherwise, and false when its
+// DebugEnabled does not return normally.
 func (l *Logger) DebugEnabled() bool {
-	return l != nil && (l.debug == nil || l.debug())
+	return l != nil && (l.debug == nil || l.debugEnabled())
+}
+
+func (l *Logger) debugEnabled() bool {
+	defer l.rescue()
+	return l.debug()
+}
+
+// rescue ends a call of the application's logger that did not return
+// normally: the entry is lost, and the failure is written as a formatted
+// line through Errorf, which a logger that fails on one entry still takes.
+// When that does not return normally either, it is dropped.
+func (l *Logger) rescue() {
+	if r := recover(); r != nil {
+		l.loggerFailed(r)
+	}
+}
+
+func (l *Logger) loggerFailed(r any) {
+	defer func() { _ = recover() }()
+	l.base.Errorf("%s", l.line(msgFailed, []any{"callback", "Logger", "value", r, "stack", string(debug.Stack())}))
 }
 
 // format renders fields as " key=value ...".
@@ -81,6 +116,7 @@ func (l *Logger) line(msg string, kv []any) string {
 
 // Debug writes a debug entry.
 func (l *Logger) Debug(msg string, kv ...any) {
+	defer l.rescue()
 	switch {
 	case l == nil:
 	case l.fields != nil:
@@ -92,6 +128,7 @@ func (l *Logger) Debug(msg string, kv ...any) {
 
 // Info writes an informational entry.
 func (l *Logger) Info(msg string, kv ...any) {
+	defer l.rescue()
 	switch {
 	case l == nil:
 	case l.fields != nil:
@@ -103,6 +140,7 @@ func (l *Logger) Info(msg string, kv ...any) {
 
 // Warn writes a warning.
 func (l *Logger) Warn(msg string, kv ...any) {
+	defer l.rescue()
 	switch {
 	case l == nil:
 	case l.fields != nil:
@@ -114,6 +152,7 @@ func (l *Logger) Warn(msg string, kv ...any) {
 
 // Error writes an error entry.
 func (l *Logger) Error(msg string, kv ...any) {
+	defer l.rescue()
 	switch {
 	case l == nil:
 	case l.fields != nil:
@@ -129,6 +168,7 @@ func (l *Logger) DebugContext(ctx context.Context, msg string, kv ...any) {
 	if l == nil {
 		return
 	}
+	defer l.rescue()
 	if l.ctx != nil {
 		l.ctx.DebugContext(ctx, msg, append(append([]any(nil), l.static...), kv...)...)
 		return
@@ -141,6 +181,7 @@ func (l *Logger) WarnContext(ctx context.Context, msg string, kv ...any) {
 	if l == nil {
 		return
 	}
+	defer l.rescue()
 	if l.ctx != nil {
 		l.ctx.WarnContext(ctx, msg, append(append([]any(nil), l.static...), kv...)...)
 		return

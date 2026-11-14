@@ -53,6 +53,7 @@ See [ERRORS.md](ERRORS.md).
 | `Metrics` | Connections, frames, framing errors, fragments, decode errors |
 | `NopMetrics` | Embed to implement only some callbacks |
 | `RequestMetrics` | Client: `OnRequest`, `OnRequestDone`, `OnRetry` |
+| `ClientMetrics` | Client: `OnTaskDropped`, `OnLateResponse` |
 | `ServerMetrics` | Server: `OnHandled`, `OnEventsDiscarded`, `OnUnsolicited` |
 
 See [OBSERVABILITY.md](OBSERVABILITY.md).
@@ -88,6 +89,7 @@ The master for one outstation.
 | `WithRetry(Retry)` | off | Retries of idempotent requests (`Attempts`, `Backoff`, `MaxBackoff`, and `Jitter`, 0 to 1, default 0, which draws each pause d from [(1-Jitter)·d, d]); each repeat is a new request with the next SEQ, and a time synchronization starts again with fresh times |
 | `WithResponseTimeout(d)` | 5 s | Per response fragment |
 | `WithMaxFragment(n)` | 2048 | Largest fragment reassembled; below 2048 is outside 4.3 Rule 3 |
+| `WithMaxResponse(n)` | 16 MiB (`DefaultMaxResponse`) | Octets collected of one response, all its fragments counted; at least 249. A response beyond it is abandoned with `dnp3.ErrProtocol` at the fragment that crosses the limit, which is not confirmed (Table 6-2); the `Result` holds the fragments before it. `math.MaxInt` puts no limit |
 | `WithMaxRequestFragment(n)` | unlimited | Largest request sent, at least 249 (4.3 Rule 4); a larger one fails with `ErrInvalidOption`; a critical request that fits only without the aggressive mode objects is sent challenged; `WriteFile` sizes blocks to fit |
 | `WithLink(Link)` | unconfirmed | `Confirmed` (serial only: 13.2.1.1 forbids it over IP), `Timeout` (2 s), `Retries`, `KeepAlive` (60 s, any positive duration; negative disables it, for testing only); time synchronization messages always unconfirmed (10.3.4.1) |
 | `WithStartup(Startup)` | `Integrity` | `DisableUnsolicited`, `Integrity`, `EnableUnsolicited` on each connect; `EnableUnsolicited` also sets the other two (5.1.1.2 Rule 1); `Startup{}` runs nothing; `EnableUnsolicited` is sent again after an outstation restart |
@@ -108,7 +110,17 @@ The master for one outstation.
 Constants: `DefaultPort` (20000), the port `Dial` uses when the address has none;
 `DefaultTLSPort` (19999), the port with `WithTLS`;
 `DefaultKeyChangeCount` (1000) and `MaxKeyChangeCount` (2^31), the default and
-the largest session key change count.
+the largest session key change count; `DefaultMaxResponse` (16 MiB), the limit
+of `WithMaxResponse`.
+
+Application code the client calls that does not return normally is logged
+with its stack (`callback did not return normally`, see
+[OBSERVABILITY.md](OBSERVABILITY.md)), and the client goes on: a metrics
+callback or the logger as if it had returned; a `Dialer`, `StreamOpener`,
+the listener of `Accept` or `WithDualEndpoint`, or a `tls.Config` callback
+as an attempt to connect that failed (`dnp3.ErrConnectFailed`); `allow` as
+a connection refused; the `io.Writer` of `ReadFile` or the `io.Reader` of
+`WriteFile` as a transfer that failed, which is aborted.
 
 ### Requests
 
@@ -158,8 +170,8 @@ fragment. A measurement is indexed point data; its `Value` is one of
 The handler runs on a goroutine of its own, in order. While it is 64
 fragments behind, unsolicited responses are neither processed nor
 confirmed (the outstation repeats them) and the automatic polls wait; a
-panic in it is recovered and logged. It must not call `Close`: call
-`go c.Close()` there.
+handler that does not return normally is logged with its stack, and the
+fragment is lost. It must not call `Close`: call `go c.Close()` there.
 
 ## Package `server`
 
@@ -200,6 +212,7 @@ The outstation.
 | `WithTLS(*tls.Config)` | off | TLS for `ListenAndServe`, and the TLS client configuration of `DialAndServe` |
 | `WithDialer(Dialer)` | `net.Dialer` with a 10 s timeout | TCP dialer of `DialAndServe` (`DialContext(ctx, "tcp", addr)`; ctx carries the 10 s dial timeout and the cancel of `DialAndServe`'s context and `Close`, and a custom dialer must honour it); with `WithTLS` the handshake runs over its connection. A connection exactly when the error is nil: neither fails the attempt, a connection with an error is closed; failed attempts are logged wrapping `dnp3.ErrConnectFailed`. nil keeps the default. `server.Dialer` has the shape of `client.Dialer` |
 | `WithMaxConnections(n)` | 16 | Concurrent connections, counted from accept (during a TLS handshake too); a connection beyond the limit is closed |
+| `WithMaxAssociations(n)` | the number of `WithMasters`, else 16 | Associations, one per master link address, each with its event buffers; a frame of another master address beyond them is dropped, logged at debug level and reported to `OnDecodeError`. An association ends when the server is closed, so the limit counts the master addresses heard since `New`; `New` refuses n below the number of `WithMasters`; `WithMaxAssociations(65520)` puts no limit |
 | `WithMaxFragment(tx, rx)` | 2048, 2048 | Largest response sent, request reassembled |
 | `WithConfirmTimeout(d)` | 5 s | Wait for an application confirmation |
 | `WithSelectTimeout(d)` | 10 s | A SELECT's validity |
@@ -230,7 +243,7 @@ until `Close`); the variable `DefaultCritical`. `Class` is an event class
 | `PointConfig` | `Class`, `StaticVariation`, `EventVariation`, `Deadband` (a finite number ≥ 0), `ExcludeFromClass0`; for outputs `CommandEventClass`, `CommandEventVariation` (g13v2, g43v3) |
 | `(*Database).Add`, `Remove`, `Get`, `Len` | Points |
 | `(*Database).Update(t, index, value, mode)` | `EventMode`: `EventOnChange`, `EventForce`, `EventSuppress` |
-| `(*Database).Batch(func(*Batch) error)` | Updates whose events are reported together (`Batch.Update` and the typed forms) |
+| `(*Database).Batch(func(*Batch) error)` | Updates whose events are reported together (`Batch.Update` and the typed forms); a function that does not return normally is logged and counts as one that returned an error, which `Batch` returns |
 | `AddBinaryInput` ... `AddOctetString`, `UpdateBinaryInput` ... `UpdateOctetString` | Typed forms |
 
 ### Handlers
@@ -247,6 +260,13 @@ until `Close`); the variable `DefaultCritical`. `Class` is an event class
 
 `NopHandler`, `HandlerFunc`; `Command{GV, Index, Value, Master}`;
 `OperateType`: `SelectBeforeOperate`, `DirectOperate`, `DirectOperateNoAck`.
+
+A handler, `FileServer` or `File` that does not return normally is logged
+with its stack, and the request goes unanswered, as one lost on the line
+would; the association goes on. The other application code the server calls (metrics,
+the logger, a stream, a listener, a `Dialer`, a `tls.Config` callback, the
+function of `Database.Batch`) is logged alike, and the server goes on as
+after an error of it.
 
 ### File server
 

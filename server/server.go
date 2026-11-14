@@ -36,6 +36,8 @@ type Server struct {
 	clock *clock
 	log   *logx.Logger
 	sm    dnp3.ServerMetrics
+	// maxAssocs is the limit of WithMaxAssociations.
+	maxAssocs int
 	// timeSync is the synchronization state of clock.
 	timeSync syncState
 	// handles assigns file handles, unique to the outstation.
@@ -69,6 +71,10 @@ func New(opts ...Option) (*Server, error) {
 			return nil, err
 		}
 	}
+	maxAssocs, err := o.maxAssociations()
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{
 		opts:      o,
 		clock:     newClock(),
@@ -78,9 +84,14 @@ func New(opts ...Option) (*Server, error) {
 		channels:  make(map[*channel.Channel]struct{}),
 		listeners: make(map[net.Listener]struct{}),
 		closeCh:   make(chan struct{}),
+		maxAssocs: maxAssocs,
 	}
 	s.closeCtx, s.cancelClose = context.WithCancel(context.Background())
-	s.sm, _ = o.metrics.(dnp3.ServerMetrics)
+	// The application's metrics are called guarded: a callback that does
+	// not return normally is logged, and the outstation goes on.
+	sm, _ := o.metrics.(dnp3.ServerMetrics)
+	s.sm = logx.ServerMetrics(sm, s.log)
+	s.opts.metrics = logx.Metrics(o.metrics, s.log)
 	s.db = newDatabase(s)
 	for _, m := range o.masters {
 		s.association(m)
@@ -143,21 +154,46 @@ func (s *Server) associations() []*association {
 }
 
 // association returns the association of master m, creating it. It
-// returns nil once the server is closed.
+// returns nil once the server is closed, and when m is new and the server
+// holds WithMaxAssociations associations.
 func (s *Server) association(m link.Address) *association {
+	a, _ := s.associate(m)
+	return a
+}
+
+// errTooManyAssociations is the error a frame of a new master gets while
+// the server holds WithMaxAssociations associations.
+var errTooManyAssociations = errors.New("server: frame of a new master dropped: the outstation holds as many associations as WithMaxAssociations allows")
+
+// associate is association, which reports errTooManyAssociations for a new
+// master beyond the limit: the frame is dropped before an association, or
+// anything else, is made for it.
+func (s *Server) associate(m link.Address) (*association, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return nil
+		return nil, nil
 	}
 	if a, ok := s.assocs[m]; ok {
-		return a
+		return a, nil
+	}
+	if len(s.assocs) >= s.maxAssocs {
+		return nil, errTooManyAssociations
 	}
 	a := newAssociation(s, m)
 	s.assocs[m] = a
 	s.wg.Add(1)
 	go a.run()
-	return a
+	return a, nil
+}
+
+// forget frees the place of an association that ended.
+func (s *Server) forget(a *association) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.assocs[a.master] == a {
+		delete(s.assocs, a.master)
+	}
 }
 
 func (s *Server) masterAllowed(m link.Address) bool {
@@ -216,7 +252,9 @@ func (s *Server) Serve(l net.Listener) error {
 	s.log.Info("listening", "address", l.Addr().String())
 	var delay time.Duration
 	for {
-		c, err := l.Accept()
+		// An Accept of the application's listener that does not return
+		// normally is an Accept error.
+		c, err := logx.Call(s.log, "net.Listener.Accept", l.Accept)
 		if err != nil {
 			if s.isClosed() {
 				return nil
@@ -276,7 +314,7 @@ func (s *Server) unreserve() {
 // counted: the TLS handshake, then the connection is served, counted among
 // the channels instead of pending from then on.
 func (s *Server) serveAccepted(c net.Conn) {
-	if err := handshake(s.closeCtx, c); err != nil {
+	if err := handshake(s.closeCtx, s.log, c); err != nil {
 		s.unreserve()
 		s.log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
 		return
@@ -311,15 +349,17 @@ var handshakeTimeout = 10 * time.Second
 
 // handshake completes the TLS handshake of an accepted connection within
 // handshakeTimeout, or until ctx ends (Close cancels it), closing it on
-// failure. Other connections pass.
-func handshake(ctx context.Context, c net.Conn) error {
+// failure. Other connections pass. A handshake that does not return
+// normally, in a callback of the application's tls.Config, fails; log
+// reports it.
+func handshake(ctx context.Context, log *logx.Logger, c net.Conn) error {
 	tc, ok := c.(*tls.Conn)
 	if !ok {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
-	if err := tc.HandshakeContext(ctx); err != nil {
+	if err := logx.Do(log, "TLS handshake", func() error { return tc.HandshakeContext(ctx) }); err != nil {
 		_ = c.Close()
 		return err
 	}
@@ -499,7 +539,16 @@ func silentLimit(remote net.Addr, servers []*Server) (time.Duration, bool) {
 // bind adds the session of master on ch and attaches it to the master's
 // association.
 func (s *Server) bind(ch *channel.Channel, master link.Address) *channel.Session {
-	a := s.association(master)
+	a, err := s.associate(master)
+	if err != nil {
+		if s.log.DebugEnabled() {
+			s.log.Debug("frame of a new master dropped: association limit reached", "master", master, "limit", s.maxAssocs)
+		}
+		if m := s.opts.metrics; m != nil {
+			m.OnDecodeError(ch.Remote(), err)
+		}
+		return nil
+	}
 	if a == nil {
 		return nil
 	}
@@ -557,8 +606,13 @@ func (s *Server) Close() error {
 		f.timer.Stop()
 	}
 	clear(s.freezes)
+	// Under s.mu: a Close of the application's listener that does not
+	// return normally is logged after the unlock, and Close goes on.
+	var failed []*logx.Failure
 	for l := range s.listeners {
-		_ = l.Close()
+		if fail, _ := logx.Try("net.Listener.Close", l.Close); fail != nil {
+			failed = append(failed, fail)
+		}
 	}
 	chans := make([]*channel.Channel, 0, len(s.channels))
 	for ch := range s.channels {
@@ -569,6 +623,9 @@ func (s *Server) Close() error {
 		assocs = append(assocs, a)
 	}
 	s.mu.Unlock()
+	for _, fail := range failed {
+		s.log.Report(fail)
+	}
 	for _, ch := range chans {
 		ch.Close(nil)
 	}

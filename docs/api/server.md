@@ -284,7 +284,7 @@ AddOctetString adds an octet string (groups 110 and 111).
 func (db *Database) Batch(fn func(*Batch) error) error
 ```
 
-Batch runs fn with the database locked and then hands the events it produced to every association. When fn returns an error the updates made so far are kept but no events are reported for them.
+Batch runs fn with the database locked and then hands the events it produced to every association. When fn returns an error the updates made so far are kept but no events are reported for them. A fn that does not return normally is logged with its stack, at error level, and counts as one that returned an error, which Batch returns: the database is unlocked again.
 
 #### func (Database) Get
 
@@ -813,6 +813,16 @@ func WithMasters(addrs ...link.Address) Option
 
 WithMasters restricts the masters the outstation answers to these link addresses. Their associations, and so their event buffers, exist from the start: events are kept while a master is not connected. Without it any master is answered and its association is created on first contact.
 
+#### func WithMaxAssociations
+
+```go
+func WithMaxAssociations(n int) Option
+```
+
+WithMaxAssociations limits the associations the outstation keeps to n: one per master link address that has spoken to it, each with its event buffer. A frame from a master address beyond the limit is dropped, logged at debug level and reported to the OnDecodeError of WithMetrics; the associations that exist go on as before. The default is the number of WithMasters addresses when they are given, whose associations exist from the start (n may not be smaller), else 16.
+
+An association frees its place when it ends, and it ends when the server is closed: it outlives the connections of its master (CloseConnections keeps it, and its events), so the limit counts the master addresses heard since New. WithMaxAssociations(65520), one place for every master address (0 to 0xFFEF), puts no limit on them.
+
 #### func WithMaxConnections
 
 ```go
@@ -843,7 +853,7 @@ WithMaxFragment sets the largest response fragment the outstation sends (tx) and
 func WithMetrics(m dnp3.Metrics) Option
 ```
 
-WithMetrics sets the metrics callbacks. A value that also implements dnp3.ServerMetrics receives the server-level callbacks.
+WithMetrics sets the metrics callbacks. A value that also implements dnp3.ServerMetrics receives the server-level callbacks. A callback that does not return normally is logged with its stack, at error level, and the server goes on as if it had returned.
 
 #### func WithSecureAuthentication
 
@@ -1100,6 +1110,8 @@ The outstation is the challenger of IEEE 1815-2012 Table 7-8, for one user per m
 
 ```go
 type Server struct {
+
+	// maxAssocs is the limit of WithMaxAssociations.
 
 	// timeSync is the synchronization state of clock.
 

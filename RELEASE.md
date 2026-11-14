@@ -1,5 +1,49 @@
 # go-dnp3 Releases
 
+## v1.14.0
+
+**Date:** 2026-11-14
+**Previous release:** v1.13.1
+
+## Summary
+
+The outstation limits the associations it keeps (`server.WithMaxAssociations`) and the master the octets it collects of one response (`client.WithMaxResponse`). Application code the library calls that does not return normally is recovered where the library calls it, logged with its stack, and handled as an error of that code; the process goes on. The optional `dnp3.ClientMetrics` reports the automatic tasks and the response fragments the master drops. Two defaults change behaviour, listed under Breaking with how to restore the old one; no exported identifier is removed or changed.
+
+## Changes
+
+### Breaking
+
+- **Associations are limited** (`server.WithMaxAssociations(n)`, new). The outstation keeps at most n associations, one per master link address; the default is the number of `WithMasters` addresses when they are given, else 16. A frame of a master address beyond the limit is dropped before an association is made for it, logged at debug level (`frame of a new master dropped: association limit reached`) and reported to `Metrics.OnDecodeError`; the associations that exist go on as before. An association ends when the server is closed (`CloseConnections` keeps it), so the limit counts the master addresses heard since `New`. `New` refuses a limit below the number of `WithMasters` addresses. To restore the old behaviour, an outstation without `WithMasters` that serves more than 16 master addresses passes `server.WithMaxAssociations(65520)`, one place for every master address, or names its masters with `WithMasters`.
+- **Responses are limited** (`client.WithMaxResponse(n)`, new; `client.DefaultMaxResponse`, 16 MiB). The client collects at most n octets of one response, all its fragments counted, the first included. A response that goes beyond is abandoned with `dnp3.ErrProtocol` at the fragment that crosses the limit, which is not confirmed, as an unexpected fragment of a multi-fragment response is (IEEE 1815-2012 Table 6-2); the request's `Result` holds the fragments before it. n is at least 249. To restore the old behaviour, pass `client.WithMaxResponse(math.MaxInt)`.
+
+### Added
+
+- `dnp3.ClientMetrics`, an optional extension of `dnp3.Metrics` that the client finds by type assertion, as it finds `dnp3.RequestMetrics`: `OnTaskDropped(name)` for an automatic task that was not queued because the task queue (8 tasks) was full, and `OnLateResponse(remote, function)` for a response fragment no request takes (Table 6-2 rows 1, 3 and 5), also one that reached a request that ended before it took it. Both are called outside the client's locks, so they may call into the client. Both were logged at debug level only; they still are.
+
+### Changed
+
+- Application code that does not return normally is recovered where the library calls it and logged at error level with its stack, after the library released its locks: `callback did not return normally`, with `callback` (what was called), `value` and `stack`. The library then goes on as after an error of that code:
+  - every callback of `Metrics`, `RequestMetrics`, `ServerMetrics` and `ClientMetrics` (`OnDecodeError` and `OnFragmentSent` among them) and of the logger (`Logger`, `FieldLogger.With`, `ContextLogger`, `DebugEnabled`): as if it had returned; the logger loses that entry;
+  - the Read, Write and Close of a stream (`ServeConn`, `WithStream`, and the connections of the listeners): the channel ends with `dnp3.ErrConnectionLost`, as after a failed read or write; Close still stops it;
+  - the Accept of a listener (`Serve`, `Group.Serve`, `ServeByMasterIP`, `client.Accept`, `WithDualEndpoint`): an Accept error, after which the listener is asked again; its Close (`Server.Close`, `Group.Close`, the client's dual end point): logged, and Close returns;
+  - a `Dialer` (client and server), a `StreamOpener`, and a `tls.Config` callback in a TLS handshake (accepted connections, `DialAndServe`, the client's dial and its dual end point): the attempt fails, wrapping `dnp3.ErrConnectFailed` where the attempt is returned;
+  - the `allow` of `WithDualEndpoint`: the connection is refused;
+  - the function of `Database.Batch`: `Batch` returns an error, reports no events, and the database is unlocked;
+  - the state handler called by `Client.Close`: logged, and `Close` returns;
+  - the `io.Writer` of `ReadFile` and the `io.Reader` of `WriteFile`: the transfer fails and is aborted;
+  - the `Close` of a `server.File` an association has open when it ends: logged with the association's error entry for requests, and `Close` returns.
+
+  The server's handlers and `FileServer`, and the client's `Handler` and state handler on its dispatcher, were recovered already; their log entries are unchanged.
+
+### Tests
+
+- `server/associations_test.go`: the limit of `WithMaxAssociations` at limit−1, limit and limit+1, by default, with an explicit value and with `WithMasters`; the masters held keep being answered; a place frees when an association ends; a frame of a new master beyond the limit allocates nothing.
+- `client/response_limit_test.go`: the boundary table of `WithMaxResponse` (limit−1, limit, limit+1, beyond at a middle and at the first fragment, no limit), the confirmations sent, and a long response held within the limit.
+- `client/clientmetrics_test.go`: `OnTaskDropped` and `OnLateResponse` on each path that drops a task or a response fragment; an `OnTaskDropped` that calls into the client returns.
+- `server/callbacks_test.go`, `client/callbacks_test.go`, `internal/channel/guard_test.go` and `internal/logx/guard_test.go`: each call site above with code that does not return normally.
+
+---
+
 ## v1.13.1
 
 **Date:** 2026-11-14
