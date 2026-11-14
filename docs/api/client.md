@@ -161,7 +161,7 @@ ClearRestart clears IIN1.7 (DEVICE\_RESTART) by writing g80v1 index 7 (IEEE 1815
 func (c *Client) Close() error
 ```
 
-Close closes the channel, stops reconnecting and the automatic tasks, and fails pending requests with dnp3.ErrClosed. It waits for the client's goroutines, the handler included, to finish.
+Close closes the channel, stops reconnecting and the automatic tasks, and fails pending requests with dnp3.ErrClosed. It waits for the client's goroutines, the handler included, to finish, so it must not be called from the Handler or the state handler, which run on one of them: call go c.Close() there.
 
 #### func (Client) ColdRestart
 
@@ -257,7 +257,7 @@ IntegrityPoll reads the events of classes 1, 2 and 3 and then the static data of
 func (c *Client) ListDirectory(ctx context.Context, name string, o FileOptions) ([]app.FileDescriptor, error)
 ```
 
-ListDirectory reads the directory name and returns its entries.
+ListDirectory reads the directory name and returns its entries. A listing longer than 16 MiB is refused with dnp3.ErrProtocol, and the transfer aborted.
 
 #### func (Client) Operate
 
@@ -503,7 +503,9 @@ type Handler interface {
 }
 ```
 
-Handler receives measurements. It is called for every fragment of every response and unsolicited response, in the order they arrived, on a goroutine of the client's own: a slow handler does not delay the protocol, and a handler may issue requests.
+Handler receives measurements. It is called for every fragment of every response and unsolicited response, in the order they arrived, on a goroutine of the client's own: a slow handler does not delay the protocol, and a handler may issue requests. A handler that falls far behind (64 fragments) holds back what the outstation can push: while it does, unsolicited responses are neither processed nor confirmed, so that the outstation repeats them, and the client's automatic polls wait. A panic in the handler is recovered and logged; the client goes on.
+
+A handler must not call [Client.Close](#func-client-close) itself: Close waits for the handler to return. Call it from another goroutine (go c.Close()).
 
 ### type HandlerFunc
 
@@ -772,7 +774,7 @@ WithRetry enables retries of the requests that are safe to repeat.
 func WithSecureAuthentication(u secauth.User) Option
 ```
 
-WithSecureAuthentication enables Secure Authentication version 5: the client answers the outstation's challenges of critical requests. With an update key in u it first runs the session key change on every connection, and again at the key change interval; with only a session key it uses that key directly. A user number of 0, which IEEE 1815-2012 reserves for an unknown user, is taken as 1, the default user. Without this option a challenge fails the request with dnp3.ErrAuthentication.
+WithSecureAuthentication enables Secure Authentication version 5: the client answers the outstation's challenges of critical requests. With an update key in u it first runs the session key change on every connection, and again at the key change interval; with only a session key it uses that key directly. A user number of 0, which IEEE 1815-2012 reserves for an unknown user, is taken as 1, the default user. Without this option a challenge fails the request with dnp3.ErrAuthentication. The keys are copied: the caller may clear its own slices afterwards.
 
 #### func WithSolicitedConfirm
 
@@ -796,7 +798,7 @@ WithStartup sets what the client does each time the channel is established; see 
 func WithStateHandler(f func(state dnp3.State, err error)) Option
 ```
 
-WithStateHandler sets a function called on every change of the channel state, with the error that caused it (nil when the application closed the client).
+WithStateHandler sets a function called on every change of the channel state, with the error that caused it (nil when the application closed the client). It runs on the goroutine of the [Handler](#type-handler), in order with the measurements, where a panic in it is recovered and logged; the last call, made by Close, runs on Close's goroutine. Like the Handler it must not call Close itself: call go c.Close() instead.
 
 #### func WithStream
 
@@ -979,6 +981,8 @@ func Accept(l net.Listener) StreamOpener
 ```
 
 Accept returns a StreamOpener for an outstation that establishes the connection (the dual end point of IEEE 1815-2012): it waits for the outstation to connect on l. Use it with WithStream; with WithReconnect the client waits for the next connection when one ends. The client does not close l. For TLS, give a listener of tls.NewListener: the master is the TLS server of such a connection.
+
+The opener has at most one Accept on l in progress. An attempt that ends before a connection came, by its context, leaves that Accept to the next attempt, which takes the connection it returns; only after the client is closed is a connection it returns closed. The pending Accept ends when l is closed.
 
 	l, _ := net.Listen("tcp", ":20000")
 	c, err := client.New("outstation", client.WithStream(client.Accept(l)))

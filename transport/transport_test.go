@@ -129,6 +129,10 @@ func FuzzReassembler(f *testing.F) {
 			if len(out) > 512 {
 				t.Fatal("fragment above limit")
 			}
+			// What the reassembler holds stays within its limit too.
+			if len(r.buf) > 512 || cap(r.buf) > heldLimit(512) {
+				t.Fatalf("reassembler holds %d/%d octets, limit 512", len(r.buf), cap(r.buf))
+			}
 			b = b[1+n:]
 		}
 	})

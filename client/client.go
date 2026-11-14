@@ -422,17 +422,20 @@ func (c *Client) reconnectLoop() {
 			// takes its connection now.
 		}
 		// Close ends an attempt in progress, not only the wait between
-		// attempts.
-		ctx, cancel := context.WithTimeout(context.Background(), max(delay, 10*time.Second))
+		// attempts, with dnp3.ErrClosed as the cause: an opener can tell
+		// that no attempt follows.
+		closed, cancelClosed := context.WithCancelCause(context.Background())
+		ctx, cancel := context.WithTimeout(closed, max(delay, 10*time.Second))
 		go func() {
 			select {
 			case <-c.closeCh:
-				cancel()
+				cancelClosed(dnp3.ErrClosed)
 			case <-ctx.Done():
 			}
 		}()
 		_, err := c.connect(ctx, false)
 		cancel()
+		cancelClosed(nil)
 		if err == nil {
 			return
 		}
@@ -469,7 +472,9 @@ func (c *Client) isClosed() bool {
 
 // Close closes the channel, stops reconnecting and the automatic tasks,
 // and fails pending requests with dnp3.ErrClosed. It waits for the
-// client's goroutines, the handler included, to finish.
+// client's goroutines, the handler included, to finish, so it must not be
+// called from the Handler or the state handler, which run on one of them:
+// call go c.Close() there.
 func (c *Client) Close() error {
 	c.mu.Lock()
 	if c.closed {

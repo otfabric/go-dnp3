@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 
@@ -62,10 +63,21 @@ func FuzzMaster(f *testing.F) {
 		if len(body) > 2048 {
 			return
 		}
+		// Everything the input starts ends with Close: the goroutines
+		// come back to what they were.
+		goroutines := runtime.NumGoroutine()
 		masterEnd, outEnd := net.Pipe()
 		done := make(chan struct{})
 		go answerWith(outEnd, body, done)
-		defer func() { _ = outEnd.Close(); <-done }()
+		ended := false
+		end := func() {
+			if !ended {
+				ended = true
+				_ = outEnd.Close()
+				<-done
+			}
+		}
+		defer end()
 
 		opened := false
 		c, err := New("fuzz", WithStream(func(context.Context) (io.ReadWriteCloser, net.Addr, error) {
@@ -83,6 +95,8 @@ func FuzzMaster(f *testing.F) {
 		defer cancel()
 		if err := c.Connect(ctx); err != nil {
 			_ = c.Close()
+			end()
+			settles(t, goroutines)
 			return
 		}
 		_, _ = c.Read(ctx, app.ClassHeaders(0, 1, 2, 3)...)
@@ -98,7 +112,24 @@ func FuzzMaster(f *testing.F) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("Close did not return")
 		}
+		end()
+		settles(t, goroutines)
 	})
+}
+
+// settles fails t unless the number of goroutines comes back to at most n
+// within 5 seconds.
+func settles(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > n {
+		if time.Now().After(deadline) {
+			buf := make([]byte, 1<<20)
+			t.Fatalf("%d goroutines, %d before:\n%s", runtime.NumGoroutine(), n, buf[:runtime.Stack(buf, true)])
+		}
+		runtime.Gosched()
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // answerWith runs a raw outstation on conn: every request is answered with

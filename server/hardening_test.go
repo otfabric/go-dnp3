@@ -180,10 +180,10 @@ func TestTLSHandshakeTimesOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := time.Now()
-	if err := handshake(tls.Server(c, &tls.Config{MinVersion: tls.VersionTLS12})); err == nil || time.Since(start) > 900*time.Millisecond {
+	if err := handshake(context.Background(), tls.Server(c, &tls.Config{MinVersion: tls.VersionTLS12})); err == nil || time.Since(start) > 900*time.Millisecond {
 		t.Fatalf("stalled handshake: %v after %s", err, time.Since(start))
 	}
-	if err := handshake(c); err != nil {
+	if err := handshake(context.Background(), c); err != nil {
 		t.Fatalf("plain connection: %v", err)
 	}
 	if _, err := (&Server{opts: options{tls: &tls.Config{MinVersion: tls.VersionTLS12}}}).dial(context.Background(), l.Addr().String()); err == nil {

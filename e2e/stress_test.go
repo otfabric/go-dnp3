@@ -218,18 +218,17 @@ func TestRapidOpenClose(t *testing.T) {
 	}
 }
 
-// TestContextCancellation cancels requests mid-flight; the client must
-// return promptly and stay usable.
+// TestContextCancellation cancels requests mid-flight, once the request
+// is on the wire; the client must return promptly and stay usable.
 func TestContextCancellation(t *testing.T) {
 	leaktest.Check(t)
-	p := newPair(t, fullDatabase, nil)
+	sent := &cancelOnSend{}
+	p := newPair(t, fullDatabase, nil, client.WithMetrics(sent))
 	for range 20 {
 		ctx, cancel := context.WithCancel(context.Background())
-		go func() {
-			time.Sleep(time.Millisecond)
-			cancel()
-		}()
+		sent.arm(cancel)
 		_, err := p.c.IntegrityPoll(ctx)
+		cancel()
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, dnp3.ErrTimeout) {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -237,5 +236,23 @@ func TestContextCancellation(t *testing.T) {
 	// Still usable.
 	if _, err := p.c.IntegrityPoll(ctx(t)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// cancelOnSend is a client Metrics that calls the function armed last when
+// the next READ request has been sent.
+type cancelOnSend struct {
+	dnp3.NopMetrics
+	cancel atomic.Pointer[context.CancelFunc]
+}
+
+func (m *cancelOnSend) arm(cancel context.CancelFunc) { m.cancel.Store(&cancel) }
+
+func (m *cancelOnSend) OnFragmentSent(_ net.Addr, f *app.Fragment, _ int) {
+	if f.Function != app.FuncRead {
+		return
+	}
+	if c := m.cancel.Swap(nil); c != nil {
+		(*c)()
 	}
 }

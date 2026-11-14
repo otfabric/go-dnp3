@@ -1,0 +1,60 @@
+name: Extended tests
+run-name: "Extended tests (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
+
+# Weekly, and on dispatch: the tests on a 32-bit platform, where an int is
+# 32 bits wide (linux/386, which an amd64 runner executes; CI only
+# cross-compiles it), and every fuzz target for longer than the 10 seconds
+# CI gives each. Never a required check.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: "Duration of each fuzz target (go test -fuzztime)"
+        required: false
+        default: "10m"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extended-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test-386:
+    name: Tests on linux/386
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.x"
+      # The race detector does not exist on 386; cgo is off, as for the
+      # supported platforms of make cross.
+      - name: Test
+        env:
+          GOWORK: "off"
+          GOARCH: "386"
+          CGO_ENABLED: "0"
+        run: go test -count=1 ./...
+
+  fuzz:
+    name: Fuzzing, every target
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.x"
+      # make fuzz discovers the targets; a failing input is written under
+      # the package's testdata/fuzz and named in the log, for a local run
+      # to reproduce.
+      - name: Fuzz
+        env:
+          FUZZTIME: ${{ inputs.fuzztime || '10m' }}
+        run: make fuzz FUZZTIME="$FUZZTIME"

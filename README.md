@@ -311,8 +311,8 @@ make test    # the tests with the race detector
 make e2e     # the end-to-end suite only
 make coverage-check  # fail below the 90 % coverage floor
 make cross   # cross-compile for the supported platforms
-make fuzz    # the codec and outstation fuzz targets (FUZZTIME=30s each by default)
-make bench   # the codec benchmarks
+make fuzz    # every fuzz target (FUZZTIME=30s each by default)
+make bench   # the benchmarks
 make generate        # regenerate the code and OBJECTS.md from app/catalog.json
 make upstream-watch  # compare the catalog with DSC go-dnp3 and dnp3-interop
 ```

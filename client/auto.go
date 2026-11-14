@@ -14,10 +14,12 @@ import (
 
 // task is work the client does on its own: answering internal indications
 // and periodic polls. Tasks run one at a time on the task goroutine; a
-// task already queued is not queued twice.
+// task already queued is not queued twice. A task that reads measurements
+// (reads) waits while the handler's queue is full.
 type task struct {
-	name string
-	run  func(ctx context.Context) error
+	name  string
+	reads bool
+	run   func(ctx context.Context) error
 }
 
 func (c *Client) enqueue(t task) {
@@ -54,9 +56,16 @@ func (c *Client) taskLoop() {
 			c.keyChangeLoop(stop)
 		})
 	}
+	// held are the polls set aside while the handler's queue is full
+	// (maxNotices): they stay queued under their names, so that each is
+	// held once, and run once there is room again. Other tasks go on.
+	var held []task
 	defer func() {
 		close(stop)
 		polls.Wait()
+		for _, t := range held {
+			c.dequeued(t.name)
+		}
 		// Forget what is still queued.
 		for {
 			select {
@@ -68,37 +77,67 @@ func (c *Client) taskLoop() {
 		}
 	}()
 	for {
+		var room <-chan struct{}
+		if len(held) > 0 {
+			room = c.events.room
+		}
 		select {
 		case <-c.closeCh:
 			return
 		case t := <-c.tasks:
+			if t.reads && c.opts.handler != nil && c.events.full() {
+				held = append(held, t)
+				continue
+			}
 			c.dequeued(t.name)
-			// Wait for the startup sequence: it may already do what the
-			// task would, and the two must not compete for the turn.
-			if done := c.startupDone(); done != nil {
-				select {
-				case <-done:
-				case <-c.closeCh:
+			if !c.runTask(t) {
+				return
+			}
+		case <-room:
+			if c.events.full() {
+				continue
+			}
+			ready := held
+			held = nil
+			for _, t := range ready {
+				c.dequeued(t.name)
+				if !c.runTask(t) {
 					return
 				}
 			}
-			if c.State() != dnp3.StateConnected {
-				continue
-			}
-			ctx, cancel := context.WithCancel(context.Background())
-			go func() {
-				select {
-				case <-c.closeCh:
-					cancel()
-				case <-ctx.Done():
-				}
-			}()
-			if err := t.run(ctx); err != nil {
-				c.log.Warn("automatic task failed", "task", t.name, "error", err)
-			}
-			cancel()
 		}
 	}
+}
+
+// runTask runs an automatic task on the task goroutine once the startup
+// sequence has ended, and reports false when the client was closed while
+// it waited for that.
+func (c *Client) runTask(t task) bool {
+	// Wait for the startup sequence: it may already do what the task
+	// would, and the two must not compete for the turn.
+	if done := c.startupDone(); done != nil {
+		select {
+		case <-done:
+		case <-c.closeCh:
+			return false
+		}
+	}
+	if c.State() != dnp3.StateConnected {
+		return true
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-c.closeCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	if err := t.run(ctx); err != nil {
+		c.log.Warn("automatic task failed", "task", t.name, "error", err)
+	}
+	cancel()
+	return true
 }
 
 func (c *Client) pollLoop(i int, p Poll, stop <-chan struct{}) {
@@ -110,7 +149,7 @@ func (c *Client) pollLoop(i int, p Poll, stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-timer.C:
-			c.enqueue(task{name: name, run: func(ctx context.Context) error {
+			c.enqueue(task{name: name, reads: true, run: func(ctx context.Context) error {
 				_, err := c.Read(ctx, p.Headers...)
 				return err
 			}})
@@ -135,7 +174,7 @@ func (c *Client) onIIN(iin app.IIN) {
 		// 8. A detection while the procedure is queued is answered by it:
 		// it works from the latest one.
 		c.proc.restarted(rekey, c.currentKey())
-		c.enqueue(task{name: "restart", run: c.restartProcedure})
+		c.enqueue(task{name: "restart", reads: true, run: c.restartProcedure})
 	}
 	if iin.Has(app.IINNeedTime) {
 		// IEEE 1815-2012 clauses 4.5.5 and 10.3.3: promptly.
@@ -158,7 +197,7 @@ func (c *Client) onIIN(iin app.IIN) {
 				classes = append(classes, cl)
 			}
 		}
-		c.enqueue(task{name: "event-poll", run: func(ctx context.Context) error {
+		c.enqueue(task{name: "event-poll", reads: true, run: func(ctx context.Context) error {
 			_, err := c.EventPoll(ctx, classes...)
 			return err
 		}})

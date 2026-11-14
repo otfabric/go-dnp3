@@ -75,6 +75,7 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 		for j := range echo[i].Objects {
 			o := &echo[i].Objects[j]
 			var status app.CommandStatus
+			counted := false // pattern counts the controls it carries out
 			switch rs := requestStatus(o.Value); {
 			case count >= a.srv.opts.maxControls:
 				status = app.StatusTooManyObjects
@@ -95,11 +96,14 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 				// out (A.8.1.2.2, p. 506).
 				status = app.StatusNotSupported
 			case hdr.GV == app.G12V2:
-				status = a.pattern(ctx, h, fc, o.Value.(app.CROB), req.Headers[i+1])
+				status = a.pattern(ctx, h, fc, o.Value.(app.CROB), req.Headers[i+1], &count)
+				counted = true
 			default:
 				status = a.execute(ctx, h, fc, Command{GV: hdr.GV, Index: o.Index, Value: o.Value, Master: a.master})
 			}
-			count++
+			if !counted {
+				count++
+			}
 			if status != app.StatusSuccess && status != app.StatusNonParticipating {
 				allOK = false
 			}
@@ -124,13 +128,16 @@ func (a *association) control(req *app.Fragment, broadcast bool) *response {
 
 // controlHeadersValid checks the headers of a control request: control
 // blocks (g12v1, g41v1 to g41v4) whose objects carry them, and a pattern
-// control block (g12v2) followed by its pattern mask (g12v3).
+// control block (g12v2) followed by its pattern mask (g12v3). A control
+// header must carry objects: one whose qualifier names none (0x06) has no
+// control to carry out, and its echo would be a header a response cannot
+// carry (IEEE 1815-2012 Table 4-8), so it is answered with IIN2.2.
 func controlHeadersValid(hs []app.Header) app.IIN {
 	var iin app.IIN
 	for i, h := range hs {
 		switch h.GV {
 		case app.G12V1, app.G41V1, app.G41V2, app.G41V3, app.G41V4:
-			if !controlValues(h) {
+			if len(h.Objects) == 0 || !controlValues(h) {
 				// A header whose objects carry no control block, e.g. one
 				// with a qualifier that carries indices only.
 				iin |= app.IINParameterError
@@ -140,8 +147,8 @@ func controlHeadersValid(hs []app.Header) app.IIN {
 				iin |= app.IINParameterError
 			}
 		case app.G12V3:
-			if i == 0 || hs[i-1].GV != app.G12V2 {
-				iin |= app.IINParameterError // a pattern mask without its block
+			if i == 0 || hs[i-1].GV != app.G12V2 || len(h.Objects) == 0 {
+				iin |= app.IINParameterError // a pattern mask without its block, or without bits
 			}
 		default:
 			iin |= app.IINObjectUnknown
@@ -228,13 +235,20 @@ func crobState(c app.CROB) bool {
 }
 
 // pattern executes a pattern control block for every set bit of the mask.
-func (a *association) pattern(ctx context.Context, h Handler, fc app.FunctionCode, pcb app.CROB, mask app.Header) app.CommandStatus {
+// Each control it carries out counts against WithMaxControls in *count:
+// once the limit is reached, the bits that remain are not carried out and
+// the block is answered with TOO_MANY_OBJS.
+func (a *association) pattern(ctx context.Context, h Handler, fc app.FunctionCode, pcb app.CROB, mask app.Header, count *int) app.CommandStatus {
 	status := app.StatusSuccess
 	for _, o := range mask.Objects {
 		if b, _ := o.Value.(app.Binary); !b.Value {
 			continue
 		}
+		if *count >= a.srv.opts.maxControls {
+			return app.StatusTooManyObjects
+		}
 		s := a.execute(ctx, h, fc, Command{GV: app.G12V2, Index: o.Index, Value: pcb, Master: a.master})
+		*count++
 		if s != app.StatusSuccess && status == app.StatusSuccess {
 			status = s
 		}

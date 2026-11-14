@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -230,7 +231,10 @@ func WithHandler(h Handler) Option {
 
 // WithStateHandler sets a function called on every change of the channel
 // state, with the error that caused it (nil when the application closed
-// the client).
+// the client). It runs on the goroutine of the [Handler], in order with
+// the measurements, where a panic in it is recovered and logged; the last
+// call, made by Close, runs on Close's goroutine. Like the Handler it must
+// not call Close itself: call go c.Close() instead.
 func WithStateHandler(f func(state dnp3.State, err error)) Option {
 	return func(o *options) error { o.stateHandler = f; return nil }
 }
@@ -490,10 +494,14 @@ func WithQueueLimit(n int) Option {
 // key it uses that key directly. A user number of 0, which IEEE 1815-2012
 // reserves for an unknown user, is taken as 1, the default user. Without
 // this option a challenge fails the request with dnp3.ErrAuthentication.
+// The keys are copied: the caller may clear its own slices afterwards.
 func WithSecureAuthentication(u secauth.User) Option {
 	return func(o *options) error {
-		// A copy per client: an Option may be used for several.
+		// A copy per client, of the keys too: an Option may be used for
+		// several, and the caller keeps its slices.
 		user := u
+		user.UpdateKey = bytes.Clone(user.UpdateKey)
+		user.Key = bytes.Clone(user.Key)
 		if err := user.Validate(); err != nil {
 			return invalidOption("%v", err)
 		}

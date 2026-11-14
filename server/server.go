@@ -47,9 +47,17 @@ type Server struct {
 	listeners  map[net.Listener]struct{}
 	indication app.IIN
 	freezes    map[string]*scheduledFreeze // FREEZE_AT_TIME schedules, by the points they name
-	closed     bool
-	closeCh    chan struct{}
-	wg         sync.WaitGroup
+	// pending counts the connections Serve and ServeByMasterIP accepted
+	// that are not among channels yet, in their TLS handshake: they count
+	// against WithMaxConnections from the moment they are accepted.
+	pending int
+	closed  bool
+	closeCh chan struct{}
+	// closeCtx is canceled by Close: it ends the TLS handshakes of accepted
+	// connections.
+	closeCtx    context.Context
+	cancelClose context.CancelFunc
+	wg          sync.WaitGroup
 }
 
 // New returns an outstation configured by opts. Add points to its
@@ -71,6 +79,7 @@ func New(opts ...Option) (*Server, error) {
 		listeners: make(map[net.Listener]struct{}),
 		closeCh:   make(chan struct{}),
 	}
+	s.closeCtx, s.cancelClose = context.WithCancel(context.Background())
 	s.sm, _ = o.metrics.(dnp3.ServerMetrics)
 	s.db = newDatabase(s)
 	for _, m := range o.masters {
@@ -228,23 +237,51 @@ func (s *Server) Serve(l net.Listener) error {
 			_ = c.Close()
 			continue
 		}
-		if s.connections() >= s.opts.maxConns {
+		if !s.reserve() {
 			s.log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", s.opts.maxConns)
 			_ = c.Close()
 			continue
 		}
-		if !s.spawn(func() {
-			if err := handshake(c); err != nil {
-				s.log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
-				return
-			}
-			_ = s.ServeConn(c, c.RemoteAddr())
-		}) {
+		if !s.spawn(func() { s.serveAccepted(c) }) {
 			// Accepted as Close closed the listener.
+			s.unreserve()
 			_ = c.Close()
 			return nil
 		}
 	}
+}
+
+// reserve counts an accepted connection against WithMaxConnections before
+// its TLS handshake, and reports false when the server already holds that
+// many: the connections it serves and those still in their handshake.
+func (s *Server) reserve() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.channels)+s.pending >= s.opts.maxConns {
+		return false
+	}
+	s.pending++
+	return true
+}
+
+// unreserve gives back the place of a connection reserve counted that will
+// not be served.
+func (s *Server) unreserve() {
+	s.mu.Lock()
+	s.pending--
+	s.mu.Unlock()
+}
+
+// serveAccepted runs in the goroutine of a connection that reserve
+// counted: the TLS handshake, then the connection is served, counted among
+// the channels instead of pending from then on.
+func (s *Server) serveAccepted(c net.Conn) {
+	if err := handshake(s.closeCtx, c); err != nil {
+		s.unreserve()
+		s.log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
+		return
+	}
+	_ = serveConn(c, c.RemoteAddr(), []*Server{s}, true)
 }
 
 // spawn runs f in a goroutine that Close waits for, and reports false,
@@ -273,13 +310,14 @@ func acceptDelay(d time.Duration) time.Duration {
 var handshakeTimeout = 10 * time.Second
 
 // handshake completes the TLS handshake of an accepted connection within
-// handshakeTimeout, closing it on failure. Other connections pass.
-func handshake(c net.Conn) error {
+// handshakeTimeout, or until ctx ends (Close cancels it), closing it on
+// failure. Other connections pass.
+func handshake(ctx context.Context, c net.Conn) error {
 	tc, ok := c.(*tls.Conn)
 	if !ok {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), handshakeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	if err := tc.HandshakeContext(ctx); err != nil {
 		_ = c.Close()
@@ -319,10 +357,12 @@ func (s *Server) streamConnected() bool {
 	return false
 }
 
+// connections returns the number of connections served, and of accepted
+// ones in their TLS handshake.
 func (s *Server) connections() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.channels)
+	return len(s.channels) + s.pending
 }
 
 func (s *Server) isClosed() bool {
@@ -336,7 +376,7 @@ func (s *Server) isClosed() bool {
 // the peer in logs and metrics and may be nil. It returns the reason the
 // stream ended: nil after Close.
 func (s *Server) ServeConn(rw io.ReadWriteCloser, remote net.Addr) error {
-	return serveConn(rw, remote, []*Server{s})
+	return serveConn(rw, remote, []*Server{s}, false)
 }
 
 // takes reports whether a frame to local is for the server: its own
@@ -348,7 +388,10 @@ func (s *Server) takes(local link.Address) bool {
 // serveConn serves one stream for the outstations of servers, which have
 // distinct addresses: each takes the frames to its address, all of them
 // the broadcasts. The channel's metrics and log are the first server's.
-func serveConn(rw io.ReadWriteCloser, remote net.Addr, servers []*Server) error {
+// With reserved, the stream is a connection that the single server's
+// reserve counted: it moves from pending to the channels in one step, so
+// that the server's count never misses it.
+func serveConn(rw io.ReadWriteCloser, remote net.Addr, servers []*Server, reserved bool) error {
 	lead := servers[0]
 	var ch *channel.Channel
 	ch = channel.New(rw, channel.Config{
@@ -378,6 +421,9 @@ func serveConn(rw io.ReadWriteCloser, remote net.Addr, servers []*Server) error 
 	})
 	for i, s := range servers {
 		s.mu.Lock()
+		if reserved {
+			s.pending--
+		}
 		if s.closed {
 			s.mu.Unlock()
 			for _, o := range servers[:i] {
@@ -494,8 +540,10 @@ func (s *Server) CloseConnections() {
 	}
 }
 
-// Close stops the listeners, closes every connection and stops the
-// associations. It waits for their goroutines to end.
+// Close stops the listeners, closes every connection, ends the TLS
+// handshakes in progress and stops the associations. It waits for their
+// goroutines to end, so it must not be called from a [Handler] method,
+// which runs on an association goroutine: call go srv.Close() there.
 func (s *Server) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -504,6 +552,7 @@ func (s *Server) Close() error {
 	}
 	s.closed = true
 	close(s.closeCh)
+	s.cancelClose()
 	for _, f := range s.freezes {
 		f.timer.Stop()
 	}

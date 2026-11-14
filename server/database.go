@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"slices"
@@ -225,7 +226,8 @@ func valueKind(t PointType, v app.Value) error {
 }
 
 // Add adds a point with its configuration and initial value. Adding an
-// index that exists replaces its configuration and value.
+// index that exists replaces its configuration and value. The data of an
+// octet string is copied.
 func (db *Database) Add(t PointType, index uint32, cfg PointConfig, initial app.Value) error {
 	if t >= numPointTypes || t == SecurityStatistic || t == BinaryOutputCommand || t == AnalogOutputCommand {
 		return fmt.Errorf("%w: %s", dnp3.ErrInvalidOption, t)
@@ -266,9 +268,14 @@ func validDeadband(d float64) bool {
 // shall not set it) and the bits Annex A reserves, which are always 0
 // (bit 6 of binary inputs, bits 5 and 6 of binary outputs, A.6.2.2.2,
 // p. 500; bit 7 of counters and analogs, e.g. A.10.1.2.2, p. 517). The
-// state bits are carried in the value, not the flags.
+// state bits are carried in the value, not the flags. An octet string is
+// copied: the database keeps its own data, whatever the caller does with
+// the slice it passed.
 func sanitize(t PointType, v app.Value) app.Value {
 	switch x := v.(type) {
+	case app.OctetString:
+		x.Data = bytes.Clone(x.Data)
+		return x
 	case app.Binary:
 		keep := app.Flags(0x3F)
 		if t == BinaryOutput {
@@ -346,7 +353,8 @@ func (db *Database) Remove(t PointType, index uint32) bool {
 	return true
 }
 
-// Get returns the current value of a point.
+// Get returns the current value of a point. The data of an octet string
+// is a copy: changing it does not change the point.
 func (db *Database) Get(t PointType, index uint32) (app.Value, bool) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
@@ -356,6 +364,10 @@ func (db *Database) Get(t PointType, index uint32) (app.Value, bool) {
 	p, ok := db.points[t][index]
 	if !ok {
 		return nil, false
+	}
+	if s, isString := p.value.(app.OctetString); isString {
+		s.Data = bytes.Clone(s.Data)
+		return s, true
 	}
 	return p.value, true
 }
@@ -387,7 +399,7 @@ const (
 
 // Update sets the value of a point and produces an event as mode says. A
 // zero Time in the value is stamped with the outstation's clock for the
-// event.
+// event. The data of an octet string is copied.
 func (db *Database) Update(t PointType, index uint32, v app.Value, mode EventMode) error {
 	return db.Batch(func(b *Batch) error { return b.Update(t, index, v, mode) })
 }

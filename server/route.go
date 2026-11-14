@@ -102,18 +102,16 @@ func (r Route) serve(c net.Conn) {
 			s.log.Warn("connection refused: address not among WithMasterIPs", "remote", c.RemoteAddr().String())
 			_ = c.Close()
 			return
-		case s.connections() >= s.opts.maxConns:
+		case !s.reserve():
 			s.log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", s.opts.maxConns)
 			_ = c.Close()
 			return
 		}
-		go func() {
-			if err := handshake(c); err != nil {
-				s.log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
-				return
-			}
-			_ = s.ServeConn(c, c.RemoteAddr())
-		}()
+		// The goroutine is one Close waits for, as Serve's are.
+		if !s.spawn(func() { s.serveAccepted(c) }) {
+			s.unreserve()
+			_ = c.Close()
+		}
 		return
 	}
 	g := r.Group
@@ -130,12 +128,8 @@ func (r Route) serve(c net.Conn) {
 		_ = c.Close()
 		return
 	}
-	go func() {
-		defer g.release()
-		if err := handshake(c); err != nil {
-			g.servers[0].log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
-			return
-		}
-		_ = g.ServeConn(c, c.RemoteAddr())
-	}()
+	if !g.spawn(func() { g.serveAccepted(c, g.handshake) }) {
+		g.release()
+		_ = c.Close()
+	}
 }
