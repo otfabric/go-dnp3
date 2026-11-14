@@ -12,6 +12,7 @@ import (
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/internal/channel"
+	"github.com/otfabric/go-dnp3/internal/logx"
 )
 
 // WithDualEndpoint makes the client a TCP dual end point (IEEE 1815-2012
@@ -134,7 +135,8 @@ func (d *dualEndpoint) use(ctx context.Context, conn net.Conn) (channel.Stream, 
 		HandshakeContext(context.Context) error
 	}); ok {
 		hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
-		err := hs.HandshakeContext(hctx)
+		// The handshake runs the callbacks of the application's tls.Config.
+		err := logx.Do(d.c.log, "TLS handshake", func() error { return hs.HandshakeContext(hctx) })
 		cancel()
 		if err != nil {
 			_ = conn.Close()
@@ -159,7 +161,10 @@ func (d *dualEndpoint) accept() {
 	defer d.c.wg.Done()
 	var delay time.Duration
 	for {
-		conn, err := d.l.Accept()
+		// The listener and allow are the application's: an Accept that does
+		// not return normally is an Accept error, an allow that does not
+		// refuses the connection.
+		conn, err := logx.Call(d.c.log, "net.Listener.Accept", d.l.Accept)
 		if err != nil {
 			d.mu.Lock()
 			closed := d.closed
@@ -178,7 +183,7 @@ func (d *dualEndpoint) accept() {
 		}
 		delay = 0
 		remote := conn.RemoteAddr()
-		if d.allow != nil && !d.allow(remote) {
+		if d.allow != nil && !d.allowed(remote) {
 			d.c.log.Warn("outstation connection refused: address not allowed", "remote_addr", remote.String())
 			_ = conn.Close()
 			continue
@@ -207,6 +212,12 @@ func (d *dualEndpoint) accept() {
 	}
 }
 
+// allowed is allow, false when allow does not return normally.
+func (d *dualEndpoint) allowed(remote net.Addr) bool {
+	ok, _ := logx.Call(d.c.log, "WithDualEndpoint allow", func() (bool, error) { return d.allow(remote), nil })
+	return ok
+}
+
 // close stops the end point: it closes l and a connection not yet taken.
 func (d *dualEndpoint) close() {
 	if d == nil {
@@ -217,7 +228,7 @@ func (d *dualEndpoint) close() {
 	q := d.queued
 	d.queued = nil
 	d.mu.Unlock()
-	_ = d.l.Close()
+	_ = logx.Do(d.c.log, "net.Listener.Close", d.l.Close)
 	if q != nil {
 		_ = q.Close()
 	}

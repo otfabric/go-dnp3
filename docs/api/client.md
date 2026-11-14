@@ -25,6 +25,12 @@ const DefaultKeyChangeCount = 1000
 DefaultKeyChangeCount is the default session key change count: the number of authentication messages, sent or received, after which the session keys are changed (IEEE 1815-2012 clause 7.6.1.4.4).
 
 ```go
+const DefaultMaxResponse = 16 << 20
+```
+
+DefaultMaxResponse is the limit of WithMaxResponse: 16 MiB.
+
+```go
 const DefaultPort = 20000
 ```
 
@@ -720,13 +726,21 @@ func WithMaxRequestFragment(n int) Option
 
 WithMaxRequestFragment limits the request fragments the client sends to n octets, at least 249: IEEE 1815-2012 clause 4.3 Rule 4 requires a master to be configurable to restrict its requests to 249 octets, Rule 1 to 2048, and NOTE 2 of the clause asks for no request larger than the outstation can receive. A request that does not fit fails with dnp3.ErrInvalidOption before anything is sent; a critical request that fits only without the objects of aggressive mode is sent without them, to be challenged (clause 7.4.1.6). WriteFile sizes its blocks to fit. By default the size of requests is not limited.
 
+#### func WithMaxResponse
+
+```go
+func WithMaxResponse(n int) Option
+```
+
+WithMaxResponse limits the octets the client collects of one response: those of all its fragments, the first included, as received. A response whose fragments add up to more is abandoned with dnp3.ErrProtocol at the fragment that crosses the limit, which is not confirmed, as an unexpected fragment of a multi-fragment response is (IEEE 1815-2012 Table 6-2); the request's Result holds the fragments before it. n is at least 249, the smallest fragment IEEE 1815-2012 allows. The default is DefaultMaxResponse, 16 MiB; WithMaxResponse(math.MaxInt) puts no limit on a response.
+
 #### func WithMetrics
 
 ```go
 func WithMetrics(m dnp3.Metrics) Option
 ```
 
-WithMetrics sets the metrics callbacks. A value that also implements dnp3.RequestMetrics receives the request-level callbacks.
+WithMetrics sets the metrics callbacks. A value that also implements dnp3.RequestMetrics receives the request-level callbacks, and one that implements dnp3.ClientMetrics the tasks and responses the client drops. A callback that does not return normally is logged with its stack, at error level, and the client goes on as if it had returned.
 
 #### func WithPoll
 

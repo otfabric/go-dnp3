@@ -11,6 +11,7 @@ import (
 	"time"
 
 	dnp3 "github.com/otfabric/go-dnp3"
+	"github.com/otfabric/go-dnp3/internal/logx"
 )
 
 // Redial configures how DialAndServe reconnects: with exponential backoff
@@ -121,7 +122,7 @@ var errNoConn = errors.New("dialer returned neither a connection nor an error")
 // dial opens a connection to the master, with TLS when configured. Its
 // errors wrap dnp3.ErrConnectFailed and the cause.
 func (s *Server) dial(ctx context.Context, addr string) (net.Conn, error) {
-	conn, err := dialConn(ctx, s.opts.dialer, addr)
+	conn, err := dialConn(ctx, s.log, s.opts.dialer, addr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", dnp3.ErrConnectFailed, err)
 	}
@@ -135,7 +136,8 @@ func (s *Server) dial(ctx context.Context, addr string) (net.Conn, error) {
 	tc := tls.Client(conn, cfg)
 	hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
-	if err := tc.HandshakeContext(hctx); err != nil {
+	// The handshake runs the callbacks of the application's tls.Config.
+	if err := logx.Do(s.log, "TLS handshake", func() error { return tc.HandshakeContext(hctx) }); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("%w: TLS handshake: %w", dnp3.ErrConnectFailed, err)
 	}
@@ -144,14 +146,15 @@ func (s *Server) dial(ctx context.Context, addr string) (net.Conn, error) {
 
 // dialConn opens a TCP connection with d, or with the default net.Dialer
 // when d is nil, under the dial timeout, and holds d to the contract of
-// net.Dialer: a connection exactly when the error is nil.
-func dialConn(ctx context.Context, d Dialer, addr string) (net.Conn, error) {
+// net.Dialer: a connection exactly when the error is nil. A dialer that
+// does not return normally fails the attempt; log reports it.
+func dialConn(ctx context.Context, log *logx.Logger, d Dialer, addr string) (net.Conn, error) {
 	if d == nil {
 		d = &net.Dialer{Timeout: handshakeTimeout}
 	}
 	dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
-	conn, err := d.DialContext(dctx, "tcp", addr)
+	conn, err := logx.Call(log, "Dialer.DialContext", func() (net.Conn, error) { return d.DialContext(dctx, "tcp", addr) })
 	switch {
 	case err != nil:
 		if conn != nil {

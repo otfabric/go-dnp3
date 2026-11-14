@@ -210,7 +210,9 @@ func (c *Channel) Close(err error) {
 		c.err = err
 		c.mu.Unlock()
 		close(c.closing)
-		_ = c.stream.Close()
+		// The stream may be the application's: one whose Close does not
+		// return normally is logged (logx.Do), and the channel stops.
+		_ = logx.Do(c.cfg.Log, "Stream.Close", c.stream.Close)
 		if c.cfg.Metrics != nil {
 			c.cfg.Metrics.OnDisconnect(c.cfg.Remote, err)
 		}
@@ -284,7 +286,9 @@ func (c *Channel) broadcastTargets(dest, remote link.Address) []*Session {
 func (c *Channel) readLoop() {
 	defer c.wg.Done()
 	for {
-		f, err := c.reader.ReadFrame()
+		// A read of the stream that does not return normally ends the
+		// channel, as a failed read does.
+		f, err := logx.Call(c.cfg.Log, "Stream.Read", c.reader.ReadFrame)
 		if err != nil {
 			if errors.Is(err, link.ErrFraming) {
 				c.cfg.Log.Debug("framing error", "error", err)
@@ -345,11 +349,17 @@ func (c *Channel) writeFrame(f *link.Frame) error {
 		return c.closedErr()
 	default:
 	}
-	if d, ok := c.stream.(writeDeadliner); ok {
-		_ = d.SetWriteDeadline(time.Now().Add(c.cfg.WriteTimeout))
-	}
-	_, err = c.stream.Write(b)
+	// A write that does not return normally fails, as a failed write
+	// does, and leaves wmu unlocked; it is logged after the unlock.
+	fail, err := logx.Try("Stream.Write", func() error {
+		if d, ok := c.stream.(writeDeadliner); ok {
+			_ = d.SetWriteDeadline(time.Now().Add(c.cfg.WriteTimeout))
+		}
+		_, err := c.stream.Write(b)
+		return err
+	})
 	c.wmu.Unlock()
+	c.cfg.Log.Report(fail)
 	if err != nil {
 		err = fmt.Errorf("%w: write: %w", dnp3.ErrConnectionLost, err)
 		c.Close(err)

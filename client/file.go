@@ -13,6 +13,7 @@ import (
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/internal/logx"
 	"github.com/otfabric/go-dnp3/secauth"
 )
 
@@ -156,7 +157,9 @@ func (c *Client) ReadFile(ctx context.Context, name string, w io.Writer, o FileO
 						err = fmt.Errorf("%w: file block %d, asked for %d", dnp3.ErrProtocol, t.Block, block)
 						break
 					}
-					m, werr := w.Write(t.Data)
+					// The writer is the application's: one that does not
+					// return normally fails the transfer, which is aborted.
+					m, werr := logx.Call(c.log, "io.Writer of ReadFile", func() (int, error) { return w.Write(t.Data) })
 					n += int64(m)
 					if werr != nil {
 						err = werr
@@ -226,7 +229,9 @@ func (c *Client) WriteFile(ctx context.Context, name string, r io.Reader, size u
 	buf := make([]byte, block)
 	var n int64
 	for b := uint32(0); ; b++ {
-		m, rerr := io.ReadFull(r, buf)
+		// The reader is the application's: one that does not return
+		// normally fails the transfer, which is aborted.
+		m, rerr := logx.Call(c.log, "io.Reader of WriteFile", func() (int, error) { return io.ReadFull(r, buf) })
 		last := errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF)
 		if rerr != nil && !last {
 			c.abortQuietly(st.Handle)

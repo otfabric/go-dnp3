@@ -32,8 +32,9 @@ How failures are reported, and how to tell them apart.
 | A critical request while the session keys are not valid yet, with an update key: a function Table 7-7 marks MANDATORY, or one `WithAggressiveMode` names | wraps `dnp3.ErrAuthentication`; the request is not sent, and the client changes the keys at once | `errors.Is` |
 | An aggressive mode request, or a challenge reply that came too late, refused | `*dnp3.AuthError`, matches `dnp3.ErrAuthentication` | `errors.As`, `errors.Is` |
 | A session key change whose key status is not authentic (wrong MAC with the last monitoring key), names another user or key wrap algorithm, or whose confirmation is not OK | wraps `dnp3.ErrAuthentication` | `errors.Is` |
-| A response that does not fit the request (a control echo that differs, a missing or unexpected object, a wrong file block, a directory listing longer than 16 MiB, an `ActivateConfig` response without a valid g91v1 status) | wraps `dnp3.ErrProtocol`. Awaiting the first fragment, one with another sequence number or without FIR is ignored; during a multi-fragment response, an unexpected fragment abandons the response with `ErrProtocol` (Table 6-2); a SELECT echo that differs from the request in any octet is `ErrProtocol`, and no OPERATE is sent | `errors.Is` |
+| A response that does not fit the request (a control echo that differs, a missing or unexpected object, a wrong file block, a directory listing longer than 16 MiB, a response longer than `WithMaxResponse`, 16 MiB by default, an `ActivateConfig` response without a valid g91v1 status) | wraps `dnp3.ErrProtocol`. Awaiting the first fragment, one with another sequence number or without FIR is ignored; during a multi-fragment response, an unexpected fragment abandons the response with `ErrProtocol` (Table 6-2); a SELECT echo that differs from the request in any octet is `ErrProtocol`, and no OPERATE is sent | `errors.Is` |
 | Headers of a request that do not encode | the `app` codec error (for example `app.ErrInvalidValue`) | `errors.Is` |
+| Application code that does not return normally: a `Dialer`, `StreamOpener`, the listener of `Accept`, or a `tls.Config` callback while connecting; the `io.Writer` of `ReadFile` or the `io.Reader` of `WriteFile` | connecting: wraps `dnp3.ErrConnectFailed`; a transfer: an error whose message names the code (`io.Writer of ReadFile did not return normally: ...`), and the transfer is aborted. Logged with its stack | `errors.Is` |
 | An option or argument that cannot be used, a request larger than `WithMaxRequestFragment`, a `Command` with Queue set or a status other than 0 or 126, a `TimeSync` value beyond `TimeSyncClearNeedTime` | wraps `dnp3.ErrInvalidOption` | `errors.Is` |
 | `Client.Broadcast` | only local errors: `ErrInvalidOption` (not a broadcast address, a function that needs an answer), `ErrNotConnected`, send errors; the outstations answer nothing, IIN1.0 shows in their next response | `errors.Is` |
 | The caller's context ended | `context.Canceled`, `context.DeadlineExceeded` | `errors.Is` |
@@ -186,6 +187,8 @@ through:
 | Situation | Where it shows |
 |-----------|----------------|
 | A request it could not decode | IIN2 bits in the response; `Metrics.OnDecodeError` |
+| A frame of a new master address beyond `WithMaxAssociations` | dropped; `Metrics.OnDecodeError`; a debug entry |
+| A `Database.Batch` function that does not return normally | `Batch` returns an error whose message names it; no events are reported; logged with its stack |
 | Events discarded because the buffer was full | EVENT_BUFFER_OVERFLOW; `ServerMetrics.OnEventsDiscarded`; a warning |
 | An unsolicited response that was never confirmed | `ServerMetrics.OnUnsolicited` with an error wrapping `ErrTimeout`; the events are reported later |
 | A failed authentication, a late reply, a refused key change or aggressive mode request | an authentication error object to the master; a warning; the security statistics (g121, g122 events) |

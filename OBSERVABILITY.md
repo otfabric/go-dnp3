@@ -86,12 +86,14 @@ identifiers.
 | info | `confirmed user data while the link is not reset ignored` | |
 | error | `no random challenge data`, `key status MAC` | `error` |
 | error | `response does not encode` | `fragment`, `error` |
-| error | `panic while serving a request`, `panic while receiving a fragment`, `panic while delivering` (the client's `Handler` or state handler; the request, fragment or notification is lost; the association, client and process go on) | `panic`, `stack` |
+| error | `panic while serving a request`, `panic while receiving a fragment`, `panic while delivering` (the server's handlers and `FileServer`, or the client's `Handler` or state handler, did not return normally; the request, fragment or notification is lost; the association, client and process go on) | `panic`, `stack` |
+| error | `callback did not return normally` (other application code the library calls: metrics, the logger, a stream, a listener, a dialer, a `StreamOpener`, a `tls.Config` callback, `WithDualEndpoint`'s `allow`, the state handler called by `Close`, the function of `Database.Batch`, the reader or writer of a file transfer; the library goes on as after an error of it, or as if a metrics callback or the logger had returned) | `callback` (what was called, such as `Metrics.OnFrameSent`, `Dialer.DialContext`, `net.Listener.Accept`, `TLS handshake`), `value`, `stack` |
 | debug | `challenge answered` | `csq`, `user` |
 | debug | `frame sent`, `frame received` | `frame` |
 | debug | `request sent`, `request received`, `response sent`, `fragment received` | `fragment` |
 | debug | `broadcast sent` | `fragment`, `dest` |
 | debug | `response not confirmed (WithSolicitedConfirm)`, `unsolicited response not confirmed (WithUnsolicitedConfirm)` | `seq` |
+| debug | `frame of a new master dropped: association limit reached` (`server.WithMaxAssociations`) | `master`, `limit` |
 | debug | framing, transport and decode errors; ignored frames and fragments | `error`, ... |
 
 ## Metrics
@@ -108,9 +110,13 @@ implement only what you need.
 | `OnFrameSent(remote, frame, size)`, `OnFrameReceived` | Every link frame |
 | `OnFramingError(remote, err)` | Octets skipped or a frame discarded: start, length, CRC |
 | `OnFragmentSent(remote, fragment, size)`, `OnFragmentReceived` | Every application fragment |
-| `OnDecodeError(remote, err)` | A segment or fragment that could not be decoded, a full receive queue, or an unsolicited response the client did not take while its handler's queue was full |
+| `OnDecodeError(remote, err)` | A segment or fragment that could not be decoded, a full receive queue, an unsolicited response the client did not take while its handler's queue was full, or a frame of a new master address the server dropped at `WithMaxAssociations` |
 
 Frames and fragments passed to the callbacks must not be kept or modified.
+A callback that does not return normally is logged with its stack
+(`callback did not return normally`) and the protocol goes on as if it had
+returned. A logger that does not return normally loses that entry; the
+library reports it through the same logger, once per entry, when it can.
 
 ### Request and server metrics
 
@@ -119,6 +125,16 @@ A value that also implements `dnp3.RequestMetrics` (client) receives one
 outcome and the total duration, retries and their pauses included, and an
 `OnRetry` for each attempt that is repeated. Requests of automatic tasks and
 periodic polls are reported the same way.
+
+A value that also implements `dnp3.ClientMetrics` (client) receives
+`OnTaskDropped(name)` for each automatic task that was not queued because
+the task queue (8 tasks) was full (`restart`, `time-sync`, `integrity`,
+`event-poll`, `key-change`, or `poll-<n>` for the n-th `WithPoll`), and
+`OnLateResponse(remote, function)` for each response fragment the client
+discarded because no request waited for it (its request timed out, was
+canceled or abandoned, also when the fragment reached it before it ended)
+or because it was not the first fragment the request in progress awaited
+(Table 6-2 rows 1, 3 and 5). Both were logged at debug level only before v1.14.0.
 
 A value that also implements `dnp3.ServerMetrics` (server) receives
 `OnHandled(remote, function, duration)` after each request,

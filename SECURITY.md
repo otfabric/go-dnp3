@@ -79,12 +79,17 @@ The library bounds what a peer can make it hold:
 - Every count and range in a request is checked against the octets that carry it before anything is allocated for it; the allocation-budget tests (`budget_test.go` in `link`, `transport`, `app` and `internal/channel`) and the fuzz targets check this
 - Received fragments wait in bounded queues; a peer that floods them loses fragments, not memory
 - Event buffers have a limit per point type (`server.WithEventLimits`)
-- The outstation limits connections (`server.WithMaxConnections`, 16 by default, counted from accept, during a TLS handshake too), controls per request (`WithMaxControls`, each point of a pattern control block counted), open files per master (16) and scheduled FREEZE_AT_TIME requests (`server.MaxScheduledFreezes`, 16)
+- The outstation limits connections (`server.WithMaxConnections`, 16 by default, counted from accept, during a TLS handshake too), associations (`server.WithMaxAssociations`: one per master link address, the number of `WithMasters` by default, else 16; a frame of another master address beyond them is dropped before anything is kept for it, and an association ends when the server is closed), controls per request (`WithMaxControls`, each point of a pattern control block counted), open files per master (16) and scheduled FREEZE_AT_TIME requests (`server.MaxScheduledFreezes`, 16)
 - A READ plans at most four times the points of the database, plus 1024: each header is charged with the points it selects, and a request beyond that is answered with IIN2.2
 - `server.Close` ends the TLS handshakes in progress
 - The master holds at most 64 fragments for a `Handler` that falls behind: beyond them it does not take unsolicited responses (the outstation repeats them) and its automatic polls wait
 - A directory listing (`client.ListDirectory`) is collected up to 16 MiB; a longer one is refused with `dnp3.ErrProtocol`
+- A response is collected up to `client.WithMaxResponse` octets over all its fragments (16 MiB by default); a longer one is abandoned with `dnp3.ErrProtocol`
 - Writes are bounded by a deadline on streams that support one (TCP, TLS, UDP: 10 s), so a peer that stops reading closes its connection instead of blocking the station
+
+### Application code
+
+Application code the library calls (handlers, the file server, metrics, the logger, streams, listeners, dialers, stream openers, `tls.Config` callbacks, the function of `Database.Batch`, the readers and writers of file transfers) that does not return normally is recovered where the library calls it and logged with its stack (`callback did not return normally`, or the error entries of the handlers in [OBSERVABILITY.md](OBSERVABILITY.md)). The request, connection attempt or transfer in hand fails or goes unanswered; the other associations and channels, and the process, go on. The logged `value` is what the code ended with: keep secrets out of it.
 
 ### File Transfer
 

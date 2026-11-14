@@ -171,6 +171,7 @@ type options struct {
 	responseTimeout  time.Duration
 	maxRxFragment    int
 	maxTxFragment    int // 0: unlimited
+	maxResponse      int
 	timeSyncSet      bool
 	link             Link
 	startup          Startup
@@ -198,6 +199,7 @@ func defaultOptions() options {
 		dialer:           &net.Dialer{Timeout: dialTimeout},
 		responseTimeout:  5 * time.Second,
 		maxRxFragment:    transport.DefaultMaxFragment,
+		maxResponse:      DefaultMaxResponse,
 		startup:          Startup{Integrity: true},
 		autoClearRestart: true,
 		autoIntegrity:    true,
@@ -245,7 +247,10 @@ func WithLogger(l dnp3.Logger) Option {
 }
 
 // WithMetrics sets the metrics callbacks. A value that also implements
-// dnp3.RequestMetrics receives the request-level callbacks.
+// dnp3.RequestMetrics receives the request-level callbacks, and one that
+// implements dnp3.ClientMetrics the tasks and responses the client drops.
+// A callback that does not return normally is logged with its stack, at
+// error level, and the client goes on as if it had returned.
 func WithMetrics(m dnp3.Metrics) Option {
 	return func(o *options) error { o.metrics = m; return nil }
 }
@@ -371,6 +376,28 @@ func WithMaxRequestFragment(n int) Option {
 			return invalidOption("max request fragment %d below 249", n)
 		}
 		o.maxTxFragment = n
+		return nil
+	}
+}
+
+// DefaultMaxResponse is the limit of WithMaxResponse: 16 MiB.
+const DefaultMaxResponse = 16 << 20
+
+// WithMaxResponse limits the octets the client collects of one response:
+// those of all its fragments, the first included, as received. A response
+// whose fragments add up to more is abandoned with dnp3.ErrProtocol at the
+// fragment that crosses the limit, which is not confirmed, as an
+// unexpected fragment of a multi-fragment response is (IEEE 1815-2012
+// Table 6-2); the request's Result holds the fragments before it. n is at
+// least 249, the smallest fragment IEEE 1815-2012 allows. The default is
+// DefaultMaxResponse, 16 MiB; WithMaxResponse(math.MaxInt) puts no limit
+// on a response.
+func WithMaxResponse(n int) Option {
+	return func(o *options) error {
+		if n < 249 {
+			return invalidOption("max response %d below 249", n)
+		}
+		o.maxResponse = n
 		return nil
 	}
 }

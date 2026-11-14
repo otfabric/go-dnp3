@@ -24,15 +24,24 @@ type task struct {
 
 func (c *Client) enqueue(t task) {
 	c.taskMu.Lock()
-	defer c.taskMu.Unlock()
-	if c.queued[t.name] {
+	dropped := false
+	if !c.queued[t.name] {
+		select {
+		case c.tasks <- t:
+			c.queued[t.name] = true
+		default:
+			dropped = true
+		}
+	}
+	c.taskMu.Unlock()
+	if !dropped {
 		return
 	}
-	select {
-	case c.tasks <- t:
-		c.queued[t.name] = true
-	default:
-		c.log.Debug("automatic task dropped: queue full", "task", t.name)
+	// After taskMu: the logger and the metrics are the application's, and
+	// may call into the client.
+	c.log.Debug("automatic task dropped: queue full", "task", t.name)
+	if c.cm != nil {
+		c.cm.OnTaskDropped(t.name)
 	}
 }
 

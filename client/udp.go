@@ -12,6 +12,7 @@ import (
 
 	dnp3 "github.com/otfabric/go-dnp3"
 	"github.com/otfabric/go-dnp3/internal/channel"
+	"github.com/otfabric/go-dnp3/internal/logx"
 )
 
 // UDP returns a StreamOpener for DNP3 over UDP (port 20000 by convention):
@@ -144,8 +145,11 @@ func (a *acceptor) open(ctx context.Context) (io.ReadWriteCloser, net.Addr, erro
 	if ch == nil {
 		ch = make(chan accepted, 1)
 		a.pending = ch
+		// An Accept that does not return normally is an Accept error,
+		// logged through the client's logger.
+		log := logx.FromContext(ctx)
 		go func() {
-			conn, err := a.l.Accept()
+			conn, err := logx.Call(log, "net.Listener.Accept", a.l.Accept)
 			ch <- accepted{conn, err}
 		}()
 	}

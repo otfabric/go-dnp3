@@ -83,6 +83,7 @@ type options struct {
 	tls            *tls.Config
 	dialer         Dialer
 	maxConns       int
+	maxAssocs      int // 0: the default of WithMaxAssociations
 	maxTxFragment  int
 	maxRxFragment  int
 	confirmTimeout time.Duration
@@ -173,7 +174,9 @@ func WithLogger(l dnp3.Logger) Option {
 }
 
 // WithMetrics sets the metrics callbacks. A value that also implements
-// dnp3.ServerMetrics receives the server-level callbacks.
+// dnp3.ServerMetrics receives the server-level callbacks. A callback that
+// does not return normally is logged with its stack, at error level, and
+// the server goes on as if it had returned.
 func WithMetrics(m dnp3.Metrics) Option {
 	return func(o *options) error { o.metrics = m; return nil }
 }
@@ -221,6 +224,49 @@ func WithMaxConnections(n int) Option {
 		}
 		o.maxConns = n
 		return nil
+	}
+}
+
+// defaultMaxAssociations is the limit of WithMaxAssociations without
+// WithMasters.
+const defaultMaxAssociations = 16
+
+// WithMaxAssociations limits the associations the outstation keeps to n:
+// one per master link address that has spoken to it, each with its event
+// buffer. A frame from a master address beyond the limit is dropped,
+// logged at debug level and reported to the OnDecodeError of WithMetrics;
+// the associations that exist go on as before. The default is the number
+// of WithMasters addresses when they are given, whose associations exist
+// from the start (n may not be smaller), else 16.
+//
+// An association frees its place when it ends, and it ends when the server
+// is closed: it outlives the connections of its master (CloseConnections
+// keeps it, and its events), so the limit counts the master addresses
+// heard since New. WithMaxAssociations(65520), one place for every master
+// address (0 to 0xFFEF), puts no limit on them.
+func WithMaxAssociations(n int) Option {
+	return func(o *options) error {
+		if n < 1 {
+			return invalidOption("max associations %d", n)
+		}
+		o.maxAssocs = n
+		return nil
+	}
+}
+
+// maxAssociations returns the limit of WithMaxAssociations, or an error
+// when it is below the number of WithMasters addresses.
+func (o *options) maxAssociations() (int, error) {
+	masters := len(slices.Compact(slices.Sorted(slices.Values(o.masters))))
+	switch {
+	case o.maxAssocs == 0 && masters > 0:
+		return masters, nil
+	case o.maxAssocs == 0:
+		return defaultMaxAssociations, nil
+	case o.maxAssocs < masters:
+		return 0, invalidOption("max associations %d below the %d masters of WithMasters", o.maxAssocs, masters)
+	default:
+		return o.maxAssocs, nil
 	}
 }
 

@@ -116,6 +116,20 @@ defines no coding for it.
   requests go on.
 - **Directory listings up to 16 MiB**: `client.ListDirectory` refuses a
   longer listing with `dnp3.ErrProtocol` and aborts the transfer.
+- **Responses up to 16 MiB**: the client collects at most
+  `client.WithMaxResponse` octets of one response, all its fragments
+  counted, and abandons a longer one with `dnp3.ErrProtocol` (since
+  v1.14.0). An application that reads more in one request raises the limit,
+  or `WithMaxResponse(math.MaxInt)` removes it.
+- **Associations end when the server is closed**: the outstation keeps an
+  association, with its event buffers, for every master link address it
+  has heard, until `Close`; `CloseConnections` and a lost connection keep
+  it. `server.WithMaxAssociations` (since v1.14.0) therefore counts the
+  master addresses heard since `New`: by default the number of
+  `WithMasters`, else 16. A frame of another master address beyond the
+  limit is dropped. An outstation that serves more masters names them with
+  `WithMasters`, or raises the limit; `WithMaxAssociations(65520)` removes
+  it.
 - **Close from a callback**: `client.Client.Close` waits for the `Handler`
   and the state handler, and `server.Server.Close` (or `Group.Close`) for
   the association goroutine a `server.Handler` runs on. A callback that
