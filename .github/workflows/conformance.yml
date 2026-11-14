@@ -1,3 +1,5 @@
+# Called by pr.yml on every pull request that is not documentation only;
+# dispatch it to run it on a branch without a pull request.
 name: Conformance
 run-name: "Conformance (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
 
@@ -9,12 +11,7 @@ run-name: "Conformance (${{ github.event_name }}) on ${{ github.ref_name }} by @
 # Maven Central, and never pushed. Not a certification.
 
 on:
-  push:
-    branches: ["**"]
-    paths-ignore: ["**/*.md"]
-  pull_request:
-    branches: ["**"]
-    paths-ignore: ["**/*.md"]
+  workflow_call:
   workflow_dispatch:
 
 permissions:

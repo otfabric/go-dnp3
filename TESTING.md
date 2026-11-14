@@ -8,7 +8,7 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 
 | Tier | Command | Needs | Runs in CI |
 |---|---|---|---|
-| Unit and component tests, with the race detector | `make test` | Go | `CI`, Go 1.26 and 1.27, on every push and pull request |
+| Unit and component tests, with the race detector | `make test` | Go | `CI`, Go 1.26 and 1.27, on every pull request |
 | Static analysis: staticcheck and golangci-lint ([`.golangci.yml`](.golangci.yml)) | `make lint`, `make lint-ci` | Go, the linters | `CI` (golangci-lint) |
 | SAST: Gosec and Opengrep, findings fixed in code ([ADR-0011](https://github.com/otfabric/engineering/blob/main/docs/adr/0011-shared-sast.md)) | `cd ../engineering && make sast REPO=go-dnp3`, from a checkout of otfabric/engineering beside this one | the engineering repository | no: on a maintainer's machine before each release |
 | End-to-end: go-dnp3's master against its outstation over loopback, including chaos and stress (`e2e/`) | `make e2e` | Go | part of `make test` |
@@ -19,8 +19,8 @@ change is in [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 | Examples: each self-contained one must exit successfully | `make examples` | Go | `CI` |
 | Generated files against `app/catalog.json` | `make generate-check` | Go | `CI` |
 | Cross-compilation without cgo: linux/amd64, arm64, arm; darwin/arm64; windows/amd64 | `make cross` | Go | no |
-| Interop with independent stacks, both roles | `make interop` | Go, Docker | `Interop`, on every push and pull request |
-| DNP Users Group IED certification procedures with dnp3c | `make conformance` | Go, Docker | `Conformance`, on every push and pull request |
+| Interop with independent stacks, both roles | `make interop` | Go, Docker | `Interop`, on every pull request |
+| DNP Users Group IED certification procedures with dnp3c | `make conformance` | Go, Docker | `Conformance`, on every pull request |
 | Catalog against the upstream object definitions | `make upstream-watch` | network | `Upstream watch`, weekly |
 | Recorded traffic: decode, encode, Wireshark and conformance-log oracles, client and server replay ([testdata/captures](testdata/captures/README.md)) | part of `make test`; `make captures-verify` checks the SHA256 | Go | `CI` (tests), `Captures` (SHA256) |
 
@@ -184,3 +184,15 @@ When a target fails, Go writes the input to `testdata/fuzz/<Target>/` in the
 package. To keep it as a regression test, fix the cause and commit that file;
 `go test` then replays it on every run. Reproduce one input with
 `go test -run '<Target>/<file>' ./<package>`.
+
+## When CI runs
+
+| Event | Workflow | What runs |
+|---|---|---|
+| Pull request | `pr.yml` | `docs.yml` (docsync, otfabric-policy) always; `ci.yml`, `conformance.yml`, `interop.yml` unless every changed file is documentation; then `OT Fabric Required Checks` |
+| Push to a branch | none | nothing; dispatch `ci.yml`, `conformance.yml`, `interop.yml` to test a branch without a pull request |
+| Push to `main` | `docs.yml` | the light checks; the merged commit was tested as the pull request's merge commit |
+| Schedule | `codeql.yml`, `upstream-watch.yml` | the scheduled runs, on `main` |
+| Release | `release.yml` | the release workflow tests the release commit again |
+
+Documentation means an added or modified `*.md` file outside `.github/`, `testdata/` and `vendor/`, other than `AGENTS.md` and `CLAUDE.md`. A deleted or renamed document, or any other file, runs everything. `OT Fabric Required Checks` fails unless every job that applies succeeded; its summary lists them.

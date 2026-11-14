@@ -91,4 +91,4 @@ The library bounds what a peer can make it hold:
 ### Dependencies
 
 - `go-dnp3` has **zero third-party dependencies**: only the Go standard library
-- `make vuln` runs `govulncheck`; CI runs it on every push
+- `make vuln` runs `govulncheck`; CI runs it on every pull request
