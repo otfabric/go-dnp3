@@ -1,3 +1,5 @@
+# Called by pr.yml on every pull request that is not documentation only;
+# dispatch it to run it on a branch without a pull request.
 name: Interop
 run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
 
@@ -6,12 +8,28 @@ run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ 
 # as published: nothing of dnp3-interop is cloned or built here.
 
 on:
-  push:
-    branches: ["**"]
-    paths-ignore: ["**/*.md"]
-  pull_request:
-    branches: ["**"]
-    paths-ignore: ["**/*.md"]
+  workflow_call:
+    inputs:
+      opendnp3_image:
+        description: "opendnp3 reference image (default: the pinned release)"
+        type: string
+        default: ""
+      dscsystems_image:
+        description: "DSC go-dnp3 reference image (default: the pinned release)"
+        type: string
+        default: ""
+      dnp3py_image:
+        description: "dnp3py reference image (default: the pinned release)"
+        type: string
+        default: ""
+      cbsigma_image:
+        description: "cB-Sigma dnp3 reference image (default: the pinned release)"
+        type: string
+        default: ""
+      nfmdnp3_image:
+        description: "nfm-dnp3 reference image (default: the pinned release)"
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       opendnp3_image:

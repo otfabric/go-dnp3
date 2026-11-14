@@ -331,7 +331,7 @@ against a test outstation built on the library: 3.1 rev 1 at subset levels
 [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop)'s dnp3c
 runner. dnp3c and the runner are GPL-3.0 and not part of this repository;
 `make conformance-image` builds the runner's image from dnp3-interop's
-source, and it is not published. CI runs the same on every push. The
+source, and it is not published. CI runs the same on every pull request. The
 results are not a certification. [internal/cmd/conformance](internal/cmd/conformance) describes the setup and the
 Device Profile.
 

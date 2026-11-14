@@ -4,7 +4,7 @@
 Procedure* against the go-dnp3 outstation, using
 [dnp3c](https://github.com/stepfunc/dnp3c), Step Function I/O's independent
 implementation of it. It runs revision 3.1 rev 1 at subset levels 2 and 3,
-and revision 2.7 at level 2. CI runs the same on every push
+and revision 2.7 at level 2. CI runs the same on every pull request
 ([conformance.yml](../../../.github/workflows/conformance.yml)). The results
 show how this outstation answers the procedures. They are not a
 certification: only the DNP Users Group certifies devices.
