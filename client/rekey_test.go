@@ -123,3 +123,88 @@ func TestRekeyAfterFailedKeyChange(t *testing.T) {
 		t.Fatalf("control after the retried key change: %v", err)
 	}
 }
+
+// keyStatusDropper is a proxy that drops the n-th key status request
+// (AUTHENTICATE_REQ with g120v4) the master sends.
+func keyStatusDropper(t *testing.T, target string, n int64) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+	var seen atomic.Int64
+	go func() {
+		for {
+			in, err := l.Accept()
+			if err != nil {
+				return
+			}
+			out, err := net.Dial("tcp", target)
+			if err != nil {
+				_ = in.Close()
+				return
+			}
+			go func() { _, _ = io.Copy(in, out); _ = in.Close() }()
+			go func() {
+				defer func() { _ = out.Close() }()
+				r := link.NewReader(in)
+				for {
+					f, err := r.ReadFrame()
+					if err != nil {
+						return
+					}
+					// Transport header, application control, function,
+					// object group and variation.
+					d := f.Data
+					if len(d) >= 5 && app.FunctionCode(d[2]) == app.FuncAuthRequest && d[3] == 120 && d[4] == 4 && seen.Add(1) == n {
+						continue
+					}
+					b, _ := f.Encode()
+					if _, err := out.Write(b); err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	return l.Addr().String()
+}
+
+// TestKeyChangeCountRetried: IEEE 1815-2012 clause 7.6.1.4.4: the master
+// changes the session keys once the key change count is reached. When
+// that key change fails (its key status request is lost), the change
+// stays due: it is tried again, also without a key change interval, and
+// the next one succeeds.
+func TestKeyChangeCountRetried(t *testing.T) {
+	user := secauth.User{Number: 1, UpdateKey: testUpdateKey}
+	accept := server.HandlerFunc(func(context.Context, server.Command, server.OperateType) app.CommandStatus { return app.StatusSuccess })
+	_, addr := outstation(t, server.WithHandler(accept), server.WithSecureAuthentication(server.SecureAuth{User: user}))
+	// The first key status request is the connection's; the second the
+	// count's.
+	c, err := Dial(testCtx(t), keyStatusDropper(t, addr, 2), quiet(WithSecureAuthentication(user), WithKeyChangeInterval(0),
+		WithKeyChangeCount(3), WithResponseTimeout(300*time.Millisecond))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	// A challenge and its reply are two messages: the second control's
+	// challenge is the third.
+	for range 2 {
+		if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, "the key change of the count to fail", func() bool {
+		return c.SecurityStatistics()[secauth.StatFailedSessionKeyChanges] == 1
+	})
+	waitFor(t, "the key change of the count to be retried", func() bool {
+		return c.SecurityStatistics()[secauth.StatSessionKeyChanges] == 2
+	})
+	if c.keyChangeDue() {
+		t.Fatal("key change still due after it succeeded")
+	}
+	if _, err := c.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
+		t.Fatalf("control with the new session keys: %v", err)
+	}
+}

@@ -132,12 +132,20 @@ func withOnline(v app.Value) app.Value {
 
 // maxNotices is how many notices the dispatcher holds before it is full:
 // as many fragments as a session's receive queue holds (internal/channel,
-// 64). While it is full, unsolicited responses are not taken (the
-// outstation repeats them) and the automatic polls wait: what a peer can
-// make the client hold for a slow handler is bounded. The responses to the
-// application's own requests are always queued; their Result holds them
-// too.
+// 64). It is full as well once the fragments it holds cost maxNoticeCost
+// (fragmentCost). While it is full, unsolicited responses are not taken
+// (the outstation repeats them) and the automatic tasks wait: each
+// automatic request starts only while it is not full (Client.attempt). So
+// what a peer can make the client hold for a slow handler is bounded: the
+// bound, plus the fragments of one automatic response, at most
+// WithMaxResponse, that began below it. The responses to the application's
+// own requests are always queued; their Result holds them too.
 const maxNotices = 64
+
+// maxNoticeCost is the cost (fragmentCost) of the fragments the
+// dispatcher holds at which it is full: some 64 fragments of 2048 octets
+// with 40 objects each, a few of packed binary inputs.
+const maxNoticeCost = 4 << 20
 
 // dispatcher delivers responses to the Handler and state changes to the
 // state handler, one at a time and in order, on its own goroutine.
@@ -147,14 +155,16 @@ type dispatcher struct {
 	queue  []notice
 	signal chan struct{}
 	// held counts the notices pushed and not delivered yet: those queued
-	// and those of the batch being delivered.
-	held int
+	// and those of the batch being delivered; cost is the sum of their
+	// costs.
+	held, cost int
 	// room is signalled when a notice has been delivered.
 	room chan struct{}
 }
 
 type notice struct {
 	frag        *app.Fragment
+	cost        int
 	unsolicited bool
 	state       dnp3.State
 	err         error
@@ -165,17 +175,19 @@ func newDispatcher(c *Client) *dispatcher {
 	return &dispatcher{c: c, signal: make(chan struct{}, 1), room: make(chan struct{}, 1)}
 }
 
-// full reports whether the dispatcher holds maxNotices notices or more.
+// full reports whether the dispatcher holds maxNotices notices or more, or
+// notices that cost maxNoticeCost or more.
 func (d *dispatcher) full() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.held >= maxNotices
+	return d.held >= maxNotices || d.cost >= maxNoticeCost
 }
 
 func (d *dispatcher) push(n notice) {
 	d.mu.Lock()
 	d.queue = append(d.queue, n)
 	d.held++
+	d.cost += n.cost
 	d.mu.Unlock()
 	select {
 	case d.signal <- struct{}{}:
@@ -183,9 +195,11 @@ func (d *dispatcher) push(n notice) {
 	}
 }
 
-func (d *dispatcher) response(f *app.Fragment, unsolicited bool) {
+// response queues a response fragment of the given cost (fragmentCost)
+// for the Handler.
+func (d *dispatcher) response(f *app.Fragment, cost int, unsolicited bool) {
 	if d.c.opts.handler != nil {
-		d.push(notice{frag: f, unsolicited: unsolicited})
+		d.push(notice{frag: f, cost: cost, unsolicited: unsolicited})
 	}
 }
 
@@ -230,6 +244,7 @@ func (d *dispatcher) deliver(n notice) {
 		}
 		d.mu.Lock()
 		d.held--
+		d.cost -= n.cost
 		d.mu.Unlock()
 		select {
 		case d.room <- struct{}{}:

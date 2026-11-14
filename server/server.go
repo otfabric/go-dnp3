@@ -252,9 +252,7 @@ func (s *Server) Serve(l net.Listener) error {
 	s.log.Info("listening", "address", l.Addr().String())
 	var delay time.Duration
 	for {
-		// An Accept of the application's listener that does not return
-		// normally is an Accept error.
-		c, err := logx.Call(s.log, "net.Listener.Accept", l.Accept)
+		c, remote, err := acceptConn(s.log, l)
 		if err != nil {
 			if s.isClosed() {
 				return nil
@@ -270,17 +268,17 @@ func (s *Server) Serve(l net.Listener) error {
 			continue
 		}
 		delay = 0
-		if !s.opts.masterIPAllowed(c.RemoteAddr()) {
-			s.log.Warn("connection refused: address not among WithMasterIPs", "remote", c.RemoteAddr().String())
+		if !s.opts.masterIPAllowed(remote) {
+			s.log.Warn("connection refused: address not among WithMasterIPs", "remote", addrString(remote))
 			_ = c.Close()
 			continue
 		}
 		if !s.reserve() {
-			s.log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", s.opts.maxConns)
+			s.log.Warn("connection refused: limit reached", "remote", addrString(remote), "limit", s.opts.maxConns)
 			_ = c.Close()
 			continue
 		}
-		if !s.spawn(func() { s.serveAccepted(c) }) {
+		if !s.spawn(func() { s.serveAccepted(c, remote) }) {
 			// Accepted as Close closed the listener.
 			s.unreserve()
 			_ = c.Close()
@@ -313,13 +311,37 @@ func (s *Server) unreserve() {
 // serveAccepted runs in the goroutine of a connection that reserve
 // counted: the TLS handshake, then the connection is served, counted among
 // the channels instead of pending from then on.
-func (s *Server) serveAccepted(c net.Conn) {
+func (s *Server) serveAccepted(c net.Conn, remote net.Addr) {
 	if err := handshake(s.closeCtx, s.log, c); err != nil {
 		s.unreserve()
-		s.log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
+		s.log.Warn("TLS handshake failed", "remote", addrString(remote), "error", err)
 		return
 	}
-	_ = serveConn(c, c.RemoteAddr(), []*Server{s}, true)
+	_ = serveConn(c, remote, []*Server{s}, true)
+}
+
+// errNoAccept is an Accept that returned neither a connection nor an error.
+var errNoAccept = errors.New("net.Listener.Accept returned neither a connection nor an error")
+
+// acceptConn accepts the next connection of l, with its remote address
+// read once. The listener and its connections may be the application's:
+// an Accept that does not return normally, or returns neither a
+// connection nor an error, is an Accept error, and so is a connection
+// whose RemoteAddr does not return normally, which is closed.
+func acceptConn(log *logx.Logger, l net.Listener) (net.Conn, net.Addr, error) {
+	c, err := logx.Call(log, "net.Listener.Accept", l.Accept)
+	if err != nil {
+		return nil, nil, err
+	}
+	if c == nil {
+		return nil, nil, errNoAccept
+	}
+	remote, err := logx.Call(log, "net.Conn.RemoteAddr", func() (net.Addr, error) { return c.RemoteAddr(), nil })
+	if err != nil {
+		_ = logx.Do(log, "net.Conn.Close", c.Close)
+		return nil, nil, err
+	}
+	return c, remote, nil
 }
 
 // spawn runs f in a goroutine that Close waits for, and reports false,

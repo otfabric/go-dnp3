@@ -12,14 +12,15 @@ import (
 	"github.com/otfabric/go-dnp3/app"
 )
 
-// task is work the client does on its own: answering internal indications
-// and periodic polls. Tasks run one at a time on the task goroutine; a
-// task already queued is not queued twice. A task that reads measurements
-// (reads) waits while the handler's queue is full.
+// task is work the client does on its own: answering internal indications,
+// periodic polls and session key changes. Tasks run one at a time on the
+// task goroutine; a task already queued is not queued twice. Every task
+// waits while the handler's queue is full, and so does each request it
+// makes (Client.attempt): the outstation's responses to them are queued
+// for the Handler too.
 type task struct {
-	name  string
-	reads bool
-	run   func(ctx context.Context) error
+	name string
+	run  func(ctx context.Context) error
 }
 
 func (c *Client) enqueue(t task) {
@@ -65,13 +66,18 @@ func (c *Client) taskLoop() {
 			c.keyChangeLoop(stop)
 		})
 	}
-	// held are the polls set aside while the handler's queue is full
+	// held are the tasks set aside while the handler's queue is full
 	// (maxNotices): they stay queued under their names, so that each is
-	// held once, and run once there is room again. Other tasks go on.
+	// held once, and run once there is room again.
 	var held []task
 	defer func() {
 		close(stop)
 		polls.Wait()
+		c.taskMu.Lock()
+		if c.syncTimer != nil {
+			c.syncTimer.Stop()
+		}
+		c.taskMu.Unlock()
 		for _, t := range held {
 			c.dequeued(t.name)
 		}
@@ -94,7 +100,7 @@ func (c *Client) taskLoop() {
 		case <-c.closeCh:
 			return
 		case t := <-c.tasks:
-			if t.reads && c.opts.handler != nil && c.events.full() {
+			if c.handlerFull() {
 				held = append(held, t)
 				continue
 			}
@@ -134,7 +140,7 @@ func (c *Client) runTask(t task) bool {
 	if c.State() != dnp3.StateConnected {
 		return true
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), automaticKey{}, true))
 	go func() {
 		select {
 		case <-c.closeCh:
@@ -158,7 +164,7 @@ func (c *Client) pollLoop(i int, p Poll, stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-timer.C:
-			c.enqueue(task{name: name, reads: true, run: func(ctx context.Context) error {
+			c.enqueue(task{name: name, run: func(ctx context.Context) error {
 				_, err := c.Read(ctx, p.Headers...)
 				return err
 			}})
@@ -183,18 +189,10 @@ func (c *Client) onIIN(iin app.IIN) {
 		// 8. A detection while the procedure is queued is answered by it:
 		// it works from the latest one.
 		c.proc.restarted(rekey, c.currentKey())
-		c.enqueue(task{name: "restart", reads: true, run: c.restartProcedure})
+		c.enqueue(task{name: "restart", run: c.restartProcedure})
 	}
 	if iin.Has(app.IINNeedTime) {
-		// IEEE 1815-2012 clauses 4.5.5 and 10.3.3: promptly.
-		c.enqueue(task{name: "time-sync", run: func(ctx context.Context) error {
-			// The startup sequence or the restart procedure may have
-			// synchronized it since.
-			if !c.needTime.Load() {
-				return nil
-			}
-			return c.autoSyncTime(ctx)
-		}})
+		c.enqueueTimeSync()
 	}
 	if o.autoIntegrity && iin.Has(app.IINEventBufferOverflow) {
 		c.enqueueIntegrity()
@@ -206,11 +204,51 @@ func (c *Client) onIIN(iin app.IIN) {
 				classes = append(classes, cl)
 			}
 		}
-		c.enqueue(task{name: "event-poll", reads: true, run: func(ctx context.Context) error {
+		c.enqueue(task{name: "event-poll", run: func(ctx context.Context) error {
 			_, err := c.EventPoll(ctx, classes...)
 			return err
 		}})
 	}
+}
+
+// enqueueTimeSync queues the automatic time synchronization NEED_TIME
+// calls for: promptly (IEEE 1815-2012 clauses 4.5.5 and 10.3.3), but at
+// most once per response timeout. An outstation that still reports
+// NEED_TIME right after a successful synchronization is synchronized
+// again once the response timeout has passed since, not back to back.
+func (c *Client) enqueueTimeSync() {
+	c.enqueue(task{name: "time-sync", run: func(ctx context.Context) error {
+		// The startup sequence or the restart procedure may have
+		// synchronized it since.
+		if !c.needTime.Load() {
+			return nil
+		}
+		if last := c.lastSync.Load(); last != 0 {
+			if wait := c.opts.responseTimeout - time.Since(time.Unix(0, last)); wait > 0 {
+				c.timeSyncAfter(wait)
+				return nil
+			}
+		}
+		return c.autoSyncTime(ctx)
+	}})
+}
+
+// timeSyncAfter queues the automatic time synchronization again after d,
+// unless it is already due then.
+func (c *Client) timeSyncAfter(d time.Duration) {
+	c.taskMu.Lock()
+	defer c.taskMu.Unlock()
+	if c.syncTimer != nil {
+		return
+	}
+	c.syncTimer = time.AfterFunc(d, func() {
+		c.taskMu.Lock()
+		c.syncTimer = nil
+		c.taskMu.Unlock()
+		if !c.isClosed() && c.needTime.Load() {
+			c.enqueueTimeSync()
+		}
+	})
 }
 
 // runStartup runs the startup sequence of WithStartup, the master startup
@@ -284,8 +322,9 @@ const keyRetryIdle = 15 * time.Minute
 // keyChangeLoop changes the session keys at the key change interval
 // (IEEE 1815-2012 clause 7.6.1.4.3), when rekeySoon asks (the key change
 // count, an outstation restart, an authentication failure), and sooner
-// while connected without session keys: after a key change that failed,
-// keyRetries times with a backoff, then at the interval.
+// while connected without session keys or with the key change count
+// reached (keyChangeDue): after a key change that failed, keyRetries
+// times with a backoff, then at the interval.
 func (c *Client) keyChangeLoop(stop <-chan struct{}) {
 	interval := c.opts.keyChange
 	period := interval
@@ -304,10 +343,14 @@ func (c *Client) keyChangeLoop(stop <-chan struct{}) {
 		case <-t.C:
 			timeout = true
 		}
-		keys := c.controlKey() != nil
+		keys := c.hasControlKey()
+		due := c.keyChangeDue()
 		switch {
-		case timeout && interval == 0 && keys:
+		case timeout && interval == 0 && keys && !due:
 			// No key change interval: only the count changes the keys.
+		case timeout && interval == 0 && keys:
+			// The key change the count asked for failed: again.
+			c.enqueue(task{name: "key-change", run: c.changeSessionKeys})
 		case timeout:
 			c.keyChangeTimeout()
 			fallthrough
@@ -316,7 +359,7 @@ func (c *Client) keyChangeLoop(stop <-chan struct{}) {
 		}
 		wait := period
 		switch {
-		case keys:
+		case keys && !due:
 			retry, retries = keyRetryDelay, 0
 		case c.State() == dnp3.StateConnected && retries < keyRetries:
 			wait = min(retry, period)

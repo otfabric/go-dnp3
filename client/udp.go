@@ -44,7 +44,7 @@ func UDPWithDialer(d Dialer, addr string) StreamOpener {
 		if err != nil {
 			return nil, nil, err
 		}
-		return udpConn{conn}, conn.RemoteAddr(), nil
+		return &udpConn{Conn: conn}, conn.RemoteAddr(), nil
 	}
 }
 
@@ -75,9 +75,14 @@ func UDPFrom(local, remote string) StreamOpener {
 // The channel reads it a datagram at a time (channel.DatagramStream), so
 // that a datagram that carries several frames is read whole (IEEE
 // 1815-2012 clause 13.2.3.2.3).
-type udpConn struct{ net.Conn }
+type udpConn struct {
+	net.Conn
+	// buf receives the datagrams: the channel copies each datagram's
+	// frames out of it before it reads the next one.
+	buf []byte
+}
 
-func (u udpConn) Read(b []byte) (int, error) {
+func (u *udpConn) Read(b []byte) (int, error) {
 	for {
 		n, err := u.Conn.Read(b)
 		if err == nil || !channel.DatagramErrorPasses(err) {
@@ -87,17 +92,21 @@ func (u udpConn) Read(b []byte) (int, error) {
 	}
 }
 
-// ReadDatagram returns the next datagram, whole.
-func (u udpConn) ReadDatagram() ([]byte, error) {
-	dg := make([]byte, 65535)
-	n, err := u.Read(dg)
+// ReadDatagram returns the next datagram, whole. It is valid until the
+// next call: the channel's reader takes the frames of one datagram before
+// it reads the next (channel.DatagramStream).
+func (u *udpConn) ReadDatagram() ([]byte, error) {
+	if u.buf == nil {
+		u.buf = make([]byte, 65535)
+	}
+	n, err := u.Read(u.buf)
 	if err != nil {
 		return nil, err
 	}
-	return dg[:n], nil
+	return u.buf[:n], nil
 }
 
-func (u udpConn) Write(b []byte) (int, error) {
+func (u *udpConn) Write(b []byte) (int, error) {
 	n, err := u.Conn.Write(b)
 	if err != nil && channel.DatagramErrorPasses(err) {
 		return len(b), nil

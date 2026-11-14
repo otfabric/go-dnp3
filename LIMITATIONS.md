@@ -100,8 +100,13 @@ defines no coding for it.
 - **A READ plans at most four reads of the database**: each header is
   charged with the points it selects (every point of the type for all
   objects, the points within a range, the indexes of a list), against a
-  budget of four times the points of the database plus 1024. The headers
-  beyond it are answered with IIN2.2.
+  budget of four times the points of the database plus 1024. Headers that
+  are not of points (device attributes g0, file blocks g70v5, IIN bits g80,
+  security statistics g121) are charged with the objects they produce,
+  file blocks before the file is read. The headers beyond the budget are
+  answered with IIN2.2. Event headers are not charged: each buffered event
+  is reported at most once per response, so the event buffer limits bound
+  them.
 - **Pattern controls count per point**: `server.WithMaxControls` counts
   every point a pattern control block (g12v2 with its g12v3 mask) operates.
   A block whose mask names more than the limit operates those within it
@@ -110,16 +115,29 @@ defines no coding for it.
   several file blocks with their g70v6 statuses over as many fragments as
   `server.WithMaxFragment` needs.
 - **The master's handler sets its pace**: the `client.Handler` runs on a
-  goroutine of its own. While it is 64 fragments behind, unsolicited
+  goroutine of its own. While it is 64 fragments or 4 MiB behind (each
+  fragment counted as at least 48 octets per decoded object), unsolicited
   responses are neither processed nor confirmed, so that the outstation
-  repeats them, and the automatic polls wait; the application's own
-  requests go on.
-- **Directory listings up to 16 MiB**: `client.ListDirectory` refuses a
+  repeats them, and every automatic task waits (time synchronization,
+  restart handling, session key changes, polls); the application's own
+  requests go on. The queue can go beyond the bound by one unsolicited
+  fragment and one automatic response that began below it. An outstation
+  that keeps NEED_TIME set is synchronized at most once per response
+  timeout.
+- **Directory listings up to 16 MiB**: `client.ListDirectory` counts the
+  octets of the listing and 48 octets for each decoded entry, refuses a
   longer listing with `dnp3.ErrProtocol` and aborts the transfer.
+- **File reads stop at the announced size**: when the answer to OPEN_FILE
+  gives the file's size, `client.ReadFile` refuses data beyond it with
+  `dnp3.ErrProtocol` and aborts the transfer. A size of 0 or 0xFFFFFFFF
+  does not limit it.
 - **Responses up to 16 MiB**: the client collects at most
   `client.WithMaxResponse` octets of one response, all its fragments
-  counted, and abandons a longer one with `dnp3.ErrProtocol` (since
-  v1.14.0). An application that reads more in one request raises the limit,
+  counted, each fragment as at least 48 octets per decoded object, and
+  abandons a longer one with `dnp3.ErrProtocol` (since v1.14.0; the count
+  per object since v1.15.0). A single densely packed fragment can exceed a
+  small limit: 2048 octets of packed binary inputs (g1v1) count some
+  780 000. An application that reads more in one request raises the limit,
   or `WithMaxResponse(math.MaxInt)` removes it.
 - **Associations end when the server is closed**: the outstation keeps an
   association, with its event buffers, for every master link address it
@@ -168,7 +186,8 @@ defines no coding for it.
 - **No periodic freeze of the outstation's own**: counters are frozen on
   request (IMMED_FREEZE, FREEZE_CLEAR, FREEZE_AT_TIME with an interval). An
   application that freezes on its own schedule updates its frozen counters
-  with `Database.Update` or `Database.Batch`.
+  with `Database.Update` or `Database.Batch`. A periodic FREEZE_AT_TIME
+  interval below 100 ms is served as 100 ms.
 - **File blocks are at most 65527 octets**: a block travels in a g70v5
   object, whose two-octet size also counts the handle and block number.
   Both ends cap the block size there, whatever the fragment size allows.
@@ -193,7 +212,8 @@ defines no coding for it.
 - **DELAY_MEASURE** reports the time from the delivery of the request
   fragment.
 - **Secure authentication**: a broadcast that SA discards does not set
-  IIN1.0.
+  IIN1.0. AUTHENTICATE_REQ and AUTHENTICATE_REQ_NO_ACK sent to a broadcast
+  address are discarded and counted, never answered.
 - **Time stamps of the time synchronization are taken at the application
   layer.** The non-LAN procedure measures the round trip from when the
   DELAY_MEASURE request is handed to the link layer to when the reassembled

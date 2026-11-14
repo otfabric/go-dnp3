@@ -103,7 +103,9 @@ func (f *Fragment) Encode() ([]byte, error) { return f.AppendEncode(nil) }
 // 0x06 ([ErrInvalidQualifier]), nor one of group 60 or of a request-only
 // variation such as variation 0 ([ErrInvalidValue]): IEEE 1815-2012
 // Table 4-8, 4.2.2.7.1.1 and 4.2.2.7.2.1. [Decode] refuses them in a
-// response too.
+// response too. Nor can it carry a header whose objects all lack a value
+// ([ErrInvalidValue]): in a response, values follow the indexes, so the
+// bare index list it would encode is not what a receiver parses.
 func (f *Fragment) AppendEncode(b []byte) ([]byte, error) {
 	b = append(b, f.Control.Byte(), byte(f.Function))
 	if f.Function.IsResponse() {
@@ -115,6 +117,11 @@ func (f *Fragment) AppendEncode(b []byte) ([]byte, error) {
 		if f.Function.IsResponse() {
 			if err = responseHeader(&f.Headers[i], ErrInvalidValue); err != nil {
 				return b, fmt.Errorf("header %d (%s): %w", i, f.Headers[i].GV, err)
+			}
+			if indexOnly(f.Headers[i].Objects) {
+				// The peer reads values after the indexes of a response
+				// header: a bare index list would be parsed as objects.
+				return b, fmt.Errorf("header %d (%s): %w: objects without values in a response", i, f.Headers[i].GV, ErrInvalidValue)
 			}
 		}
 		if b, err = f.Headers[i].appendEncode(b, &c); err != nil {

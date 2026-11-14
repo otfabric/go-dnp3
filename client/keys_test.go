@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -481,5 +483,155 @@ func TestUserNumberZero(t *testing.T) {
 	defer func() { _ = c2.Close() }()
 	if _, err := c2.Operate(testCtx(t), DirectOperate, CROB(0, app.OpLatchOn, 0, 0)); err != nil {
 		t.Fatalf("challenged control against an outstation configured with user 0: %v", err)
+	}
+}
+
+// TestKeyStatusMACAlgorithm: the MAC algorithm of a key status and of the
+// confirmation of a session key change is the outstation's choice, within
+// those the client accepts for a challenge (acceptsMAC): over TCP not a
+// truncation to 8 octets (IEEE 1815-2012 clauses 7.6.1.1.1 and 7.6.1.1.2),
+// nor the obsolete HMAC-SHA-1/4, unless WithChallengeMACs names it.
+func TestKeyStatusMACAlgorithm(t *testing.T) {
+	user := secauth.User{Number: 1, UpdateKey: testUpdateKey}
+	_, addr := outstation(t, server.WithSecureAuthentication(server.SecureAuth{
+		User: secauth.User{Number: 1, UpdateKey: testUpdateKey, MAC: app.MACHMACSHA256Trunc8}}))
+	if _, err := Dial(testCtx(t), addr, quiet(WithSecureAuthentication(user), WithResponseTimeout(time.Second))...); !errors.Is(err, dnp3.ErrAuthentication) {
+		t.Fatalf("key change confirmed with HMAC-SHA-256/8 over TCP: %v, want ErrAuthentication", err)
+	}
+	c, err := Dial(testCtx(t), addr, quiet(WithSecureAuthentication(user), WithResponseTimeout(time.Second),
+		WithChallengeMACs(app.MACHMACSHA256Trunc8))...)
+	if err != nil {
+		t.Fatalf("key change confirmed with HMAC-SHA-256/8 named by WithChallengeMACs: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	// The key status of the next key change: its MAC with the monitoring
+	// key over the last key change.
+	d, err := New("127.0.0.1", WithSecureAuthentication(user))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.Close() }()
+	monitoring, change := bytes.Repeat([]byte{7}, 16), []byte("the last key change")
+	d.mu.Lock()
+	d.auth.monitoring, d.auth.keyChange = slices.Clone(monitoring), change
+	d.mu.Unlock()
+	for alg, ok := range map[app.MACAlgorithm]bool{
+		app.MACHMACSHA256Trunc16: true, app.MACHMACSHA1Trunc10: true,
+		app.MACHMACSHA1Trunc4: false, app.MACHMACSHA1Trunc8: false, app.MACHMACSHA256Trunc8: false,
+	} {
+		mac, err := secauth.MAC(alg, monitoring, change)
+		if err != nil {
+			t.Fatal(err)
+		}
+		st := app.AuthSessionKeyStatus{KSQ: 2, User: 1, KeyWrap: user.KeyWrapAlgorithm(), Status: app.KeyStatusOK, MAC: alg, MACValue: mac}
+		discarded := d.SecurityStatistics()[secauth.StatDiscardedMessages]
+		err = d.checkKeyStatus(st)
+		if ok != (err == nil) || !ok && !errors.Is(err, dnp3.ErrAuthentication) {
+			t.Errorf("key status with %s: %v", alg, err)
+		}
+		if got := d.SecurityStatistics()[secauth.StatDiscardedMessages] - discarded; !ok && got != 1 {
+			t.Errorf("key status with %s: %d messages discarded, want 1", alg, got)
+		}
+	}
+}
+
+// TestControlKeyCopy: controlKey returns a copy of the session key, which
+// a session key change does not clear under a MAC being computed with it.
+func TestControlKeyCopy(t *testing.T) {
+	c, err := New("127.0.0.1", WithSecureAuthentication(secauth.User{Number: 1, UpdateKey: testUpdateKey}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if c.controlKey() != nil || c.hasControlKey() {
+		t.Fatal("a session key before the first key change")
+	}
+	first := bytes.Repeat([]byte{1}, 16)
+	c.keysChanged(slices.Clone(first), bytes.Repeat([]byte{2}, 16), []byte("change"))
+	key := c.controlKey()
+	if !bytes.Equal(key, first) || !c.hasControlKey() {
+		t.Fatalf("control key % x", key)
+	}
+	c.keysChanged(bytes.Repeat([]byte{3}, 16), bytes.Repeat([]byte{4}, 16), []byte("change"))
+	if !bytes.Equal(key, first) {
+		t.Fatalf("the copy changed with the next key change: % x", key)
+	}
+	key[0] = 0xFF
+	if got := c.controlKey(); got[0] != 3 {
+		t.Fatalf("the copy is the session key: % x", got)
+	}
+
+	psk := []byte("pre-shared session key 32 octets")
+	d, err := New("127.0.0.1", WithSecureAuthentication(secauth.User{Number: 1, Key: psk}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.Close() }()
+	k := d.controlKey()
+	clear(k)
+	if !d.hasControlKey() || !bytes.Equal(d.controlKey(), psk) {
+		t.Fatal("clearing the copy changed the pre-shared key")
+	}
+}
+
+// TestKeyChangeCountLevel: once the key change count is reached, a
+// session key change stays due, and every authentication message asks for
+// it, until one succeeds; the count stops at the largest uint32.
+func TestKeyChangeCountLevel(t *testing.T) {
+	c, err := New("127.0.0.1", WithSecureAuthentication(secauth.User{Number: 1, UpdateKey: testUpdateKey}), WithKeyChangeCount(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	message := func() uint32 {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.authMessageLocked()
+		return c.auth.count
+	}
+	if message(); c.keyChangeDue() {
+		t.Fatal("key change due below the count")
+	}
+	for i := range 3 {
+		if message(); !c.keyChangeDue() {
+			t.Fatalf("message %d at or beyond the count: no key change due", i+2)
+		}
+	}
+	// A key change that fails asks again with the next message.
+	c.mu.Lock()
+	asked := c.auth.countAsked
+	c.mu.Unlock()
+	if !asked {
+		t.Fatal("key change not asked for at the count")
+	}
+	_ = c.changeSessionKeys(testCtx(t)) // not connected: fails
+	c.mu.Lock()
+	asked = c.auth.countAsked
+	c.mu.Unlock()
+	if asked {
+		t.Fatal("key change still asked for after it failed")
+	}
+	if message(); !c.keyChangeDue() {
+		t.Fatal("key change not due after one failed")
+	}
+	c.mu.Lock()
+	asked = c.auth.countAsked
+	c.mu.Unlock()
+	if !asked {
+		t.Fatal("key change not asked for again after one failed")
+	}
+	c.mu.Lock()
+	c.auth.count = math.MaxUint32
+	c.mu.Unlock()
+	if n := message(); n != math.MaxUint32 || !c.keyChangeDue() {
+		t.Fatalf("count %d after the largest, key change due %t", n, c.keyChangeDue())
+	}
+	c.keysChanged(bytes.Repeat([]byte{1}, 16), bytes.Repeat([]byte{2}, 16), nil)
+	if c.keyChangeDue() {
+		t.Fatal("key change still due after one succeeded")
+	}
+	if message(); c.keyChangeDue() {
+		t.Fatal("key change due one message after a key change")
 	}
 }

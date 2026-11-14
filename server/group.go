@@ -90,7 +90,7 @@ func (g *Group) Serve(l net.Listener) error {
 	}()
 	var delay time.Duration
 	for {
-		c, err := logx.Call(g.servers[0].log, "net.Listener.Accept", l.Accept)
+		c, remote, err := acceptConn(g.servers[0].log, l)
 		if err != nil {
 			if g.isClosed() {
 				return nil
@@ -104,17 +104,17 @@ func (g *Group) Serve(l net.Listener) error {
 			continue
 		}
 		delay = 0
-		if !g.masterIPAllowed(c.RemoteAddr()) {
-			g.servers[0].log.Warn("connection refused: address not among WithMasterIPs", "remote", c.RemoteAddr().String())
+		if !g.masterIPAllowed(remote) {
+			g.servers[0].log.Warn("connection refused: address not among WithMasterIPs", "remote", addrString(remote))
 			_ = c.Close()
 			continue
 		}
 		if !g.acquire() {
-			g.servers[0].log.Warn("connection refused: limit reached", "remote", c.RemoteAddr().String(), "limit", g.limit())
+			g.servers[0].log.Warn("connection refused: limit reached", "remote", addrString(remote), "limit", g.limit())
 			_ = c.Close()
 			continue
 		}
-		if !g.spawn(func() { g.serveAccepted(c, g.handshake) }) {
+		if !g.spawn(func() { g.serveAccepted(c, remote, g.handshake) }) {
 			// Accepted as Close closed the listener.
 			g.release()
 			_ = c.Close()
@@ -126,13 +126,13 @@ func (g *Group) Serve(l net.Listener) error {
 // serveAccepted runs in the goroutine of one accepted connection: the
 // handshake, then ServeConn; it releases the connection's slot (acquire)
 // when the connection ends.
-func (g *Group) serveAccepted(c net.Conn, handshake func(net.Conn) error) {
+func (g *Group) serveAccepted(c net.Conn, remote net.Addr, handshake func(net.Conn) error) {
 	defer g.release()
 	if err := handshake(c); err != nil {
-		g.servers[0].log.Warn("TLS handshake failed", "remote", c.RemoteAddr().String(), "error", err)
+		g.servers[0].log.Warn("TLS handshake failed", "remote", addrString(remote), "error", err)
 		return
 	}
-	_ = g.ServeConn(c, c.RemoteAddr())
+	_ = g.ServeConn(c, remote)
 }
 
 // handshake is the TLS handshake of a connection the group accepted: it

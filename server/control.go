@@ -312,17 +312,14 @@ func withStatus(v app.Value, s app.CommandStatus) app.Value {
 	}
 }
 
-// encodeHeaders returns the encoding of the object headers with every
-// status cleared, to compare an OPERATE with its SELECT.
+// encodeHeaders returns the encoding of the object headers as the master
+// sent them, request statuses included, to compare an OPERATE with its
+// SELECT. A conforming master sends the OPERATE with the octets of its
+// SELECT (IEEE 1815-2012 4.4.4, p. 48); a control the SELECT marked
+// NON_PARTICIPATING was not selected (Table 11-7 footnote a, p. 330), so an
+// OPERATE that carries it with another status matches no SELECT.
 func encodeHeaders(hs []app.Header) []byte {
-	f := app.Fragment{Function: app.FuncSelect, Headers: make([]app.Header, len(hs))}
-	for i, h := range hs {
-		f.Headers[i] = h
-		f.Headers[i].Objects = make([]app.Object, len(h.Objects))
-		for j, o := range h.Objects {
-			f.Headers[i].Objects[j] = app.Object{Index: o.Index, Value: withStatus(o.Value, app.StatusSuccess)}
-		}
-	}
+	f := app.Fragment{Function: app.FuncSelect, Headers: hs}
 	b, _ := f.Encode()
 	return b
 }

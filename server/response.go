@@ -102,7 +102,10 @@ func pack(items []item, max int) (plans []fragPlan, dropped int) {
 }
 
 // fitting returns the largest k such that h with its first k objects fits
-// in room octets.
+// in room octets. The size of a prefix grows with k, so the search gallops
+// from one object up (1, 2, 4, ...) and then bisects: it only encodes
+// prefixes of about the objects that fit, never the whole remainder of a
+// long header, which keeps packing a header linear in its objects.
 func fitting(h app.Header, room int) int {
 	if room <= 0 {
 		return 0
@@ -118,12 +121,18 @@ func fitting(h app.Header, room int) int {
 		return l
 	}
 	n := len(h.Objects)
-	if sized(n) <= room {
-		return n
+	// lo fits (or is 0), hi does not fit or is n.
+	lo, hi := 0, 1
+	for hi < n && sized(hi) <= room {
+		lo, hi = hi, hi*2
 	}
-	// sized is monotonic in k: the largest k with sized(k) <= room. When
-	// not even the header without objects fits, that is none: 0, not -1.
-	return max(0, sort.Search(n+1, func(k int) bool { return sized(k) > room })-1)
+	hi = min(hi, n)
+	if sized(hi) <= room {
+		return hi
+	}
+	// The largest k in [lo, hi) with sized(k) <= room. When not even one
+	// object fits, that is none: 0.
+	return lo + sort.Search(hi-lo, func(i int) bool { return sized(lo+i+1) > room })
 }
 
 // normalize sets the range and count fields of h from its objects and

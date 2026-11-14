@@ -210,7 +210,7 @@ func TestFileCloseAtAssociationEnd(t *testing.T) {
 	if err := srv.Close(); err != nil {
 		t.Fatal(err)
 	}
-	logs.wait(t, "panic while serving a request", "callbacks_test.go")
+	logs.wait(t, "File.Close", "callbacks_test.go")
 }
 
 // dialerCalls is a Dialer that does not return normally the first time and

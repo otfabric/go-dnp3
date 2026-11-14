@@ -92,7 +92,13 @@ func (s *Server) DialAndServe(ctx context.Context, addr string, r Redial) error 
 		if err == nil {
 			delay = r.MinDelay
 			stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
-			err = s.ServeConn(conn, conn.RemoteAddr())
+			var remote net.Addr
+			remote, err = logx.Call(s.log, "net.Conn.RemoteAddr", func() (net.Addr, error) { return conn.RemoteAddr(), nil })
+			if err == nil {
+				err = s.ServeConn(conn, remote)
+			} else {
+				_ = logx.Do(s.log, "net.Conn.Close", conn.Close)
+			}
 			stop()
 		}
 		if s.isClosed() {

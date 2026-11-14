@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"slices"
 	"time"
@@ -50,8 +51,13 @@ type authState struct {
 	noAggressive bool
 	// count is the number of authentication messages since the last
 	// session key change: challenges and errors received, replies and
-	// aggressive mode requests sent (clause 7.6.1.4.4).
+	// aggressive mode requests sent (clause 7.6.1.4.4). It stops at the
+	// largest uint32.
 	count uint32
+	// countDue is set once count reached the key change count: a session
+	// key change is due until one succeeds (keysChanged). countAsked is
+	// set while the key change it asked for has not failed.
+	countDue, countAsked bool
 	// restart is IIN1.7 of the last response: a restart is detected when
 	// it becomes set (clause 7.5.4.2). It starts set, so that the restart
 	// indication of a new connection does not change the keys again.
@@ -116,15 +122,35 @@ func (c *Client) SecurityStatistics() []uint32 {
 }
 
 // authMessageLocked counts one authentication message of the current
-// session keys and asks for a session key change when they reached the key
-// change count (clause 7.6.1.4.4). The caller holds c.mu.
+// session keys and asks for a session key change once they reached the
+// key change count (clause 7.6.1.4.4). The change stays due until one
+// succeeds: after one that failed, the next message asks again
+// (keyChangeFailedLocked), and so does the key change loop. The caller
+// holds c.mu.
 func (c *Client) authMessageLocked() {
-	c.auth.count++
-	if c.auth.count == c.opts.keyChangeCount && len(c.opts.auth.UpdateKey) > 0 {
+	if c.auth.count < math.MaxUint32 {
+		c.auth.count++
+	}
+	if c.auth.count < c.opts.keyChangeCount || len(c.opts.auth.UpdateKey) == 0 {
+		return
+	}
+	if !c.auth.countDue {
 		c.log.Debug("key change count reached", "messages", c.auth.count)
+		c.auth.countDue = true
 		c.keyChangeTimeoutLocked()
+	}
+	if !c.auth.countAsked {
+		c.auth.countAsked = true
 		c.rekeySoon()
 	}
+}
+
+// keyChangeDue reports whether the key change count was reached and no
+// session key change succeeded since.
+func (c *Client) keyChangeDue() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.auth.countDue
 }
 
 // keyChangeTimeoutLocked is a Key Change Timeout of Table 7-8: the key
@@ -185,6 +211,7 @@ func (c *Client) answerChallenge(ctx context.Context, sess *channel.Session, seq
 		return 0, fmt.Errorf("%w: challenge asks for %s, not among the accepted MAC algorithms", dnp3.ErrAuthentication, v.MAC)
 	}
 	key := c.controlKey()
+	defer clear(key)
 	if key == nil {
 		// Table 7-13, Rx Challenge message without valid session keys:
 		// count and discard it.
@@ -276,7 +303,7 @@ func (c *Client) keysFor(fc app.FunctionCode) error {
 		!slices.Contains(secauth.MandatoryCritical, fc) && !slices.Contains(c.opts.aggressive, fc) {
 		return nil
 	}
-	if c.controlKey() != nil {
+	if c.hasControlKey() {
 		return nil
 	}
 	c.rekeySoon()
@@ -300,6 +327,7 @@ func (c *Client) aggressive(req *app.Fragment) (bool, error) {
 		return false, nil
 	}
 	key := c.controlKey()
+	defer clear(key)
 	c.mu.Lock()
 	last, alg, csq, ok := c.auth.lastChallenge, c.auth.lastMAC, c.auth.csq, c.auth.replied && !c.auth.noAggressive
 	c.mu.Unlock()
@@ -424,6 +452,7 @@ func (c *Client) keysChanged(control, monitoring, keyChange []byte) {
 	clear(c.auth.monitoring)
 	c.auth.sessionKey, c.auth.monitoring, c.auth.keyChange = control, monitoring, slices.Clone(keyChange)
 	c.auth.lastChallenge, c.auth.replied, c.auth.count = nil, false, 0
+	c.auth.countDue, c.auth.countAsked = false, false
 	c.countLocked(secauth.StatSessionKeyChanges)
 	if !c.auth.authRekey {
 		c.counters.maxAuthRekeys = c.counters.stats[secauth.StatRekeysDueToAuthFailure] +
@@ -451,10 +480,15 @@ func (c *Client) checkKeyStatus(st app.AuthSessionKeyStatus) error {
 		return nil
 	}
 	c.mu.Lock()
-	monitoring, change := c.auth.monitoring, c.auth.keyChange
+	monitoring, change := slices.Clone(c.auth.monitoring), c.auth.keyChange
 	c.mu.Unlock()
+	defer clear(monitoring)
 	if monitoring == nil || change == nil {
 		return nil // nothing to authenticate it with (Table 7-13)
+	}
+	if !c.acceptsKeyStatusMAC(st.MAC) {
+		c.count(secauth.StatDiscardedMessages)
+		return fmt.Errorf("%w: key status authenticated with %s, not among the accepted MAC algorithms", dnp3.ErrAuthentication, st.MAC)
 	}
 	want, err := secauth.MAC(st.MAC, monitoring, change)
 	if err == nil && secauth.Equal(want, st.MACValue) {
@@ -547,6 +581,7 @@ func (c *Client) confirmResponse(sess *channel.Session, f *app.Fragment, raw []b
 		err := errNoConfirmKey
 		if key := c.controlKey(); key != nil && c.acceptsMAC(ch.MAC) {
 			_, err = aggressiveFragment(cf, ch.MAC, key, raw, ch.CSQ, c.opts.auth.Number)
+			clear(key)
 		}
 		if err != nil {
 			c.log.Warn("authenticated confirmation not possible: plain confirmation sent", "seq", f.Control.Seq, "error", err)
@@ -623,6 +658,19 @@ func (c *Client) acceptsMAC(alg app.MACAlgorithm) bool {
 	if c.opts.challengeMACs != nil {
 		return slices.Contains(c.opts.challengeMACs, alg)
 	}
+	return c.defaultMAC(alg)
+}
+
+// acceptsKeyStatusMAC reports whether the MAC of a key status, or of the
+// confirmation of a session key change, may use alg: the outstation
+// chooses it (A.45.5), within the algorithms acceptsMAC takes by default
+// or with WithChallengeMACs.
+func (c *Client) acceptsKeyStatusMAC(alg app.MACAlgorithm) bool {
+	return c.defaultMAC(alg) || c.acceptsMAC(alg)
+}
+
+// defaultMAC is acceptsMAC without WithChallengeMACs.
+func (c *Client) defaultMAC(alg app.MACAlgorithm) bool {
 	switch alg {
 	case app.MACHMACSHA1Trunc4:
 		return false

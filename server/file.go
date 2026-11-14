@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/otfabric/go-dnp3/app"
+	"github.com/otfabric/go-dnp3/internal/logx"
 	"github.com/otfabric/go-dnp3/link"
 	"github.com/otfabric/go-dnp3/secauth"
 )
@@ -92,24 +93,40 @@ const DefaultFileTimeout = 5 * time.Minute
 type fileHandles struct {
 	mu   sync.Mutex
 	last uint32
-	// open maps the handles in use to the names of their files: a file
-	// that is open cannot be deleted (5.3.8 Rule 11, p. 120).
+	// open maps the handles in use to the names of their files, as clean
+	// maps them: a file that is open cannot be deleted (5.3.8 Rule 11,
+	// p. 120). A handle is taken before the FileServer opens the file.
 	open map[uint32]string
+	// deleting holds the names of the files a DELETE_FILE is deleting:
+	// they cannot be opened meanwhile.
+	deleting map[string]int
 }
 
-// assign returns a new handle for the file name. The handles in use are
-// bounded by the open files of every association, so the search ends.
-func (h *fileHandles) assign(name string) uint32 {
+// fileKey is the name under which a file is compared: names that clean
+// maps to the same path are the same file.
+func fileKey(name string) string {
+	p, _ := clean(name)
+	return p
+}
+
+// assign returns a new handle for the file name, or false when a
+// DELETE_FILE is deleting that file. The handles in use are bounded by the
+// open files of every association, so the search ends.
+func (h *fileHandles) assign(name string) (uint32, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	key := fileKey(name)
+	if h.deleting[key] > 0 {
+		return 0, false
+	}
 	if h.open == nil {
 		h.open = map[uint32]string{}
 	}
 	for {
 		h.last++
 		if _, used := h.open[h.last]; h.last != 0 && !used {
-			h.open[h.last] = name
-			return h.last
+			h.open[h.last] = key
+			return h.last, true
 		}
 	}
 }
@@ -122,16 +139,47 @@ func (h *fileHandles) release(handle uint32) {
 }
 
 // isOpen reports whether a file of that name is open in any association.
-// Names are compared as the masters sent them.
 func (h *fileHandles) isOpen(name string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	return h.openLocked(fileKey(name))
+}
+
+func (h *fileHandles) openLocked(key string) bool {
 	for _, n := range h.open {
-		if n == name {
+		if n == key {
 			return true
 		}
 	}
 	return false
+}
+
+// startDelete reports whether the file name may be deleted: it is not
+// open, nor being opened, in any association. Until endDelete it cannot
+// be opened, so that the check and the deletion are one step for the
+// other associations.
+func (h *fileHandles) startDelete(name string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	key := fileKey(name)
+	if h.openLocked(key) {
+		return false
+	}
+	if h.deleting == nil {
+		h.deleting = map[string]int{}
+	}
+	h.deleting[key]++
+	return true
+}
+
+// endDelete ends what startDelete started.
+func (h *fileHandles) endDelete(name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	key := fileKey(name)
+	if h.deleting[key]--; h.deleting[key] <= 0 {
+		delete(h.deleting, key)
+	}
 }
 
 // closeFile closes an open file and makes its handle invalid.
@@ -139,7 +187,13 @@ func (a *association) closeFile(handle uint32, abort bool) error {
 	of := a.files[handle]
 	delete(a.files, handle)
 	a.srv.handles.release(handle)
-	return of.f.Close(abort)
+	return a.closeAppFile(of.f, abort)
+}
+
+// closeAppFile closes a File of the application. A Close that does not
+// return normally is logged and returned as an error.
+func (a *association) closeAppFile(f File, abort bool) error {
+	return logx.Do(a.log, "File.Close", func() error { return f.Close(abort) })
 }
 
 // fileDeadline is when the open file used least recently times out, or
@@ -206,10 +260,22 @@ func (a *association) file(req *app.Fragment) *response {
 			st.Status = app.FileTooManyOpen
 			return ff(st)
 		}
+		// The handle is taken first: a DELETE_FILE of another association
+		// does not delete the file while it is being opened.
+		h, ok := a.srv.handles.assign(c.Name)
+		if !ok {
+			st.Status = app.FileLocked
+			return ff(st)
+		}
 		f, status := fsrv.Open(ctx, FileRequest{Name: c.Name, Mode: c.Mode, Size: c.Size, Permissions: c.Permissions,
 			Created: c.Created, AuthKey: c.AuthKey, Master: a.master})
 		st.Status = status
 		if status != app.FileSuccess || f == nil {
+			a.srv.handles.release(h)
+			if f != nil {
+				// Refused, the file is not used: closed, aborted.
+				_ = a.closeAppFile(f, true)
+			}
 			if st.Status == app.FileSuccess {
 				st.Status = app.FileFatal
 			}
@@ -234,7 +300,6 @@ func (a *association) file(req *app.Fragment) *response {
 		if maxBlock == 0 || maxBlock > limit {
 			maxBlock = limit
 		}
-		h := a.srv.handles.assign(c.Name)
 		size := uint32(unknownFileSize)
 		if c.Mode != app.FileModeRead && c.Size != 0 {
 			// A size of 0 is taken as not known, as 0xFFFFFFFF is (5.3.8
@@ -266,7 +331,11 @@ func (a *association) file(req *app.Fragment) *response {
 		if err := a.closeFile(c.Handle, abort); err != nil {
 			// An abort that cannot be done is CANNOT_ABORT (4.4.17.5,
 			// p. 74); a close that fails is FATAL (Table 11-8, p. 330).
+			// A Close that did not return normally gives no text.
 			st.Status, st.Text = app.FileFatal, err.Error()
+			if _, ok := errors.AsType[*logx.CallbackError](err); ok {
+				st.Text = ""
+			}
 			if abort {
 				st.Status = app.FileCannotAbort
 			}
@@ -278,10 +347,11 @@ func (a *association) file(req *app.Fragment) *response {
 		if !ok {
 			return &response{iin: app.IINParameterError}
 		}
-		if a.srv.handles.isOpen(c.Name) {
+		if !a.srv.handles.startDelete(c.Name) {
 			// An open file may not be deleted (5.3.8 Rule 11, p. 120).
 			return ff(app.FileCommandStatus{RequestID: c.RequestID, Status: app.FileLocked})
 		}
+		defer a.srv.handles.endDelete(c.Name)
 		return ff(app.FileCommandStatus{RequestID: c.RequestID, Status: fsrv.Delete(ctx, c.Name, c.AuthKey)})
 
 	case app.FuncGetFileInfo:
@@ -416,7 +486,8 @@ func (a *association) writeFile(h app.Header) app.IIN {
 	return 0
 }
 
-// closeFiles aborts the files of a master that went away.
+// closeFiles aborts the files of a master that went away. A File whose
+// Close does not return normally does not keep the others open.
 func (a *association) closeFiles() {
 	for h := range a.files {
 		_ = a.closeFile(h, true)
@@ -426,6 +497,13 @@ func (a *association) closeFiles() {
 // FSFileServer is a read-only [FileServer] over an fs.FS, for example
 // os.DirFS. Directories are served as file descriptor lists, so that a
 // master can list them.
+//
+// Names are confined to the fs.FS: "..", absolute and backslash paths do
+// not leave it. Whether a symbolic link inside it leads out of it is the
+// fs.FS's choice: os.DirFS follows symbolic links, also to files outside
+// its directory. To serve a directory without that, use the FS method of
+// an [os.Root] from [os.OpenRoot], which does not follow links out of the
+// directory, or an fs.FS without links.
 type FSFileServer struct {
 	// FS is the file system served; "/" is its root.
 	FS fs.FS

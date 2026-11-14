@@ -90,7 +90,9 @@ func TestFreezeAtTime(t *testing.T) {
 	if n := len(m.srv.freezes); n != 0 {
 		t.Fatalf("%d scheduled freezes after Close", n)
 	}
+	m.srv.mu.Lock()
 	m.srv.scheduleFreeze("k", time.Now().Add(time.Hour), 0, nil)
+	m.srv.mu.Unlock()
 	if n := len(m.srv.freezes); n != 0 {
 		t.Fatal("a freeze scheduled on a closed server")
 	}

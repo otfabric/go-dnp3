@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -136,6 +137,44 @@ func TestUDPStream(t *testing.T) {
 	// An address that does not resolve fails to open.
 	if _, _, err := UDP("no-such-host.invalid:20000")(testCtx(t)); err == nil {
 		t.Fatal("UDP to an address that does not resolve")
+	}
+}
+
+// TestUDPDatagramBuffer: the UDP stream receives every datagram into one
+// buffer, allocated once: the channel takes a datagram's frames before it
+// reads the next.
+func TestUDPDatagramBuffer(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pc.Close() }()
+	s, _, err := UDP(pc.LocalAddr().String())(testCtx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	u := s.(*udpConn)
+	local := u.LocalAddr()
+	var prev []byte
+	for _, dg := range [][]byte{[]byte("first datagram"), []byte("second")} {
+		if _, err := pc.WriteTo(dg, local); err != nil {
+			t.Fatal(err)
+		}
+		got, err := u.ReadDatagram()
+		if err != nil || !bytes.Equal(got, dg) {
+			t.Fatalf("datagram %q, %v; want %q", got, err, dg)
+		}
+		if prev != nil && &prev[0] != &got[0] {
+			t.Fatal("a buffer allocated for each datagram")
+		}
+		prev = got
+	}
+	if n := testing.AllocsPerRun(10, func() {
+		_, _ = pc.WriteTo([]byte("x"), local)
+		_, _ = u.ReadDatagram()
+	}); n > 2 {
+		t.Errorf("%.0f allocations per datagram", n)
 	}
 }
 

@@ -187,7 +187,7 @@ func (c *Client) receiveUnsolicited(sess *channel.Session, f *app.Fragment, data
 		c.log.Debug("repeated unsolicited response ignored", "seq", f.Control.Seq)
 		return
 	}
-	c.events.response(f, true)
+	c.events.response(f, fragmentCost(f, data), true)
 	c.onIIN(f.IIN)
 	if sameSeq && !repeat && c.opts.autoIntegrity {
 		c.log.Debug("new unsolicited response with the previous sequence number: integrity poll", "seq", f.Control.Seq)
@@ -199,7 +199,7 @@ func (c *Client) receiveUnsolicited(sess *channel.Session, f *app.Fragment, data
 // before it runs.
 func (c *Client) enqueueIntegrity() {
 	queued := time.Now()
-	c.enqueue(task{name: "integrity", reads: true, run: func(ctx context.Context) error {
+	c.enqueue(task{name: "integrity", run: func(ctx context.Context) error {
 		// An integrity poll that completed since, by the startup sequence,
 		// the restart procedure or the application, already did what this
 		// one would.
@@ -318,6 +318,9 @@ func (c *Client) autoSyncTime(ctx context.Context) error {
 		return nil
 	}
 	err := c.SyncTime(ctx, p)
+	if err == nil {
+		c.lastSync.Store(time.Now().UnixNano())
+	}
 	if !auto || !notSupported(err) {
 		return err
 	}

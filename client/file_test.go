@@ -17,6 +17,18 @@ import (
 	"github.com/otfabric/go-dnp3/server"
 )
 
+// announced are the files of 40 octets that files serves with another
+// size in their OPEN_FILE answer: 0xFFFFFFFF and 0 are not known.
+var announced = map[string]uint32{"/shorter": 10, "/exact": 40, "/unknown": 0xFFFFFFFF, "/zero": 0}
+
+// announcedFile is a file with the size given.
+type announcedFile struct {
+	file
+	size uint32
+}
+
+func (f *announcedFile) Size() uint32 { return f.size }
+
 // files is a writable in-memory server.FileServer with credentials.
 type files struct {
 	mu sync.Mutex
@@ -42,6 +54,10 @@ func (s *files) Open(_ context.Context, req server.FileRequest) (server.File, ap
 		}
 		if req.Name == "/garbage-dir" {
 			return &file{r: bytes.NewReader([]byte{1, 2, 3}), size: 3}, app.FileSuccess
+		}
+		if size, ok := announced[req.Name]; ok {
+			// A file of 40 octets whose OPEN_FILE answer announces size.
+			return &announcedFile{file: file{r: bytes.NewReader(bytes.Repeat([]byte{'x'}, 40))}, size: size}, app.FileSuccess
 		}
 		data, ok := s.m[req.Name]
 		if !ok {
@@ -217,5 +233,34 @@ func TestFileWriteAggressiveMode(t *testing.T) {
 	}
 	if !bytes.Equal(fs.get("/big.bin"), data) {
 		t.Fatal("file content differs")
+	}
+}
+
+// TestReadFileAnnouncedSize: a file read that goes on beyond the size the
+// outstation announced in its OPEN_FILE answer fails with ErrProtocol, the
+// octets beyond it not written, and the transfer is aborted; a size of
+// 0xFFFFFFFF (not known, IEEE 1815-2012 clause 4.4.17.2.1) or 0 does not
+// limit the transfer.
+func TestReadFileAnnouncedSize(t *testing.T) {
+	_, addr := outstation(t, server.WithFileServer(&files{m: map[string][]byte{}}))
+	c, err := Dial(testCtx(t), addr, WithAutoIntegrity(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	for _, tc := range []struct {
+		name string
+		n    int64
+		ok   bool
+	}{{"/shorter", 8, false}, {"/exact", 40, true}, {"/unknown", 40, true}, {"/zero", 40, true}} {
+		var buf bytes.Buffer
+		n, err := c.ReadFile(testCtx(t), tc.name, &buf, FileOptions{MaxBlockSize: 8})
+		if tc.ok != (err == nil) || !tc.ok && !errors.Is(err, dnp3.ErrProtocol) || n != tc.n || int64(buf.Len()) != n {
+			t.Errorf("%s: %d octets (%d written), %v; want %d", tc.name, n, buf.Len(), err, tc.n)
+		}
+	}
+	// The aborted transfer left no file open: the next read works.
+	if n, err := c.ReadFile(testCtx(t), "/exact", io.Discard, FileOptions{}); err != nil || n != 40 {
+		t.Fatalf("read after the refused one: %d, %v", n, err)
 	}
 }

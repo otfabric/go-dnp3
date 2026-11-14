@@ -151,9 +151,9 @@ func pcapPackets(b []byte, bo binary.ByteOrder, unit time.Duration) ([]packet, e
 		}
 		sec := int64(bo.Uint32(b[off:]))
 		frac := int64(bo.Uint32(b[off+4:]))
-		n := int(bo.Uint32(b[off+8 : off+12]))
+		n, ok := length(bo.Uint32(b[off+8 : off+12]))
 		off += 16
-		if n > len(b)-off {
+		if !ok || n > len(b)-off {
 			return nil, ErrFormat
 		}
 		t := time.Unix(sec, frac*int64(unit)).UTC()
@@ -161,6 +161,16 @@ func pcapPackets(b []byte, bo binary.ByteOrder, unit time.Duration) ([]packet, e
 		off += n
 	}
 	return out, nil
+}
+
+// length converts a 32-bit length or index field to int. A value of 2^31
+// or more is refused: it would turn negative in a 32-bit int, and no
+// capture record is that long.
+func length(v uint32) (int, bool) {
+	if v > math.MaxInt32 {
+		return 0, false
+	}
+	return int(v), true
 }
 
 // iface is a pcapng interface: link type and time stamp units per second.
@@ -191,8 +201,8 @@ func pcapngPackets(b []byte) ([]packet, error) {
 			}
 			ifaces = ifaces[:0]
 		}
-		n := int(bo.Uint32(b[off+4:]))
-		if n < 12 || n%4 != 0 || n > len(b)-off {
+		n, ok := length(bo.Uint32(b[off+4:]))
+		if !ok || n < 12 || n%4 != 0 || n > len(b)-off {
 			return nil, ErrFormat
 		}
 		body := b[off+8 : off+n-4]
@@ -206,10 +216,10 @@ func pcapngPackets(b []byte) ([]packet, error) {
 			if len(body) < 20 {
 				return nil, ErrFormat
 			}
-			ifc := int(bo.Uint32(body))
+			ifc, ok1 := length(bo.Uint32(body))
 			ts := uint64(bo.Uint32(body[4:]))<<32 | uint64(bo.Uint32(body[8:]))
-			capLen := int(bo.Uint32(body[12:]))
-			if ifc >= len(ifaces) || capLen > len(body)-20 {
+			capLen, ok2 := length(bo.Uint32(body[12:]))
+			if !ok1 || !ok2 || ifc >= len(ifaces) || capLen > len(body)-20 {
 				return nil, ErrFormat
 			}
 			ps := ifaces[ifc].perSec
@@ -223,7 +233,11 @@ func pcapngPackets(b []byte) ([]packet, error) {
 			if len(body) < 4 || len(ifaces) == 0 {
 				return nil, ErrFormat
 			}
-			capLen := min(int(bo.Uint32(body)), len(body)-4)
+			capLen, ok := length(bo.Uint32(body))
+			if !ok {
+				return nil, ErrFormat
+			}
+			capLen = min(capLen, len(body)-4)
 			out = append(out, packet{link: ifaces[0].link, data: body[4 : 4+capLen]})
 		}
 		off += n
