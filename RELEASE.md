@@ -1,5 +1,38 @@
 # go-dnp3 Releases
 
+## v1.16.0
+
+**Date:** 2026-11-19
+**Previous release:** v1.15.0
+
+## Summary
+
+The master hands every response fragment whole to a Handler that asks for it, so that an application sees what is not point data: virtual terminal event data and data set events in unsolicited responses, and the IIN of null responses. The outstation asks a `WriteHandler` about a written octet string before it stores it, so that one the application refuses leaves the point and the event buffers as they were (IEEE 1815-2012 4.5.11). One exported identifier is added; none changes. Both changes were contributed by @MatthewReed303 ([#74](https://github.com/otfabric/go-dnp3/pull/74), [#75](https://github.com/otfabric/go-dnp3/pull/75)).
+
+## Upgrading
+
+- **`WriteOctetString` is called before the octet string is stored.** A handler that read the written value back from the database inside `WriteOctetString` now reads the value from before the WRITE: use its `data` argument.
+
+## Changes
+
+### Added
+
+Master (`client`):
+
+- `FragmentHandler`, an optional interface of the `Handler`: `HandleFragment(ResponseInfo, *app.Fragment)` receives every fragment of every response and unsolicited response, in order and before `HandleMeasurements`, also the fragments without measurements. A panic in it is recovered like one in `HandleMeasurements`.
+
+### Fixed
+
+Outstation (`server`):
+
+- A WRITE of an octet string that `WriteHandler.WriteOctetString` refuses is answered with IIN2.2 (PARAMETER_ERROR) and is neither stored nor reported as an event; before, the point took the refused value and an octet string event was queued. A WRITE of an octet string point that does not exist, or removed while the handler runs, is answered with IIN2.2.
+
+### Tests
+
+- `TestChaos` checks that every response fragment reaches the `FragmentHandler` before its measurements; e2e tests cover the `FragmentHandler` against the outstation and a refused octet string WRITE.
+
+---
+
 ## v1.15.0
 
 **Date:** 2026-11-14

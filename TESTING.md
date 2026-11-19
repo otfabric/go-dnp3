@@ -79,8 +79,9 @@ captures README.
 `e2e/chaos_test.go` sends every kind of request through a proxy that
 corrupts, splits and delays octets and kills connections, with and without
 Secure Authentication. It checks that no data appears that was not sent, that
-no control runs more often than it was sent, and that the session recovers
-once the faults stop. Each run logs its random seed (`seed <n>`);
+no control runs more often than it was sent, that every response fragment
+reaches the `client.FragmentHandler` before its measurements, and that the
+session recovers once the faults stop. Each run logs its random seed (`seed <n>`);
 `DNP3_CHAOS_SEED=<n>` replays the faults of that seed (the timing of the two
 sides still varies): the draws come from `internal/chaosrand`, SHA-256 in
 counter mode over the seed, the same on every platform and Go release. For

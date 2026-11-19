@@ -506,6 +506,16 @@ type FileOptions struct {
 
 FileOptions are the optional parameters of a file transfer.
 
+### type FragmentHandler
+
+```go
+type FragmentHandler interface {
+	HandleFragment(info ResponseInfo, f *app.Fragment)
+}
+```
+
+FragmentHandler is an optional interface of a [Handler](#type-handler). HandleFragment receives every fragment of every response and unsolicited response whole, on the Handler's goroutine and in the same order, before HandleMeasurements gets its measurements: also the fragments without any, such as a null response (its internal indications) or one with only objects that are not point data, the virtual terminal's event data (g113) and data set events (g88), which the application exchanges by itself (LIMITATIONS.md, Objects without procedures). The fragment is shared: HandleFragment must not modify it, nor keep it after it returns.
+
 ### type Handler
 
 ```go

@@ -249,7 +249,9 @@ func chaosSeed(t *testing.T, def int64) int64 {
 // TestChaos runs every kind of request at once through the chaos proxy,
 // with and without secure authentication, and checks what must hold
 // whatever the faults: no data that was not sent, no control executed
-// more often than it was sent, and full recovery once the faults stop.
+// more often than it was sent, every fragment handed to the
+// FragmentHandler before its measurements, and full recovery once the
+// faults stop.
 func TestChaos(t *testing.T) {
 	duration := 3 * time.Second
 	if testing.Short() {
@@ -268,9 +270,12 @@ func TestChaos(t *testing.T) {
 			files.files["/data.bin"] = content
 			handler := &relay{status: app.StatusSuccess}
 			logs := newChaosLog(t)
+			// Every fragment reaches the FragmentHandler whole, before its
+			// measurements, whatever the faults.
+			frags := newFragmentLog()
 			sopts := []server.Option{server.WithMasters(1), server.WithHandler(handler), server.WithFileServer(files),
 				server.WithLogger(logs.side("outstation"))}
-			copts := []client.Option{client.WithLogger(logs.side("master")),
+			copts := []client.Option{client.WithLogger(logs.side("master")), client.WithHandler(frags),
 				client.WithResponseTimeout(300 * time.Millisecond), client.WithAutoIntegrity(false),
 				client.WithReconnect(client.Reconnect{MinDelay: 10 * time.Millisecond, MaxDelay: 50 * time.Millisecond}),
 				client.WithRetry(client.Retry{Attempts: 3, Backoff: 5 * time.Millisecond}),
@@ -386,6 +391,10 @@ func TestChaos(t *testing.T) {
 			for _, err := range unexpected {
 				t.Error(err)
 			}
+			frags.check(t)
+			frags.mu.Lock()
+			t.Logf("%d fragments delivered to the FragmentHandler", len(frags.frags))
+			frags.mu.Unlock()
 			_, ops, _ := handler.snapshot()
 			if int64(len(ops)) > sent.Load() || int64(len(ops)) < succeeded.Load() {
 				t.Errorf("%d controls executed for %d sent and %d succeeded", len(ops), sent.Load(), succeeded.Load())

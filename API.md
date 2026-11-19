@@ -167,6 +167,12 @@ fragment. A measurement is indexed point data; its `Value` is one of
 (g101), `UnsignedInteger` (g102), `OctetString` or `SecurityStatistic`.
 [OBJECTS.md](OBJECTS.md) lists the objects.
 
+A `Handler` that also implements `FragmentHandler`
+(`HandleFragment(ResponseInfo, *app.Fragment)`) gets every response fragment
+whole, before its measurements: null responses (their IIN) and objects that
+are not point data, such as virtual terminal event data (g113), too. The
+fragment is shared: read it, do not change or keep it.
+
 The handler runs on a goroutine of its own, in order. While it is 64
 fragments behind, unsolicited responses are neither processed nor
 confirmed (the outstation repeats them) and the automatic polls wait; a

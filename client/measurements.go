@@ -59,6 +59,19 @@ type Handler interface {
 	HandleMeasurements(info ResponseInfo, ms []Measurement)
 }
 
+// FragmentHandler is an optional interface of a [Handler]. HandleFragment
+// receives every fragment of every response and unsolicited response whole,
+// on the Handler's goroutine and in the same order, before
+// HandleMeasurements gets its measurements: also the fragments without
+// any, such as a null response (its internal indications) or one with only
+// objects that are not point data, the virtual terminal's event data (g113)
+// and data set events (g88), which the application exchanges by itself
+// (LIMITATIONS.md, Objects without procedures). The fragment is shared:
+// HandleFragment must not modify it, nor keep it after it returns.
+type FragmentHandler interface {
+	HandleFragment(info ResponseInfo, f *app.Fragment)
+}
+
 // HandlerFunc adapts a function to a [Handler].
 type HandlerFunc func(info ResponseInfo, ms []Measurement)
 
@@ -258,12 +271,16 @@ func (d *dispatcher) deliver(n notice) {
 		}
 		return
 	}
+	info := ResponseInfo{
+		Unsolicited: n.unsolicited, IIN: n.frag.IIN, Seq: n.frag.Control.Seq,
+		FIR: n.frag.Control.FIR, FIN: n.frag.Control.FIN,
+	}
+	if fh, ok := o.handler.(FragmentHandler); ok {
+		fh.HandleFragment(info, n.frag)
+	}
 	ms := Measurements(n.frag)
 	if len(ms) == 0 {
 		return
 	}
-	o.handler.HandleMeasurements(ResponseInfo{
-		Unsolicited: n.unsolicited, IIN: n.frag.IIN, Seq: n.frag.Control.Seq,
-		FIR: n.frag.Control.FIR, FIN: n.frag.Control.FIN,
-	}, ms)
+	o.handler.HandleMeasurements(info, ms)
 }

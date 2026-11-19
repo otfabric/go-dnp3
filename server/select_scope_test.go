@@ -134,9 +134,7 @@ func TestFreezeLimitAcrossRequests(t *testing.T) {
 	accepted := 0
 	start := make(chan struct{})
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			iin := s.freezeAtTime([]app.Header{app.Counted(app.G50V2, app.AbsoluteTime{Time: later}),
 				app.IndexRange(app.G20V0, uint32(i), uint32(i))})
@@ -145,7 +143,7 @@ func TestFreezeLimitAcrossRequests(t *testing.T) {
 				accepted++
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

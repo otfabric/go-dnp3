@@ -179,11 +179,9 @@ func (s *Session) run() {
 			// The probe counts as a goroutine of the channel, so that
 			// Done waits for it too.
 			probing = true
-			s.ch.wg.Add(1)
-			go func() {
-				defer s.ch.wg.Done()
+			s.ch.wg.Go(func() {
 				probe <- s.Probe()
-			}()
+			})
 		case err := <-probe:
 			probing = false
 			if err == nil {
