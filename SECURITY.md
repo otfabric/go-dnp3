@@ -19,10 +19,10 @@ We will acknowledge your report within 48 hours and aim to provide a fix or miti
 
 | Version | Supported |
 |---------|-----------|
+| 1.16.x | Yes |
 | 1.15.x | Yes |
-| 1.14.x | Yes |
-| 1.4.x – 1.13.x | No: upgrade to 1.15.x |
-| 1.0.x – 1.3.x | No: upgrade to 1.15.x. These versions crash the outstation on a malformed READ of g70v5 that any master able to reach it can send (fixed in v1.4.0) |
+| 1.4.x – 1.14.x | No: upgrade to 1.16.x |
+| 1.0.x – 1.3.x | No: upgrade to 1.16.x. These versions crash the outstation on a malformed READ of g70v5 that any master able to reach it can send (fixed in v1.4.0) |
 | 0.x | No |
 
 ## Security Considerations
@@ -68,7 +68,7 @@ The client (`client.WithDialer`, `client.UDPWithDialer`) and the outstation's di
 - **Watch the security statistics.** The outstation counts authentication failures, refused key changes, reply timeouts and more per master (g121, readable by any master); `StatisticsThreshold` and `StatisticsClass` make them events (g122) a SCADA system can alarm on
 - **Only the control direction is authenticated.** Responses and unsolicited data from the outstation are not authenticated; use TLS to protect them
 - **Non-critical requests (READ) are not challenged.** They disclose data without authentication; use TLS where that matters
-- Secure Authentication is verified against DSC go-dnp3 and cB-Sigma dnp3 in both roles (dnp3-interop v0.12.1; file authentication since contract 1.3); aggressive mode only between go-dnp3's ends, as no reference implements it (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
+- Secure Authentication is verified against DSC go-dnp3 and cB-Sigma dnp3 in both roles (dnp3-interop v0.12.3; file authentication since contract 1.3); aggressive mode only between go-dnp3's ends, as no reference implements it (see [INTEROPERABILITY.md](INTEROPERABILITY.md))
 
 ### Static analysis
 
