@@ -47,7 +47,7 @@ The library provides:
 - **Verified against third-party stacks**: as master and as outstation
   against opendnp3, DSC go-dnp3, dnp3py and cB-Sigma dnp3, and as
   outstation against nfm-dnp3, in the containers of
-  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.12.1,
+  [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop) v0.12.3,
   over TCP, TLS, UDP and serial, with file transfer and Secure
   Authentication
 
@@ -327,7 +327,7 @@ many masters and concurrent requests. See [CONTRIBUTING.md](CONTRIBUTING.md).
 `make conformance` runs the DNP Users Group's IED certification procedures
 against a test outstation built on the library: 3.1 rev 1 at subset levels
 2 and 3, and 2.7 at level 2. It uses Step Function I/O's
-[dnp3c](https://github.com/stepfunc/dnp3c) 0.2.0, through
+[dnp3c](https://github.com/stepfunc/dnp3c) 0.3.0, through
 [otfabric/dnp3-interop](https://github.com/otfabric/dnp3-interop)'s dnp3c
 runner. dnp3c and the runner are GPL-3.0 and not part of this repository;
 `make conformance-image` builds the runner's image from dnp3-interop's
@@ -350,7 +350,7 @@ they are not evidence about any RTU or IED.
 
 `make interop` runs go-dnp3 as master against the reference outstations,
 and the reference masters against go-dnp3's outstation, using the images
-of [otfabric/dnp3-interop v0.12.1](https://github.com/otfabric/dnp3-interop/releases/tag/v0.12.1),
+of [otfabric/dnp3-interop v0.12.3](https://github.com/otfabric/dnp3-interop/releases/tag/v0.12.3),
 pinned by digest.
 
 | Reference | Version | Licence | Roles tested |
@@ -358,7 +358,7 @@ pinned by digest.
 | opendnp3 | 3.1.2 | Apache-2.0 | master and outstation |
 | DSC go-dnp3 | v0.8.2 | GPL-3.0-or-later | master and outstation |
 | dnp3py | 0.6.0 | MIT | master and outstation (its outstation serves the dnp3py fixture only) |
-| cB-Sigma dnp3 | v0.3.1 | Apache-2.0 | master and outstation |
+| cB-Sigma dnp3 | v0.3.2 | Apache-2.0 | master and outstation |
 | nfm-dnp3 | 1.0.1 | MIT | master (TCP; go-dnp3's outstation serves it without unsolicited responses, and three of its upstream defects skip tests: [INTEROPERABILITY.md](INTEROPERABILITY.md#interop-coverage)) |
 
 The Self-interop workflow, run by hand, runs a commit against the latest

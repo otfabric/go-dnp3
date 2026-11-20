@@ -39,19 +39,19 @@ COVER_PKG_MIN := 90
 
 # Reference implementations for 'make interop': otfabric/dnp3-interop
 # INTEROP_RELEASE (opendnp3 3.1.2, DSC go-dnp3 v0.8.2, dnp3py 0.6.0,
-# cB-Sigma dnp3 v0.3.1, nfm-dnp3 1.0.1). The
+# cB-Sigma dnp3 v0.3.2, nfm-dnp3 1.0.1). The
 # images are pinned by multi-arch index digest; INTEROP_COMMIT is the
 # release's commit, from which make conformance-image builds the dnp3c
 # runner. Keep in step with interop/harness.go. Override to test
 # other builds, e.g.
 #   make interop DNP3_INTEROP_OPENDNP3_IMAGE=ghcr.io/otfabric/dnp3-interop-opendnp3:dev
-INTEROP_RELEASE := v0.12.1
-INTEROP_COMMIT  := 6b76b57e5f870f970220b7dcece3896883ab702f
-DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:22d5d0c03d7648af2b059898fb49d2e5dcd5a3e8a722935a5adfd6912bb21655
-DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:0e524995121752018db491c49bf08a5fde2098a2ce51541cdf1dff0a9b18f1bd
-DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:6be83712526017b0247a90cfd1a36fd679b87abb01b54ff438a52332aaa26469
-DNP3_INTEROP_CBSIGMA_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:5469a14546b5bc3a5c75fdbffe4b4d8f9dd7113357cfb74daaba8db0c1d998ed
-DNP3_INTEROP_NFMDNP3_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:6e7f72f58cc9a59804c6e6fa3ff368593e40bf03596934d642724c96191a2ff2
+INTEROP_RELEASE := v0.12.3
+INTEROP_COMMIT  := 7eebb41880879d7af11bca50db84be3601d313d2
+DNP3_INTEROP_OPENDNP3_IMAGE   ?= ghcr.io/otfabric/dnp3-interop-opendnp3@sha256:1e1f576aca65e0d35f92a6e1e7b1a0e44ec66fcac3edbbfe850f8af43f4145e0
+DNP3_INTEROP_DSCSYSTEMS_IMAGE ?= ghcr.io/otfabric/dnp3-interop-dscsystems@sha256:60bf1a3463968979237356dbfa923003d29cda5651b9bcc6256bed600875f12b
+DNP3_INTEROP_DNP3PY_IMAGE     ?= ghcr.io/otfabric/dnp3-interop-dnp3py@sha256:647a144c87b3c04f5affaf58a501fdfe0711138744055331c79a0228783b7f0d
+DNP3_INTEROP_CBSIGMA_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-cbsigma@sha256:8688e2d089649413afc813114422a3b97fc163c3ce16cde4e17eabf34663962e
+DNP3_INTEROP_NFMDNP3_IMAGE    ?= ghcr.io/otfabric/dnp3-interop-nfmdnp3@sha256:c30e3e6d640494d95ecdd1540c679ab389607d0413627d3aab4382fbb41cf68d
 
 # The dnp3c runner for 'make conformance': dnp3-interop's image of Step
 # Function I/O's dnp3c (the DNP3 IED Certification Procedure), GPL-3.0-only

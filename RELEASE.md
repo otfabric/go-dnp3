@@ -1,5 +1,26 @@
 # go-dnp3 Releases
 
+## v1.16.1
+
+**Date:** 2026-11-20
+**Previous release:** v1.16.0
+
+The interop suite runs against [otfabric/dnp3-interop v0.12.3](https://github.com/otfabric/dnp3-interop/releases/tag/v0.12.3) (from v0.12.1), with cB-Sigma dnp3 v0.3.2. The library is unchanged: no exported identifier and no behaviour changes.
+
+## Changes
+
+### Tests
+
+- Interop against dnp3-interop v0.12.3: its published images pinned by multi-arch digest (`interop/harness.go`, Makefile, `.github/workflows/interop.yml`). cB-Sigma dnp3 v0.3.2 answers GET_FILE_INFO with the requested name (IEEE 1815-2012 4.4.18; cB-Sigma/dnp3#10), so the cbsigma entry `file-info-base-name` of the interop known bugs is removed: go-dnp3's master checks the name against it again. DSC go-dnp3 v0.8.2 keeps the entry (dscsystems/go-dnp3#24).
+- Conformance on dnp3c 0.3.0 (from 0.2.0): `make conformance` builds the dnp3c runner from dnp3-interop v0.12.3 (`CONFORMANCE_COMMIT` `7eebb418`). The test outstation passes every procedure, unchanged: 228 of 3.1 rev 1 at subset levels 2 and 3 each, 159 of 2.7 at level 2, none failed, excluded or with warnings.
+
+### Docs
+
+- README.md, INTEROPERABILITY.md, SECURITY.md and docs/FEATURE-STATUS.md name dnp3-interop v0.12.3 and cB-Sigma dnp3 v0.3.2; README.md, INTEROPERABILITY.md and docs/FEATURE-STATUS.md name dnp3c 0.3.0.
+- SECURITY.md: 1.16.x and 1.15.x are the supported versions (1.16.x was missing from the table since v1.16.0); 1.14.x and older: upgrade to 1.16.x.
+
+---
+
 ## v1.16.0
 
 **Date:** 2026-11-19

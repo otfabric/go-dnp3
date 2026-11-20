@@ -9,8 +9,8 @@ None of this is a conformance claim. Nothing is certified: only the DNP Users
 Group certifies devices, and go-dnp3 declares no subset level. Peer results
 show that go-dnp3 and those stacks agree with each other.
 
-Status: go-dnp3 v1.13.0, dnp3-interop v0.12.1 (opendnp3 3.1.2, DSC go-dnp3
-v0.8.2, dnp3py 0.6.0, cB-Sigma dnp3 v0.3.1, nfm-dnp3 1.0.1), dnp3c 0.2.0;
+Status: go-dnp3 v1.16.1, dnp3-interop v0.12.3 (opendnp3 3.1.2, DSC go-dnp3
+v0.8.2, dnp3py 0.6.0, cB-Sigma dnp3 v0.3.2, nfm-dnp3 1.0.1), dnp3c 0.3.0;
 recorded traffic: 182 captures of other software
 ([testdata/captures](../testdata/captures/README.md), classes C and D, no
 identified hardware), decoded, cross-checked with Wireshark and a
@@ -88,7 +88,7 @@ the feature rests on that one implementation.
 ## Conformance procedures
 
 `make conformance` runs the DNP Users Group's IED certification procedures,
-as dnp3c 0.2.0 implements them, against the
+as dnp3c 0.3.0 implements them, against the
 [test outstation](../internal/cmd/conformance): 3.1 rev 1 at subset levels 2
 and 3, and 2.7 at level 2. This covers the outstation role of that test
 outstation's Device Profile, not the master.
